@@ -17,13 +17,27 @@ export interface Chapter {
 
 // 순서가 곧 책의 목차 순서입니다.
 export const chapters: Chapter[] = [
+  // ── 기초 ──
   {
     slug: 'transformations',
     title: '3D 변환: 회전',
     description: '회전 행렬과 인터랙티브 큐브',
     section: '기초',
   },
-  // 아래는 예정(draft) 챕터 — 사이드바에 회색으로만 노출되고 링크는 없습니다.
+  {
+    slug: 'quaternions',
+    title: '쿼터니언과 회전',
+    description: '짐벌 락부터 SLERP까지 — 회전을 4차원에서 다루는 법',
+    section: '기초',
+  },
+  // ── 지오메트리 ──
+  {
+    slug: 'bezier-de-casteljau',
+    title: '베지에 곡선과 드 카스텔조',
+    description: '드 카스텔조 구성·번스타인 기저·곡선 분할',
+    section: '지오메트리',
+  },
+  // ── 셰이딩 ──
   {
     slug: 'lighting',
     title: '조명',
@@ -37,6 +51,27 @@ export const chapters: Chapter[] = [
     description: 'Cook–Torrance · GGX · 물리 기반 렌더링',
     section: '셰이딩',
   },
+  // ── 레이트레이싱 ──
+  {
+    slug: 'monte-carlo-integration',
+    title: '몬테카를로 적분',
+    description: '무작위 표본으로 적분을 추정하고 수렴 과정을 직접 본다',
+    section: '레이트레이싱',
+  },
+  // ── 절차적 생성 ──
+  {
+    slug: 'raymarching-sdf',
+    title: '레이마칭과 거리장(SDF)',
+    description: '스피어 트레이싱·거리장·스무스 민',
+    section: '절차적 생성',
+  },
+  {
+    slug: 'noise-functions',
+    title: '노이즈 함수',
+    description: 'value · Perlin · simplex와 fBm을 격자·보간·옥타브로 직접 만들기',
+    section: '절차적 생성',
+  },
+  // ── 렌더링 (예정) ──
   {
     slug: 'rasterization',
     title: '래스터화',

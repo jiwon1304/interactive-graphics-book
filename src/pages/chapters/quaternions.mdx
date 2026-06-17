@@ -1,0 +1,153 @@
+---
+layout: ../../layouts/ChapterLayout.astro
+title: "쿼터니언과 회전"
+description: 짐벌 락부터 SLERP까지 — 회전을 4차원에서 다루는 법
+---
+
+import GimbalLockDemo from '../../components/demos/quaternions/GimbalLockDemo.tsx';
+import AxisAngleToQuaternion from '../../components/demos/quaternions/AxisAngleToQuaternion.tsx';
+import HalfAngleExplorer from '../../components/demos/quaternions/HalfAngleExplorer.tsx';
+import DoubleCoverDemo from '../../components/demos/quaternions/DoubleCoverDemo.tsx';
+import SlerpVsLerp from '../../components/demos/quaternions/SlerpVsLerp.tsx';
+import HamiltonProductSandbox from '../../components/demos/quaternions/HamiltonProductSandbox.tsx';
+
+# 쿼터니언과 회전
+
+앞 챕터에서 회전을 **회전 행렬**로 다뤘습니다. 행렬은 정확하지만, 회전을 *세 개의 각*
+(요·피치·롤, 이른바 **오일러 각**)으로 쪼개 다루다 보면 고약한 함정에 빠집니다.
+이 챕터는 그 함정을 직접 만져 본 뒤, 회전을 4차원에서 우아하게 다루는 도구 —
+**쿼터니언(quaternion)** 으로 넘어갑니다.
+
+## 1. 오일러 각의 함정: 짐벌 락
+
+세 개의 각으로 회전을 표현하면, 세 회전축이 한 줄로 겹쳐버리는 자세가 존재합니다.
+그 순간 세 손잡이 중 하나가 **무용지물**이 되어 자유도(degree of freedom) 하나를 잃습니다.
+이것이 **짐벌 락(gimbal lock)** 입니다.
+
+아래 데모에서 가운데 링(피치)을 **±90°** 로 돌려 보세요. 바깥 링(요)과 안쪽 링(롤)의
+회전축이 같은 방향으로 정렬되어 빨갛게 강조됩니다. 그 상태에서 요와 롤 슬라이더를
+아무리 움직여도 화살표는 **같은 한 축**으로만 돕니다 — 잃어버린 자유도를 손으로 느껴 보세요.
+
+<GimbalLockDemo client:visible />
+
+문제의 본질은 회전을 *순차적인 세 각*으로 분해한다는 발상 자체에 있습니다.
+회전 전체를 한 덩어리로 다루는 표현이 필요합니다.
+
+## 2. 쿼터니언의 정의와 축-각 공식
+
+쿼터니언은 하나의 실수부와 세 개의 허수부로 이루어진 4차원 수입니다.
+
+$$
+q = w + x\,i + y\,j + z\,k,
+\qquad
+i^2 = j^2 = k^2 = ijk = -1.
+$$
+
+곱셈 규칙은 $ij = k,\ jk = i,\ ki = j$ 이고, 순서를 바꾸면 부호가 뒤집힙니다
+($ji = -k$). 이 비대칭이 나중에 "회전 합성은 순서에 의존한다"로 이어집니다.
+
+회전에 쓰는 것은 크기가 1인 **단위 쿼터니언**입니다. 축 $\hat{n}$ 둘레로 각도 $\theta$만큼
+회전하는 쿼터니언은 다음과 같이 만듭니다.
+
+$$
+q = \left(\cos\tfrac{\theta}{2},\ \sin\tfrac{\theta}{2}\,\hat{n}\right)
+  = \cos\tfrac{\theta}{2} + \sin\tfrac{\theta}{2}\,(n_x i + n_y j + n_z k).
+$$
+
+즉 실수부 $w = \cos\frac{\theta}{2}$, 허수부 $(x, y, z) = \sin\frac{\theta}{2}\,\hat{n}$ 입니다.
+아래 데모에서 축과 각도를 정하면 이 네 숫자가 어떻게 만들어지는지 실시간으로 보입니다.
+같은 쿼터니언을 그대로 기즈모에 적용하므로 "숫자가 곧 회전"임을 확인할 수 있습니다.
+
+<AxisAngleToQuaternion client:visible />
+
+$\theta$를 끌 때 $w$가 $\cos\frac{\theta}{2}$를, $(x,y,z)$가 $\sin\frac{\theta}{2}$를 따라
+움직이는지, 그리고 $|q|$가 항상 1로 유지되는지 보세요.
+
+## 3. 왜 하필 절반 각인가?
+
+공식에 들어간 $\theta/2$가 의아할 수 있습니다. 핵심은 이렇습니다 — 쿼터니언은 벡터에
+$q\,v\,q^{-1}$ 형태로 **양쪽에서** 작용합니다. 그래서 쿼터니언이 각도 $\varphi$만큼 돌면,
+그것이 회전시키는 벡터는 **$2\varphi$** 만큼 돕니다. 우리가 원하는 회전각이 $\theta$라면
+쿼터니언은 그 절반인 $\theta/2$로 만들어야 하는 것이죠.
+
+아래 2D 다이어그램에서 $\theta$를 끌어 보세요. 파란 부채꼴(쿼터니언의 각 $\theta/2$)에 비해
+빨간 부채꼴(실제 회전각 $\theta$)이 항상 **정확히 두 배**로 벌어집니다.
+
+<HalfAngleExplorer client:visible />
+
+## 4. 이중 덮개: $q$ 와 $-q$
+
+단위 쿼터니언에는 묘한 성질이 있습니다. $q$와 $-q$ (모든 성분의 부호를 뒤집은 것)는
+**완전히 같은 회전**을 나타냅니다.
+
+$$
+R(q) = R(-q).
+$$
+
+$q\,v\,q^{-1}$에서 부호가 두 번 곱해져 상쇄되기 때문입니다. 그래서 "단위 쿼터니언의 구
+$S^3$"는 회전 공간을 **두 겹으로 덮습니다(double cover)**. 하나의 회전마다 그것을 가리키는
+쿼터니언이 정확히 둘 있는 셈입니다.
+
+이 두 겹은 보간할 때 결정적으로 갈립니다. 같은 목표 자세라도 $+q$로 향하면 **짧은 호**,
+$-q$로 향하면 반대편으로 빙 도는 **먼 호**를 그립니다. 아래에서 토글을 켜며 t를 끌어 보세요.
+
+<DoubleCoverDemo client:visible />
+
+도착하는 자세는 둘 다 같지만, 가는 길이 완전히 다릅니다. 실무에서는 두 쿼터니언의
+내적 부호를 보고(음수면 한쪽을 뒤집어) 항상 짧은 길을 택합니다.
+
+## 5. 회전 보간: SLERP vs LERP
+
+이 모든 수고의 보상이 여기 있습니다 — 두 자세 사이를 **부드럽고 등속으로** 잇는 보간.
+두 단위 쿼터니언 $q_0, q_1$ 사이의 **구면 선형 보간(SLERP)** 은 다음과 같습니다.
+
+$$
+\mathrm{slerp}(q_0, q_1; t)
+= \frac{\sin\big((1-t)\,\Omega\big)}{\sin\Omega}\,q_0
++ \frac{\sin\big(t\,\Omega\big)}{\sin\Omega}\,q_1,
+\qquad
+\cos\Omega = q_0 \cdot q_1.
+$$
+
+소박한 대안인 성분별 선형 보간(**LERP**) $(1-t)q_0 + t\,q_1$ 은 두 끝점 사이에서 크기가
+1보다 작아져 **단위 구를 벗어나고**, 그 결과 회전 속도가 들쭉날쭉해집니다.
+
+아래 데모는 그 차이를 두 가지로 드러냅니다. 첫째, 구 위 궤적에 균일 간격 $t$로 점을 찍었습니다 —
+SLERP는 점 간격이 일정(등속)하지만 LERP는 가운데서 점이 벌어집니다(속도 변동). 둘째,
+아래 그래프 $|q(t)|$ 는 SLERP가 1.0을 유지하는 반면 정규화하지 않은 LERP는 가운데서
+1 아래로 **꺼지는** 골을 보여줍니다.
+
+<SlerpVsLerp client:visible />
+
+자세 차이 각을 키울수록 LERP의 골은 깊어지고 속도 불균형도 심해집니다.
+그래서 카메라·뼈대 애니메이션의 회전 보간에는 SLERP(또는 정규화한 nlerp)를 씁니다.
+
+## 6. 해밀턴 곱과 합성의 비가환성
+
+두 회전을 잇따라 적용하려면 두 쿼터니언을 곱합니다(이것을 **해밀턴 곱**이라 합니다).
+$i, j, k$의 곱셈 규칙 때문에 곱은 **순서에 의존**합니다.
+
+$$
+q_A \, q_B \ \ne\ q_B \, q_A \quad (\text{일반적으로}).
+$$
+
+행렬 회전이 가환이 아니었던 것과 똑같은 이유입니다. 아래에서 두 회전 $A, B$를 정하고
+적용 순서를 $A\circ B$ ↔ $B\circ A$로 바꿔 보세요. 기즈모의 최종 자세가 달라지고,
+패널의 곱 결과 $(x,y,z,w)$ 숫자도 실제로 다릅니다.
+
+<HamiltonProductSandbox client:visible />
+
+두 축을 같게 맞추면(또는 한 각을 0°로) 가환이 되어 두 결과가 일치합니다.
+그 특수한 경우를 제외하면 **순서가 곧 결과**임을 숫자와 자세로 동시에 확인할 수 있습니다.
+
+## 마무리
+
+- **오일러 각**은 직관적이지만 짐벌 락으로 자유도를 잃습니다.
+- **쿼터니언** $q = (\cos\frac{\theta}{2},\ \sin\frac{\theta}{2}\,\hat{n})$ 은 회전을 한 덩어리로,
+  특이점 없이, 컴팩트하게 표현합니다.
+- 절반 각은 쿼터니언이 벡터를 $2\varphi$로 돌리는 양면 작용에서 나옵니다.
+- $q$와 $-q$는 같은 회전(이중 덮개)이며, 이 사실이 짧은 호/먼 호 보간을 가릅니다.
+- 자세 보간은 **SLERP**로 등속·균일하게, 합성은 **해밀턴 곱**으로 — 단 순서에 주의해서.
+
+다음 챕터에서는 이 회전 표현을 실제 변환 파이프라인(모델·뷰·투영)에 끼워 넣어
+장면을 화면에 그리는 과정으로 이어갑니다.

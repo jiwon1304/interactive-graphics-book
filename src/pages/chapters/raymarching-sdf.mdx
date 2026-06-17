@@ -1,0 +1,162 @@
+---
+layout: ../../layouts/ChapterLayout.astro
+title: "레이마칭과 거리장(SDF)"
+description: 스피어 트레이싱·거리장·스무스 민
+---
+
+import SdfHeatmap from '../../components/demos/raymarching-sdf/SdfHeatmap.tsx';
+import SphereTraceSteps from '../../components/demos/raymarching-sdf/SphereTraceSteps.tsx';
+import StepBudget from '../../components/demos/raymarching-sdf/StepBudget.tsx';
+import SmoothMinBlend from '../../components/demos/raymarching-sdf/SmoothMinBlend.tsx';
+import NormalsShadow from '../../components/demos/raymarching-sdf/NormalsShadow.tsx';
+import RaymarchScene from '../../components/demos/raymarching-sdf/RaymarchScene.tsx';
+
+# 레이마칭과 거리장(SDF)
+
+**삼각형 하나 없이 매끄러운 곡면을** 그릴 수 있을까요? 두 도형이 액체 금속처럼 녹아 붙고,
+법선과 그림자가 거의 공짜로 따라오는 렌더링 방식이 있습니다. 바로 **거리장(SDF)** 위에서
+**레이마칭(ray marching)**, 그중에서도 **스피어 트레이싱(sphere tracing)**입니다.
+
+이 챕터의 주인공은 결과 이미지가 아니라 **과정**입니다. 광선이 한 칸씩 어떻게 전진하는지,
+왜 표면 근처에서 스텝이 촘촘해지는지, 스텝 예산이 모자라면 무엇이 먼저 무너지는지를
+직접 만져 보며 익힙니다.
+
+## 1. 거리장이란 무엇인가
+
+**부호거리함수(Signed Distance Function, SDF)** $f(\mathbf p)$는 공간의 모든 점 $\mathbf p$에서
+가장 가까운 표면까지의 **부호 있는 거리**를 돌려줍니다.
+
+$$
+f(\mathbf p)
+\begin{cases}
+< 0 & \mathbf p \text{ 가 물체 안} \\
+= 0 & \mathbf p \text{ 가 표면 위} \\
+> 0 & \mathbf p \text{ 가 물체 밖}
+\end{cases}
+$$
+
+기본 도형들은 닫힌 공식으로 적힙니다.
+
+- 구: $\;f(\mathbf p) = \lVert \mathbf p - \mathbf c \rVert - r$
+- 평면: $\;f(\mathbf p) = \mathbf p \cdot \mathbf n - h$ ($\mathbf n$은 단위 법선)
+- 박스(중심 원점, 반치수 $\mathbf b$): IQ의 표준 공식
+  $$
+  f(\mathbf p) = \bigl\lVert \max(|\mathbf p| - \mathbf b,\ \mathbf 0) \bigr\rVert
+  + \min\!\bigl(\max(q_x, q_y, q_z),\ 0\bigr), \quad \mathbf q = |\mathbf p| - \mathbf b
+  $$
+  바깥에서는 양수 성분의 길이, 안쪽에서는 가장 덜 음수인 면까지의 거리를 줍니다.
+
+핵심은 이것이 표면 위에서만 정의되는 게 아니라 **공간 전체에서 정의되는 실수값**이라는 점입니다.
+아래에서 그 “장(field)”을 직접 읽어 보세요.
+
+<SdfHeatmap client:visible />
+
+## 2. 스피어 트레이싱 — 한 칸씩 안전하게 점프
+
+광선을 $\mathbf p(t) = \mathbf o + t\,\mathbf d$로 두고 ($\mathbf o$=원점, $\mathbf d$=단위 방향),
+$t=0$에서 출발합니다. 매 스텝마다 현재 점에서 거리값 $h = f(\mathbf p)$를 구합니다.
+$h$는 “가장 가까운 표면까지의 거리”이므로, 반지름 $h$인 공 안에는 **어떤 표면도 없습니다.**
+따라서 광선을 정확히 $h$만큼 전진시켜도 표면을 절대 지나치지 않습니다.
+
+$$
+t \mathrel{+}= h, \qquad \mathbf p \leftarrow \mathbf o + t\,\mathbf d
+$$
+
+- $h < \varepsilon$ → 표면에 닿음 (**히트**)
+- $t > t_{\max}$ → 너무 멀리 감 (**미스**)
+- 스텝 횟수 소진 → 강제 종료
+
+이 “안전 거리만큼 점프”가 sphere tracing이라는 이름의 이유입니다. 아래에서 광선을 조준하고
+**한 스텝씩** 전진시켜 보세요.
+
+<SphereTraceSteps client:visible />
+
+표면을 스치듯 지나가게 각도를 맞추면 스텝이 잔뜩 쌓입니다. 표면에 가까울수록 $h$가 작아지고,
+$h$가 작으면 점프도 짧아지기 때문입니다. 이 성질이 다음 절의 “스텝 예산” 문제로 이어집니다.
+
+## 3. 스텝 예산 — 이미지의 신뢰도
+
+실제 렌더링은 화면의 **모든 픽셀**에서 광선을 마칭합니다. 그런데 스텝 수는 유한하고, 종료
+조건의 $\varepsilon$도 유한합니다. 예산이 빠듯하면 이미지의 어디가 먼저 깨질까요?
+
+<StepBudget client:visible />
+
+최대 스텝 수를 낮추면 **스치는 실루엣(가장자리)부터** 무너집니다. 거기서는 안전원이 작아
+표면에 닿기까지 많은 스텝이 필요한데, 예산이 거기서 떨어지기 때문입니다. 반대로 $\varepsilon$을
+키우면 “닿았다”고 판정하는 문턱이 헐거워져 표면이 두툼해지고 디테일이 뭉개집니다.
+
+## 4. 거리장 산술 — 스무스 민으로 녹이기
+
+거리장의 진짜 매력은 **합성**입니다. 두 거리값을 어떻게 합치느냐로 합집합·교집합·차집합이
+정의됩니다. 단순히 $\min$을 쓰면 날카로운 이음매가 생기지만, **스무스 민(smooth-min)**을 쓰면
+경계가 부드럽게 녹습니다. Inigo Quilez의 다항식 버전은 다음과 같습니다.
+
+$$
+\operatorname{smin}(a, b, k) = \min(a, b) - \frac{h^2 k}{4},
+\qquad h = \max\!\Bigl(1 - \frac{|a-b|}{k},\ 0\Bigr)
+$$
+
+여기서 $k$는 블렌딩 폭입니다($k\to 0$이면 보통의 $\min$). 부울 연산은 이렇게 정의됩니다.
+
+$$
+\text{합집합} = \operatorname{smin}(a, b, k), \quad
+\text{교집합} = \operatorname{smax}(a, b, k) = -\operatorname{smin}(-a, -b, k), \quad
+\text{차집합} = \operatorname{smax}(a, -b, k)
+$$
+
+<SmoothMinBlend client:visible />
+
+두 원을 가까이 붙이고 $k$를 올리면 메타볼처럼 **용접**되는 게 보입니다. 같은 $k$라도 교집합과
+차집합에서 경계가 어떻게 다르게 녹는지 비교해 보세요.
+
+## 5. 공짜로 따라오는 것들 — 법선과 그림자
+
+거리장을 한 번 정의해 두면 셰이딩에 필요한 재료가 거의 공짜로 따라옵니다.
+
+**법선**은 거리장의 기울기입니다.
+
+$$
+\mathbf n \approx \frac{\nabla f}{\lVert \nabla f \rVert},
+\qquad
+\nabla f \approx
+\begin{bmatrix}
+f(\mathbf p + \boldsymbol\delta_x) - f(\mathbf p - \boldsymbol\delta_x) \\
+f(\mathbf p + \boldsymbol\delta_y) - f(\mathbf p - \boldsymbol\delta_y) \\
+f(\mathbf p + \boldsymbol\delta_z) - f(\mathbf p - \boldsymbol\delta_z)
+\end{bmatrix}
+$$
+
+이미 $f$를 평가하고 있으니, 몇 번 더 평가해 유한차분만 하면 됩니다(실전에서는 4-탭
+테트라헤드론 방식이 효율적).
+
+**소프트 섀도우**도 마칭으로 얻습니다. 표면점에서 광원으로 광선을 쏘며, 광선이 표면에 얼마나
+아슬아슬하게 스쳤는지를 누적합니다.
+
+$$
+\text{res} \leftarrow \min\!\Bigl(\text{res},\ \frac{k\,h}{t}\Bigr)
+$$
+
+광선이 표면을 살짝 스칠수록(작은 $h$, 큰 $t$) 더 어두워져, 부드러운 반그림자(penumbra)가
+자연스럽게 생깁니다.
+
+<NormalsShadow client:visible />
+
+광원을 드래그하며 그림자가 늘어나고, $k$로 반그림자의 선명도가 변하는 것을 확인해 보세요.
+
+## 6. 결과물 — 실시간 3D 레이마칭
+
+이제 모든 조각을 GPU 프래그먼트 셰이더에 모읍니다. 화면을 가득 채운 사각형 하나에서,
+픽셀마다 스피어 트레이싱을 돌려 **구 + 박스의 스무스 유니언**을 바닥 평면 위에 그립니다.
+법선은 4-탭, 그림자는 소프트 섀도우, 거기에 간이 앰비언트 오클루전까지.
+
+<RaymarchScene client:visible />
+
+**스텝 히트맵**을 켜면 어떤 픽셀이 가장 많은 스텝을 먹는지(실루엣 가장자리!)가 한눈에 보입니다.
+2절에서 만져 본 직관이 3D에서도 그대로 성립한다는 걸 확인할 수 있죠.
+
+---
+
+레이마칭은 메시 없이 매끄러운 곡면, 무한 반복, 부드러운 블렌딩, 거리 기반 효과(그림자·AO·
+글로우)를 표현하는 데 강력합니다. 대신 픽셀마다 장면 함수를 여러 번 평가해야 하므로 복잡한
+장면에서는 비용이 큽니다. 다음 단계로는 프리미티브 추가, 도메인 반복(`mod`로 무한 복제),
+반사·굴절, 그리고 가속 구조(바운딩 볼륨)로의 확장을 생각해 볼 수 있습니다.
