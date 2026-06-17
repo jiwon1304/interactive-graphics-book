@@ -32,11 +32,10 @@ export const chapters: Chapter[] = [
     draft: true,
   },
   {
-    slug: 'shading',
-    title: '셰이딩',
-    description: '퐁·블린-퐁 셰이딩',
+    slug: 'microfacet-brdf',
+    title: '마이크로패싯 BRDF와 PBR',
+    description: 'Cook–Torrance · GGX · 물리 기반 렌더링',
     section: '셰이딩',
-    draft: true,
   },
   {
     slug: 'rasterization',
