@@ -1,0 +1,39 @@
+# GitHub Pages 자동 배포 (추후 사용)
+#
+# 사용 전 준비:
+#   1) astro.config.mjs 의 site / base 를 본인 저장소에 맞게 설정
+#   2) GitHub 저장소 Settings > Pages > Source 를 "GitHub Actions" 로 변경
+#
+# 이 파일은 GitHub에 push되기 전까지는 아무 동작도 하지 않습니다.
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: withastro/action@v3
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

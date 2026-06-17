@@ -1,0 +1,30 @@
+---
+layout: ../../layouts/ChapterLayout.astro
+title: "3D 변환: 회전"
+description: 회전 행렬과 인터랙티브 3D 데모
+---
+
+import RotatingBox from '../../components/demos/RotatingBox.tsx';
+
+# 3D 변환: 회전
+
+3차원 공간에서 물체를 **회전**시키는 변환은 회전 행렬로 표현됩니다.
+예를 들어 $y$축을 기준으로 각도 $\theta$만큼 회전하는 행렬은 다음과 같습니다.
+
+$$
+R_y(\theta) =
+\begin{bmatrix}
+\cos\theta & 0 & \sin\theta \\
+0 & 1 & 0 \\
+-\sin\theta & 0 & \cos\theta
+\end{bmatrix}
+$$
+
+이 행렬을 점 $\mathbf{p} = (x, y, z)$에 곱하면 $y$축을 중심으로 회전한 새 좌표를 얻습니다.
+아래 데모에서 직접 큐브를 돌려보고, 회전 속도와 색을 바꿔보세요.
+드래그로 카메라를 회전하고, 두 손가락으로 확대/축소할 수 있습니다.
+
+<RotatingBox client:visible />
+
+이처럼 **글 · 수식 · 실시간 3D 데모**를 한 페이지에서 함께 다루는 것이 이 책의 기본 구성입니다.
+다음 챕터부터 변환, 조명, 셰이딩, 래스터화 등 다양한 그래픽스 기법을 같은 방식으로 살펴봅니다.

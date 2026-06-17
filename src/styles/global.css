@@ -1,0 +1,156 @@
+:root {
+  --bg: #0f1115;
+  --surface: #171a21;
+  --border: #272b35;
+  --text: #e6e8ee;
+  --muted: #9aa3b2;
+  --accent: #4f9dde;
+  --max-width: 720px;
+  color-scheme: dark light;
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg: #ffffff;
+    --surface: #f5f6f8;
+    --border: #e2e5ea;
+    --text: #1a1d23;
+    --muted: #5b6472;
+    --accent: #1f6fb8;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Apple SD Gothic Neo',
+    'Pretendard', Roboto, 'Noto Sans KR', sans-serif;
+  line-height: 1.7;
+  font-size: 17px;
+}
+
+.content {
+  max-width: var(--max-width);
+  margin: 0 auto;
+  padding: 2rem 1.1rem 5rem;
+}
+
+h1,
+h2,
+h3 {
+  line-height: 1.3;
+  font-weight: 700;
+}
+h1 {
+  font-size: 1.9rem;
+  margin: 0 0 1rem;
+}
+h2 {
+  font-size: 1.4rem;
+  margin: 2.5rem 0 0.8rem;
+}
+
+a {
+  color: var(--accent);
+  text-decoration: none;
+}
+a:hover {
+  text-decoration: underline;
+}
+
+p {
+  margin: 1rem 0;
+}
+
+code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.9em;
+  background: var(--surface);
+  padding: 0.15em 0.4em;
+  border-radius: 4px;
+}
+
+pre {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 1rem;
+  overflow-x: auto;
+}
+pre code {
+  background: none;
+  padding: 0;
+}
+
+/* KaTeX 수식이 모바일에서 넘칠 때 가로 스크롤 */
+.katex-display {
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 0.4rem 0;
+}
+
+/* ---- 인터랙티브 데모 ---- */
+figure.demo {
+  margin: 2rem 0;
+}
+
+.demo-canvas {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--surface);
+  /* 캔버스 위 제스처(회전/줌)가 페이지 스크롤과 충돌하지 않도록 */
+  touch-action: none;
+}
+
+.demo-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem 1.4rem;
+  margin-top: 0.8rem;
+}
+.demo-controls label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+.demo-controls input[type='range'] {
+  width: 180px;
+  max-width: 60vw;
+}
+
+figcaption {
+  margin-top: 0.6rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+/* ---- 목차 ---- */
+.toc {
+  list-style: none;
+  padding: 0;
+}
+.toc li {
+  margin: 0.5rem 0;
+  padding: 0.7rem 0.9rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+.toc .desc {
+  display: block;
+  color: var(--muted);
+  font-size: 0.9rem;
+}

@@ -1,0 +1,31 @@
+---
+import 'katex/dist/katex.min.css';
+import '../styles/global.css';
+
+interface Props {
+  title?: string;
+  description?: string;
+  // .mdx 파일이 `layout:` frontmatter로 이 레이아웃을 쓰면 props가 frontmatter로 들어옴
+  frontmatter?: { title?: string; description?: string };
+}
+
+const { frontmatter } = Astro.props;
+const title = frontmatter?.title ?? Astro.props.title ?? 'Interactive Computer Graphics';
+const description = frontmatter?.description ?? Astro.props.description ?? '';
+---
+
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="description" content={description} />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <title>{title}</title>
+  </head>
+  <body>
+    <main class="content">
+      <slot />
+    </main>
+  </body>
+</html>
