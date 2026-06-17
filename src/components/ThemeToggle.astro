@@ -1,0 +1,33 @@
+---
+// 다크/라이트 테마 토글 버튼.
+// 실제 테마 적용은 ChapterLayout의 <head> 인라인 스크립트(무플래시)가 먼저 처리하고,
+// 이 버튼은 클릭 시 html[data-theme]와 localStorage를 갱신합니다.
+---
+
+<button
+  type="button"
+  class="theme-toggle"
+  aria-label="다크/라이트 테마 토글"
+  title="다크/라이트 테마 토글"
+  data-theme-toggle
+>
+  {/* 라이트일 때는 달(다크로 전환), 다크일 때는 해(라이트로 전환) 아이콘을 CSS로 노출 */}
+  <svg class="icon-moon" width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <path
+      d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"
+      fill="currentColor"></path>
+  </svg>
+  <svg class="icon-sun" width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <circle cx="12" cy="12" r="4.2" fill="currentColor"></circle>
+    <g stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+      <line x1="12" y1="2.5" x2="12" y2="5"></line>
+      <line x1="12" y1="19" x2="12" y2="21.5"></line>
+      <line x1="2.5" y1="12" x2="5" y2="12"></line>
+      <line x1="19" y1="12" x2="21.5" y2="12"></line>
+      <line x1="4.9" y1="4.9" x2="6.6" y2="6.6"></line>
+      <line x1="17.4" y1="17.4" x2="19.1" y2="19.1"></line>
+      <line x1="4.9" y1="19.1" x2="6.6" y2="17.4"></line>
+      <line x1="17.4" y1="6.6" x2="19.1" y2="4.9"></line>
+    </g>
+  </svg>
+</button>

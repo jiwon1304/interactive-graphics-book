@@ -1,13 +1,9 @@
 ---
 import ChapterLayout from '../layouts/ChapterLayout.astro';
+import { chapters, chapterHref } from '../chapters';
 
-const chapters = [
-  {
-    href: '/chapters/transformations',
-    title: '3D 변환: 회전',
-    desc: '회전 행렬과 실시간으로 조작하는 큐브',
-  },
-];
+// 홈 목차에는 실제(비-draft) 챕터만 노출
+const live = chapters.filter((c) => !c.draft);
 ---
 
 <ChapterLayout
@@ -23,10 +19,10 @@ const chapters = [
   <h2>목차</h2>
   <ul class="toc">
     {
-      chapters.map((c) => (
+      live.map((c) => (
         <li>
-          <a href={c.href}>{c.title}</a>
-          <span class="desc">{c.desc}</span>
+          <a href={chapterHref(c.slug)}>{c.title}</a>
+          {c.description && <span class="desc">{c.description}</span>}
         </li>
       ))
     }

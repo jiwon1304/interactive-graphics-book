@@ -1,23 +1,39 @@
+/*
+ * 테마 토큰.
+ * 라이트가 기본값(:root)이고, 다크는 html[data-theme="dark"]에서 덮어씁니다.
+ * data-theme는 ChapterLayout의 무플래시 인라인 스크립트가 페인트 전에 설정합니다.
+ * - 저장값(localStorage 'theme')이 있으면 그 값을 사용
+ * - 없으면 prefers-color-scheme를 1회성 폴백으로만 사용(이후엔 항상 저장값 기준)
+ * 그래서 CSS에는 @media(prefers-color-scheme) 분기를 두지 않습니다(스크립트가 단일 진실).
+ */
 :root {
+  --bg: #ffffff;
+  --surface: #f5f6f8;
+  --border: #e2e5ea;
+  --text: #1a1d23;
+  --muted: #5b6472;
+  /* 코발트 블루. 흰 배경 대비 AA를 위해 라이트에서는 약간 진한 코발트 사용 */
+  --accent: #2f86cf;
+  /* 브랜드 코발트(고정). 하이라이트 막대·배지 등 면적 큰 요소에 사용 */
+  --accent-brand: #4f9dde;
+  /* accent 위에 올라가는 글자색 */
+  --accent-contrast: #ffffff;
+  /* 사이드바/드로어 폭 */
+  --sidebar-width: 260px;
+  --max-width: 720px;
+  color-scheme: light;
+}
+
+html[data-theme='dark'] {
   --bg: #0f1115;
   --surface: #171a21;
   --border: #272b35;
   --text: #e6e8ee;
   --muted: #9aa3b2;
   --accent: #4f9dde;
-  --max-width: 720px;
-  color-scheme: dark light;
-}
-
-@media (prefers-color-scheme: light) {
-  :root {
-    --bg: #ffffff;
-    --surface: #f5f6f8;
-    --border: #e2e5ea;
-    --text: #1a1d23;
-    --muted: #5b6472;
-    --accent: #1f6fb8;
-  }
+  --accent-brand: #4f9dde;
+  --accent-contrast: #0f1115;
+  color-scheme: dark;
 }
 
 * {
@@ -38,10 +54,11 @@ body {
   font-size: 17px;
 }
 
-.content {
-  max-width: var(--max-width);
-  margin: 0 auto;
-  padding: 2rem 1.1rem 5rem;
+/* 키보드 포커스 가시성(전역) */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
 }
 
 h1,
@@ -98,6 +115,252 @@ pre code {
   padding: 0.4rem 0;
 }
 
+/* =========================================================
+   레이아웃 (모바일 우선: 단일 컬럼 + 상단 바, 데스크톱: 좌측 사이드바)
+   ========================================================= */
+.layout {
+  display: block;
+}
+
+.content {
+  max-width: var(--max-width);
+  margin: 0 auto;
+  padding: 1.5rem 1.1rem 5rem;
+}
+
+/* ---- 모바일 상단 바 ---- */
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.5rem 0.8rem;
+  padding-top: max(0.5rem, env(safe-area-inset-top));
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+}
+.topbar-title {
+  flex: 1;
+  min-width: 0;
+  font-weight: 700;
+  font-size: 1rem;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.topbar-title:hover {
+  text-decoration: none;
+}
+
+/* ---- 햄버거 버튼 ---- */
+.hamburger {
+  display: inline-flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  width: 40px;
+  height: 40px;
+  padding: 9px;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  cursor: pointer;
+}
+.hamburger span {
+  display: block;
+  height: 2px;
+  background: currentColor;
+  border-radius: 2px;
+}
+
+/* ---- 테마 토글 ---- */
+.theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  cursor: pointer;
+}
+.theme-toggle:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+/* 라이트=달 아이콘(다크로 전환 안내), 다크=해 아이콘 */
+.theme-toggle .icon-sun {
+  display: none;
+}
+.theme-toggle .icon-moon {
+  display: block;
+}
+html[data-theme='dark'] .theme-toggle .icon-sun {
+  display: block;
+}
+html[data-theme='dark'] .theme-toggle .icon-moon {
+  display: none;
+}
+
+/* =========================================================
+   사이드바 (모바일에서는 오프캔버스 드로어)
+   ========================================================= */
+.sidebar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 50;
+  width: min(82vw, var(--sidebar-width));
+  height: 100dvh;
+  padding: 1.2rem 1rem;
+  padding-top: max(1.2rem, env(safe-area-inset-top));
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  /* 기본은 화면 밖(드로어 닫힘) */
+  transform: translateX(-100%);
+  transition: transform 0.22s ease;
+}
+body.drawer-open .sidebar {
+  transform: translateX(0);
+}
+
+.sidebar-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.6rem;
+  margin-bottom: 1.2rem;
+}
+.site-title {
+  font-weight: 800;
+  font-size: 1.15rem;
+  line-height: 1.25;
+  color: var(--text);
+}
+.site-title:hover {
+  text-decoration: none;
+  color: var(--accent);
+}
+/* 데스크톱 사이드바 안 토글만 노출, 모바일에서는 상단 바 토글을 쓰므로 숨김 */
+.sidebar-toggle {
+  display: none;
+}
+
+.chapter-nav .nav-group + .nav-group {
+  margin-top: 1.1rem;
+}
+.nav-section {
+  margin: 0 0 0.4rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.chapter-nav ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.chapter-nav li {
+  margin: 0.1rem 0;
+}
+.nav-link {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.5rem 0.7rem;
+  border-radius: 8px;
+  color: var(--text);
+  font-size: 0.95rem;
+}
+a.nav-link:hover {
+  text-decoration: none;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent);
+}
+/* 현재 페이지 하이라이트 */
+.nav-link[aria-current='page'] {
+  background: color-mix(in srgb, var(--accent-brand) 18%, transparent);
+  color: var(--accent);
+  font-weight: 700;
+  box-shadow: inset 3px 0 0 var(--accent-brand);
+}
+/* draft(예정) 항목: 회색·비활성 */
+.nav-link.is-draft {
+  color: var(--muted);
+  cursor: default;
+}
+.draft-badge {
+  font-size: 0.65rem;
+  font-weight: 700;
+  padding: 0.05rem 0.4rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--muted);
+}
+
+/* ---- 드로어 오버레이 ---- */
+.drawer-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  background: rgba(0, 0, 0, 0.45);
+}
+.drawer-overlay[hidden] {
+  display: none;
+}
+
+/* =========================================================
+   이전/다음 네비게이션
+   ========================================================= */
+.prevnext {
+  display: flex;
+  gap: 0.8rem;
+  margin-top: 3rem;
+  padding-top: 1.4rem;
+  border-top: 1px solid var(--border);
+}
+.prevnext > span {
+  flex: 1;
+}
+.prevnext-link {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 0.2rem;
+  padding: 0.8rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text);
+}
+.prevnext-link:hover {
+  text-decoration: none;
+  border-color: var(--accent);
+}
+.prevnext-link.next {
+  text-align: right;
+  align-items: flex-end;
+}
+.prevnext-link .dir {
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+.prevnext-link .ttl {
+  font-weight: 600;
+  color: var(--accent);
+}
+
 /* ---- 인터랙티브 데모 ---- */
 figure.demo {
   margin: 2rem 0;
@@ -129,6 +392,7 @@ figure.demo {
 .demo-controls input[type='range'] {
   width: 180px;
   max-width: 60vw;
+  accent-color: var(--accent);
 }
 
 figcaption {
@@ -137,7 +401,7 @@ figcaption {
   color: var(--muted);
 }
 
-/* ---- 목차 ---- */
+/* ---- 홈 목차 ---- */
 .toc {
   list-style: none;
   padding: 0;
@@ -153,4 +417,38 @@ figcaption {
   display: block;
   color: var(--muted);
   font-size: 0.9rem;
+}
+
+/* =========================================================
+   데스크톱 (>= 860px): 고정 좌측 사이드바 2-컬럼 레이아웃
+   ========================================================= */
+@media (min-width: 860px) {
+  .topbar {
+    display: none;
+  }
+  .drawer-overlay {
+    display: none !important;
+  }
+
+  .layout {
+    display: grid;
+    grid-template-columns: var(--sidebar-width) 1fr;
+  }
+
+  .sidebar {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    height: 100dvh;
+    /* 데스크톱에서는 항상 열려 있음 */
+    transform: none;
+    transition: none;
+  }
+  .sidebar-toggle {
+    display: block;
+  }
+
+  .content {
+    padding-top: 2.5rem;
+  }
 }

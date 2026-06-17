@@ -1,6 +1,9 @@
 ---
 import 'katex/dist/katex.min.css';
 import '../styles/global.css';
+import Sidebar from '../components/Sidebar.astro';
+import ThemeToggle from '../components/ThemeToggle.astro';
+import { getAdjacent, chapterHref, slugFromPathname, homeHref } from '../chapters';
 
 interface Props {
   title?: string;
@@ -12,6 +15,10 @@ interface Props {
 const { frontmatter } = Astro.props;
 const title = frontmatter?.title ?? Astro.props.title ?? 'Interactive Computer Graphics';
 const description = frontmatter?.description ?? Astro.props.description ?? '';
+
+// 현재 챕터 슬러그로 이전/다음 계산(홈 등 챕터가 아니면 둘 다 없음)
+const slug = slugFromPathname(Astro.url.pathname);
+const { prev, next } = slug ? getAdjacent(slug) : {};
 ---
 
 <!doctype html>
@@ -20,12 +27,118 @@ const description = frontmatter?.description ?? Astro.props.description ?? '';
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="description" content={description} />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="icon" type="image/svg+xml" href={`${homeHref()}favicon.svg`} />
     <title>{title}</title>
+    {/* 무플래시: 페인트 전에 저장된 테마(없으면 OS 선호도)로 data-theme 설정 */}
+    <script is:inline>
+      (() => {
+        try {
+          const saved = localStorage.getItem('theme');
+          const theme =
+            saved ?? (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+          document.documentElement.dataset.theme = theme;
+        } catch {
+          document.documentElement.dataset.theme = 'light';
+        }
+      })();
+    </script>
   </head>
   <body>
-    <main class="content">
-      <slot />
-    </main>
+    {/* 모바일 상단 바: 햄버거 + 사이트명 + 테마 토글 */}
+    <header class="topbar">
+      <button
+        type="button"
+        class="hamburger"
+        aria-label="챕터 메뉴 열기"
+        aria-controls="sidebar"
+        aria-expanded="false"
+        data-drawer-open
+      >
+        <span></span><span></span><span></span>
+      </button>
+      <a class="topbar-title" href={homeHref()}>인터랙티브 컴퓨터 그래픽스</a>
+      <ThemeToggle />
+    </header>
+
+    <div class="layout">
+      <Sidebar />
+      {/* 드로어 열렸을 때 본문을 덮는 오버레이(클릭 시 닫힘) */}
+      <div class="drawer-overlay" data-drawer-overlay hidden></div>
+
+      <main class="content">
+        <slot />
+
+        {
+          (prev || next) && (
+            <nav class="prevnext" aria-label="챕터 이동">
+              {prev ? (
+                <a class="prevnext-link prev" href={chapterHref(prev.slug)}>
+                  <span class="dir">← 이전</span>
+                  <span class="ttl">{prev.title}</span>
+                </a>
+              ) : (
+                <span />
+              )}
+              {next ? (
+                <a class="prevnext-link next" href={chapterHref(next.slug)}>
+                  <span class="dir">다음 →</span>
+                  <span class="ttl">{next.title}</span>
+                </a>
+              ) : (
+                <span />
+              )}
+            </nav>
+          )
+        }
+      </main>
+    </div>
+
+    {/* 햄버거 드로어 + 테마 토글 동작 */}
+    <script>
+      const root = document.documentElement;
+
+      // ---- 테마 토글 ----
+      function setTheme(theme: string) {
+        root.dataset.theme = theme;
+        try {
+          localStorage.setItem('theme', theme);
+        } catch {
+          /* localStorage 불가 환경은 무시 */
+        }
+      }
+      document.querySelectorAll<HTMLButtonElement>('[data-theme-toggle]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          setTheme(root.dataset.theme === 'dark' ? 'light' : 'dark');
+        });
+      });
+
+      // ---- 오프캔버스 드로어 ----
+      const body = document.body;
+      const overlay = document.querySelector<HTMLElement>('[data-drawer-overlay]');
+      const hamburger = document.querySelector<HTMLButtonElement>('[data-drawer-open]');
+      const sidebar = document.getElementById('sidebar');
+
+      function openDrawer() {
+        body.classList.add('drawer-open');
+        overlay?.removeAttribute('hidden');
+        hamburger?.setAttribute('aria-expanded', 'true');
+      }
+      function closeDrawer() {
+        body.classList.remove('drawer-open');
+        overlay?.setAttribute('hidden', '');
+        hamburger?.setAttribute('aria-expanded', 'false');
+      }
+
+      hamburger?.addEventListener('click', () => {
+        body.classList.contains('drawer-open') ? closeDrawer() : openDrawer();
+      });
+      overlay?.addEventListener('click', closeDrawer);
+      // 드로어 안의 링크를 누르면 닫기
+      sidebar?.querySelectorAll('a').forEach((a) => a.addEventListener('click', closeDrawer));
+      // Esc로 닫기
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && body.classList.contains('drawer-open')) closeDrawer();
+      });
+    </script>
   </body>
 </html>

@@ -1,0 +1,51 @@
+---
+// 사이드바: 사이트 제목(홈 링크) + section별 챕터 목록.
+// 데스크톱에서는 고정 좌측 패널, 모바일에서는 오프캔버스 드로어로 같은 마크업을 재사용합니다.
+import { chaptersBySection, chapterHref, homeHref } from '../chapters';
+import ThemeToggle from './ThemeToggle.astro';
+
+// 현재 경로(끝 슬래시 정규화)와 비교해 활성 챕터를 표시
+const here = Astro.url.pathname.replace(/\/$/, '');
+const groups = chaptersBySection();
+---
+
+<aside class="sidebar" id="sidebar" aria-label="챕터 목록">
+  <div class="sidebar-head">
+    <a class="site-title" href={homeHref()}>인터랙티브<br />컴퓨터 그래픽스</a>
+    <div class="sidebar-toggle">
+      <ThemeToggle />
+    </div>
+  </div>
+
+  <nav class="chapter-nav">
+    {
+      groups.map((g) => (
+        <div class="nav-group">
+          {g.section && <p class="nav-section">{g.section}</p>}
+          <ul>
+            {g.items.map((c) =>
+              c.draft ? (
+                <li>
+                  <span class="nav-link is-draft" aria-disabled="true">
+                    {c.title}
+                    <span class="draft-badge">예정</span>
+                  </span>
+                </li>
+              ) : (
+                <li>
+                  <a
+                    class="nav-link"
+                    href={chapterHref(c.slug)}
+                    aria-current={here === chapterHref(c.slug).replace(/\/$/, '') ? 'page' : undefined}
+                  >
+                    {c.title}
+                  </a>
+                </li>
+              )
+            )}
+          </ul>
+        </div>
+      ))
+    }
+  </nav>
+</aside>
