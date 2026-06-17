@@ -8,11 +8,10 @@ import rehypeKatex from 'rehype-katex';
 
 // https://astro.build/config
 export default defineConfig({
-  // 로컬 개발에는 영향 없음. GitHub Pages 배포 시 아래 두 줄을 본인 값으로 바꾸세요.
-  //  - 사용자/조직 페이지(user.github.io):   site: 'https://USERNAME.github.io'
-  //  - 프로젝트 페이지(user.github.io/repo):  site + base: '/REPO/'
-  // site: 'https://USERNAME.github.io',
-  // base: '/interactive-graphics-book/',
+  // GitHub Pages 프로젝트 페이지 배포 설정.
+  // 사용자명/저장소명이 다르면 아래 두 줄을 바꾸세요.
+  site: 'https://jiwon1304.github.io',
+  base: '/interactive-graphics-book/',
 
   integrations: [react(), mdx()],
 
