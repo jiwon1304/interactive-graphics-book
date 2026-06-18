@@ -5,9 +5,9 @@ import { useCanvas2D, seededNoise, type Canvas2DContext } from './shared';
 // 패싯(미세 거울) 개수와 입사광선 개수.
 const FACET_COUNT = 22;
 const RAY_COUNT = 9;
-// 입사광선 방향(화면 기준): 위에서 비스듬히 내려옴. (정규화)
+// 입사광선 방향(화면 기준, 캔버스 y는 아래로 증가): 위에서 비스듬히 내려옴 → y는 양수. (정규화)
 const INCIDENT = (() => {
-  const v = { x: 0.45, y: -1 };
+  const v = { x: 0.45, y: 1 };
   const len = Math.hypot(v.x, v.y);
   return { x: v.x / len, y: v.y / len };
 })();

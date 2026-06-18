@@ -28,7 +28,7 @@ type Scenario = 'normal' | 'gwait' | 'cwait' | 'idle' | 'custom';
 
 const PRESETS: Record<Exclude<Scenario, 'custom'>, Mix> = {
   // 정상(GPU bound): 그래픽스 거의 busy, wait/idle 작음.
-  normal: { gWait: 8, gIdle: 0, cWait: 25, cIdle: 0 },
+  normal: { gWait: 8, gIdle: 0, cWait: 12, cIdle: 0 },
   // 그래픽스 Wait 큼(문제).
   gwait: { gWait: 45, gIdle: 0, cWait: 20, cIdle: 0 },
   // 컴퓨트 Wait(정상).
