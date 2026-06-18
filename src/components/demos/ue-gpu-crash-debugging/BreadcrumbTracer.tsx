@@ -31,7 +31,7 @@ const PASSES: ReadonlyArray<RenderPass> = [
   { id: 'postprocess', label: 'PostProcess' },
 ] as const;
 
-const CANVAS_H = 330;
+const CANVAS_H = 350;
 
 // 정지시킬 크래시 시점: BasePass(인덱스 2)에서 hang.
 const CRASH_INDEX = 2;
@@ -179,8 +179,10 @@ export default function BreadcrumbTracer() {
       ctx.textBaseline = 'alphabetic';
     }
 
-    // --- 진단 배너(맨 아래) ---
-    const bannerY = bRowY0 + PASSES.length * (bRowH + bRowGap) + 6;
+    // --- 진단 배너(맨 아래) — 더 긴 쪽(왼쪽 패스 목록) 끝 아래에 둬 행과 겹치지 않게 ---
+    const listEnd = rowY0 + PASSES.length * (rowH + rowGap);
+    const bufEnd = bRowY0 + PASSES.length * (bRowH + bRowGap);
+    const bannerY = Math.max(listEnd, bufEnd) + 6;
     const bannerH = h - bannerY - 8;
     if (bannerH > 18) {
       roundRect(ctx, padX, bannerY, w - padX * 2, bannerH, 7);

@@ -193,12 +193,13 @@ export default function CrashReportPipeline() {
       ctx.textBaseline = 'alphabetic';
     }
 
-    // 맨 위 행에 "최우선" 주석
-    ctx.font = monoFont(8.5);
+    // 테이블 아래 주석(헤더와 겹치지 않게 본문 아래 빈 공간에)
+    const noteY = bodyY + rows.length * rowH + 16;
+    ctx.font = monoFont(9);
     ctx.fillStyle = UE_COLORS.bad;
     ctx.textAlign = 'left';
-    ctx.fillText('← 가장 빈번 = 최우선', colTop, bodyY - 2);
-    ctx.textAlign = 'left';
+    ctx.textBaseline = 'alphabetic';
+    ctx.fillText('맨 위 행 = 가장 빈번 → 최우선(Blocker)', padX + 6, noteY);
   };
 
   const { ref } = useCanvas2d(draw, []);

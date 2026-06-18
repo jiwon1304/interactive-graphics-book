@@ -130,7 +130,7 @@ export default function StatGpuDiagnoser() {
         ctx.fillStyle = s.color;
         ctx.fillRect(x, y, sw, barH);
         ctx.restore();
-        if (sw > 34) {
+        if (sw > 40) {
           ctx.font = monoFont(9.5);
           ctx.fillStyle = '#fff';
           ctx.textAlign = 'center';
