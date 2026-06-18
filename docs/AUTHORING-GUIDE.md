@@ -1,0 +1,202 @@
+# 문서 작성 가이드라인 (챕터 집필 에이전트용)
+
+이 문서를 **반드시 먼저 읽고** 챕터를 기획·집필·검수하세요. 목표는 책의 처음 의도에 맞게,
+일관되고 높은 품질로, 그리고 **읽는 사람이 재미있게** 쓰는 것입니다.
+
+> 한 줄 요약: **"결과를 만지는 데모"가 아니라 "과정을 보여주는 인터랙티브"를, 여러 개,
+> 충분히 길고 수학적으로 깊은 글 속에, 재미있게 엮어라.**
+
+---
+
+## 0. 이 책의 정체성 (왜 이 책인가)
+
+- 컴퓨터 그래픽스 기법을 **글 + 수식(KaTeX) + 직접 조작하는 실시간 인터랙티브**로 이해시키는 웹 책.
+- **데스크톱과 모바일 모두**에서 잘 동작해야 한다(터치·데이터·성능 고려).
+- 토픽 범위는 입문~최신 전체지만 **심화·최신 기술을 다양하게** 다루는 데 무게를 둔다. 기초는 형식상 최소로.
+- 토픽 후보 목록: [`docs/topic-catalog.md`](./topic-catalog.md).
+
+---
+
+## 1. 4대 집필 원칙 (가장 중요 — 여기서 품질이 갈린다)
+
+### 1.1 과정 > 결과 (제1원칙)
+완성된 결과물을 슬라이더로 만지게 하는 것에 그치지 말 것. **메커니즘·중간량·알고리즘의 진행**을
+인터랙티브로 드러내라.
+
+- ❌ 나쁨(결과만): 다 셰이딩된 구에 거칠기·금속성 슬라이더만 붙인다.
+- ✅ 좋음(과정): 미세면(거울)이 거칠기에 따라 **퍼지는 과정**을 보인다 / `D → ×G → ×F → 조립`을
+  단계별로 토글하며 각 항의 기여를 본다 / de Casteljau **사다리**가 t에 따라 곡선 위 한 점으로
+  붕괴하는 과정 / 스피어 트레이싱의 **안전원**이 한 스텝씩 점프하는 과정 / 몬테카를로 표본이
+  **하나씩 떨어지며** 추정값이 수렴하는 과정.
+
+판단 기준: "이 위젯은 *어떻게* 그 결과가 만들어지는지를 보여주는가, 아니면 결과만 보여주는가?"
+
+### 1.2 인터랙티브를 많이, 의도적으로 배치
+- 챕터당 **여러 개**(보통 5~7개). 개념이 도입되는 **바로 그 자리**에 둔다.
+- 각 개념마다 "그 아이디어를 그 위치에서 가장 잘 가르치는 인터랙티브"가 무엇인지 **충분히 고민**하고
+  고르라. 왜 그 위젯을 거기 뒀는지 핸드오프 노트(§6)에 적는다.
+
+### 1.3 충분히 길고, 수학적으로 풍부하게
+- **길이**: 짧은 개요로 끝내지 말 것. 동기 → 직관 → 유도 → 인터랙티브 → 조립/종합 → "더 나아가기"로
+  충분히 전개한다.
+- **수학**: 공식을 **나열하지 말고 유도(derive)** 하라. 엄밀한 표기, 중간 단계, 짧은 증명/직관,
+  성질, 다른 개념과의 연결을 담는다. 수학은 부록이 아니라 **본문의 하이라이트**다 —
+  항상 *직관 먼저 → 수식 → 그 수식을 만지는 인터랙티브*로 잇는다.
+
+### 1.4 재미·호기심 (사람 독자 기준으로 검수)
+- 강한 **훅**으로 시작(궁금증을 던지는 질문/현상). 중간중간 "**직접 해보세요**"와 놀라운 비교.
+- 다 쓴 뒤에는 **사람이 읽는다고 생각하고** 평가하라: 재미있는가? 명료한가? 놀라운 순간이 있는가?
+
+---
+
+## 2. 챕터 구조 템플릿
+
+```mdx
+---
+layout: ../../layouts/ChapterLayout.astro
+title: "챕터 제목"
+description: 한 줄 설명
+---
+
+import Widget1 from '../../components/demos/<slug>/Widget1.tsx';
+import Widget2 from '../../components/demos/<slug>/Widget2.tsx';
+
+# 챕터 제목
+
+## (훅) 왜 이게 궁금한가
+현상/질문으로 시작. 곧바로 만질 수 있는 인터랙티브로 답의 실마리를 준다.
+
+<Widget1 client:visible />
+
+## 개념 — 직관 먼저
+말과 그림(인터랙티브)으로 직관을 세운 뒤,
+
+## 수식 — 유도
+$$ ... $$  (KaTeX. 인라인 $...$, 블록 $$...$$)
+유도 과정을 단계별로. 각 항/기호가 무엇을 뜻하는지.
+
+<Widget2 client:visible />   ← 방금 유도한 양을 직접 만져보게
+
+## 조립 / 종합
+부분들을 합쳐 전체 그림을 완성. 마지막 종합 인터랙티브.
+
+## 더 나아가기
+이 챕터가 다룬 범위의 경계와 다음 단계(관련 기법·확장)를 명시.
+```
+
+- 수식: KaTeX. **`.tsx` 안의 JSX 텍스트에서는 `$...$`가 렌더되지 않는다**(KaTeX는 mdx에서만 동작).
+  컴포넌트 캡션에 수식을 쓰지 말 것.
+- 링크는 `chapterHref(slug)` / `homeHref()` 사용(절대경로 `/chapters/...` 직접 금지 — base 경로 존중).
+
+---
+
+## 3. 새 챕터 등록
+
+`src/chapters.ts`의 `chapters` 배열에 순서대로 추가:
+```ts
+{ slug: 'my-slug', title: '제목', description: '한 줄', section: '섹션명' }
+```
+- 섹션 예: `기초 · 지오메트리 · 셰이딩 · 레이트레이싱 · 절차적 생성 · 렌더링`. 같은 `section`끼리 묶여 사이드바에 표시.
+- 아직 글 전이면 `draft: true` → 사이드바에 회색 비활성(링크 없음), 이전/다음에서 제외.
+- **병렬로 여러 챕터를 동시에 만들 때는 `chapters.ts`를 직접 건드리지 말 것**(동시 편집 충돌). 등록 항목을
+  보고하면 오케스트레이터가 중앙에서 한 번에 등록한다.
+
+---
+
+## 4. 인터랙티브(데모) 작성 규약
+
+### 4.1 파일 배치 / 소유권
+- 한 챕터의 모든 컴포넌트는 **`src/components/demos/<slug>/`** 폴더 하나에 모은다(병렬 작업 충돌 방지).
+- 챕터당 핸드오프 노트는 `docs/chapters/<slug>.md`(§6).
+
+### 4.2 3D 위젯 (three.js / react-three-fiber)
+- 항상 **`src/components/DemoCanvas.tsx`** 래퍼로 렌더. props:
+  `children, height?, animate?(기본 true), cameraPosition?, lights?(기본 true), axes?, grid?`.
+  (dpr 상한, frameloop, touch-action 처리가 들어있음.)
+- 조명/축/격자는 직접 만들지 말고 `lights/axes/grid` prop으로 켠다. 헬퍼는
+  `src/components/three/`(`StandardLights`, `Axes`, `GroundGrid`) — **반드시 `<Canvas>` 내부**에서만.
+- 카메라: drei `OrbitControls`(`enablePan={false} makeDefault`). 터치/핀치 기본 지원.
+- 커스텀 셰이더는 GLSL3(WebGL2). `ShaderMaterial`은 `useMemo([])`로 1회 생성하고 uniform만
+  `useFrame`에서 갱신(매 프레임 재생성 금지). 참고: `demos/microfacet-brdf/`.
+
+### 4.3 UI 컨트롤
+- **`src/components/controls/`** 프리미티브로 조립(직접 `<input>` 쓰지 말 것):
+  `ControlPanel`(컨테이너) 안에 `Slider{label,value,min,max,step?,onChange,unit?,format?}` /
+  `ColorControl{label,value,onChange}` / `ToggleControl{label,checked,onChange}` /
+  `SelectControl<T>{label,value,options,onChange}`.
+- 컨트롤은 **반드시 `<Canvas>` 밖(DOM)** 에서 렌더. 색은 전역 CSS 변수를 따르므로 테마에 자동 적응.
+
+### 4.4 2D 위젯 (canvas / SVG)
+도식·그래프·단계 시각화는 순수 React + `<canvas>`가 가장 적합하다. 단:
+- **테마 인식**: 색을 하드코딩하지 말고 `getComputedStyle`로 `--text/--muted/--accent/--surface/--border`를 읽어라.
+- **HiDPI를 반드시 올바르게**(아래 §5.1) — 이게 틀리면 화면이 절반만 그려진다.
+- **터치/포인터**(아래 §5.2).
+
+---
+
+## 5. 흔한 함정 (우리가 실제로 겪은 것 — 꼭 피할 것)
+
+### 5.1 HiDPI 캔버스: `putImageData`는 변환을 무시한다
+고해상도 화면(dpr=2)에서 캔버스 backing store는 `w·dpr × h·dpr`이고 ctx에 dpr 스케일 변환을 건다.
+이때 **CSS 크기(w×h) `ImageData`를 `putImageData`로 찍으면 변환이 무시되어 좌상단 1/4(가로·세로 절반)에만
+그려진다.** 벡터 오버레이는 변환을 거쳐 전체로 그려지므로 "필드가 등고선보다 절반 크기"가 된다.
+
+올바른 두 패턴 중 하나를 쓸 것:
+- **(A) 오프스크린 + drawImage**: `demos/raymarching-sdf/sdf2d.ts`의 `blitImage(ctx, img, w, h)` —
+  ImageData를 오프스크린 캔버스에 넣고 `ctx.drawImage(off,0,0,w,h)`로 올린다(=변환 존중, 전체를 채움).
+- **(B) 디바이스 해상도로 렌더**: `canvas.width=cssW*dpr`로 만들고 `setTransform(1,0,0,1,0,0)`(identity)
+  상태에서 `createImageData(canvas.width, ...)`를 `putImageData` → 그 뒤 오버레이는 `setTransform(dpr,...)`로.
+  참고: `demos/noise-functions/GradientVsValue.tsx`.
+
+절대 하지 말 것: dpr 변환이 걸린 ctx에 CSS 크기 ImageData를 `putImageData`.
+
+### 5.2 모바일/iOS Safari 터치
+React의 `onPointer*`만으로는 iOS Safari에서 드래그가 안 먹는 경우가 있다. **네이티브 포인터 리스너**를
+쓰는 `demos/raymarching-sdf/usePointerDrag.ts` 패턴을 참고하라(`{onDown,onMove,onUp,onHover,onLeave}`).
+드래그가 페이지 스크롤과 싸우지 않도록 캔버스에 `touch-action: none`(3D 래퍼 `.demo-canvas`엔 이미 적용).
+
+### 5.3 SSR 안전성
+데모는 `client:visible`로 클라이언트에서만 로드된다. **무작위/시간 의존 값은 SSR을 깨지 않게** 클라이언트
+이펙트/핸들러 안에서만 생성(난수는 시드형 PRNG 권장).
+
+### 5.4 병렬 작업 규칙
+여러 챕터를 동시에 만들 때: 자기 `<slug>` 폴더 밖 파일을 건드리지 말 것. `chapters.ts`·`package.json`은
+공용이므로 직접 수정 금지(보고만). 병렬 중에는 `npm run build/dev`·`git`를 직접 돌리지 말 것
+(동시 빌드 충돌) — 오케스트레이터가 중앙에서 검증·커밋한다.
+
+---
+
+## 6. 핸드오프 노트 (필수): `docs/chapters/<slug>.md`
+나중에 이 챕터를 **수정할 다른 에이전트**를 위해 작성한다. 담을 것:
+- 챕터의 목적과 다루는 범위(어디까지/어디서 멈췄는지).
+- **각 인터랙티브 위젯 목록** — 무슨 개념을 가르치나, **과정인가 결과인가**, 컴포넌트 파일, 주요 파라미터.
+- 기술 노트(셰이더/수식, 근사·단순화한 부분, 알려진 한계).
+- 서사/재미 의도, TODO, 확장 방법, 관련 토픽.
+
+---
+
+## 7. 작성 후 검수 체크리스트 (제출 전 자가 점검)
+
+**사람 독자로 읽으며:**
+- [ ] 훅이 궁금증을 부르고, 끝까지 재미·호기심이 유지되는가?
+- [ ] 위젯이 **과정**을 드러내는가(결과만 만지는 게 아닌가)? 개수·배치가 적절한가?
+- [ ] 충분히 길고, 수학이 **유도**를 포함하며 직관·인터랙티브와 엮였는가?
+
+**기술:**
+- [ ] `npm run check` 0 errors (TS strict). `npm run build` 통과.
+- [ ] 2D 위젯 HiDPI 올바름(§5.1), 모바일 터치 동작(§5.2), 테마 라이트/다크 모두 정상.
+- [ ] 컨트롤은 `<Canvas>` 밖, three 헬퍼는 안. `client:visible`로 삽입.
+- [ ] `chapters.ts` 등록 항목 보고, 핸드오프 노트 작성.
+
+---
+
+## 8. 집필 파이프라인에서의 위치(참고)
+챕터는 보통 **L1 기획**(무엇을·어떻게·몇 편으로·어디까지 + 위젯 설계) → **L2 집필**(실제 파일 작성) →
+**검수**(호출자가 사람 독자로 읽고 **직접 수정**) 순으로 만들어진다. 어느 단계든 이 가이드의 원칙을 따른다.
+
+## 참고 예시 (복사해서 시작)
+- 표준 데모 템플릿: `src/components/demos/RotatingBox.tsx`
+- 과정 중심 2D 위젯 + HiDPI/터치 모범: `src/components/demos/raymarching-sdf/`
+- 디바이스 해상도 렌더 패턴: `src/components/demos/noise-functions/`
+- 커스텀 GLSL 셰이더 데모: `src/components/demos/microfacet-brdf/`
+- 챕터(mdx): `src/pages/chapters/microfacet-brdf.mdx`, `.../raymarching-sdf.mdx`
