@@ -1,6 +1,7 @@
-import { useRef, useState } from 'react';
+import { useState } from 'react';
 import { ControlPanel, Slider, ToggleControl } from '../../controls';
 import { useCanvas2d, type DrawCtx } from './useCanvas2d';
+import { usePointerDrag } from './usePointerDrag';
 import {
   v2,
   add,
@@ -87,7 +88,6 @@ export default function NormalsShadow() {
   const [light, setLight] = useState<Vec2>(v2(-1.2, 1.1));
   const [k, setK] = useState(8);
   const [showNormals, setShowNormals] = useState(true);
-  const dragRef = useRef(false);
 
   const draw = (d: DrawCtx) => {
     const { ctx, w, h, theme, map } = d;
@@ -185,21 +185,17 @@ export default function NormalsShadow() {
 
   const { ref } = useCanvas2d(draw, [light, k, showNormals]);
 
-  const onDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    const canvas = ref.current;
-    if (!canvas) return;
-    e.currentTarget.setPointerCapture(e.pointerId);
-    dragRef.current = true;
-    moveLight(e);
-  };
-  const moveLight = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    const canvas = ref.current;
-    if (!canvas) return;
+  const moveLight = (e: PointerEvent, canvas: HTMLCanvasElement) => {
     const rect = canvas.getBoundingClientRect();
     const map = makeMapper(rect.width, rect.height);
     const s = map.toScene(pointerToCanvas(e, canvas));
     setLight(v2(Math.max(-1.9, Math.min(1.9, s.x)), Math.max(-1.4, Math.min(1.4, s.y))));
   };
+
+  usePointerDrag(ref, {
+    onDown: moveLight, // 누른 곳으로 광원 이동 + 드래그 시작
+    onMove: moveLight,
+  });
 
   return (
     <figure className="demo">
@@ -207,10 +203,6 @@ export default function NormalsShadow() {
         ref={ref}
         className="demo-canvas"
         style={{ height: 360, touchAction: 'none', display: 'block', cursor: 'crosshair' }}
-        onPointerDown={onDown}
-        onPointerMove={(e) => { if (dragRef.current) moveLight(e); }}
-        onPointerUp={() => { dragRef.current = false; }}
-        onPointerCancel={() => { dragRef.current = false; }}
       />
       <ControlPanel>
         <Slider

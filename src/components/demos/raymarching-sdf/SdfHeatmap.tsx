@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { ControlPanel, ToggleControl } from '../../controls';
 import { useCanvas2d, type DrawCtx } from './useCanvas2d';
+import { usePointerDrag } from './usePointerDrag';
 import {
   v2,
   sub,
@@ -116,14 +117,19 @@ export default function SdfHeatmap() {
 
   const { ref } = useCanvas2d(draw, [probe, showIso]);
 
-  const onMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    const canvas = ref.current;
-    if (!canvas) return;
+  const probeAt = (e: PointerEvent, canvas: HTMLCanvasElement) => {
     const px = pointerToCanvas(e, canvas);
     const rect = canvas.getBoundingClientRect();
     const map = makeMapper(rect.width, rect.height);
     setProbe(map.toScene(px));
   };
+
+  usePointerDrag(ref, {
+    onDown: probeAt, // 손가락/마우스로 누른 지점을 탐침
+    onMove: probeAt, // 드래그하며 따라옴 (터치)
+    onHover: probeAt, // 마우스 호버 (데스크톱)
+    onLeave: () => setProbe(null),
+  });
 
   return (
     <figure className="demo">
@@ -131,12 +137,6 @@ export default function SdfHeatmap() {
         ref={ref}
         className="demo-canvas"
         style={{ height: 360, cursor: 'crosshair', display: 'block', touchAction: 'none' }}
-        onPointerDown={(e) => {
-          e.currentTarget.setPointerCapture(e.pointerId);
-          onMove(e);
-        }}
-        onPointerMove={onMove}
-        onPointerLeave={() => setProbe(null)}
       />
       <ControlPanel>
         <ToggleControl label="등거리선 표시" checked={showIso} onChange={setShowIso} />

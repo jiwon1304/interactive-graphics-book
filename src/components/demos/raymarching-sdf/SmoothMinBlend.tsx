@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react';
 import { ControlPanel, Slider, SelectControl, type SelectOption } from '../../controls';
 import { useCanvas2d, type DrawCtx } from './useCanvas2d';
+import { usePointerDrag } from './usePointerDrag';
 import {
   v2,
   sub,
@@ -89,9 +90,7 @@ export default function SmoothMinBlend() {
 
   const { ref } = useCanvas2d(draw, [cA, cB, k, op]);
 
-  const pick = (e: React.PointerEvent<HTMLCanvasElement>): 'A' | 'B' | null => {
-    const canvas = ref.current;
-    if (!canvas) return null;
+  const pick = (e: PointerEvent, canvas: HTMLCanvasElement): 'A' | 'B' | null => {
     const rect = canvas.getBoundingClientRect();
     const map = makeMapper(rect.width, rect.height);
     const s = map.toScene(pointerToCanvas(e, canvas));
@@ -102,24 +101,25 @@ export default function SmoothMinBlend() {
     return null;
   };
 
-  const onDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    const t = pick(e);
-    if (t) {
-      e.currentTarget.setPointerCapture(e.pointerId);
+  usePointerDrag(ref, {
+    onDown: (e, canvas) => {
+      const t = pick(e, canvas);
+      if (!t) return false; // 핸들 밖이면 드래그 시작 안 함
       dragRef.current = t;
-    }
-  };
-  const onMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    if (!dragRef.current) return;
-    const canvas = ref.current;
-    if (!canvas) return;
-    const rect = canvas.getBoundingClientRect();
-    const map = makeMapper(rect.width, rect.height);
-    const s = map.toScene(pointerToCanvas(e, canvas));
-    const c = v2(Math.max(-1.7, Math.min(1.7, s.x)), Math.max(-1.3, Math.min(1.3, s.y)));
-    if (dragRef.current === 'A') setCA(c);
-    else setCB(c);
-  };
+    },
+    onMove: (e, canvas) => {
+      if (!dragRef.current) return;
+      const rect = canvas.getBoundingClientRect();
+      const map = makeMapper(rect.width, rect.height);
+      const s = map.toScene(pointerToCanvas(e, canvas));
+      const c = v2(Math.max(-1.7, Math.min(1.7, s.x)), Math.max(-1.3, Math.min(1.3, s.y)));
+      if (dragRef.current === 'A') setCA(c);
+      else setCB(c);
+    },
+    onUp: () => {
+      dragRef.current = null;
+    },
+  });
 
   return (
     <figure className="demo">
@@ -127,10 +127,6 @@ export default function SmoothMinBlend() {
         ref={ref}
         className="demo-canvas"
         style={{ height: 360, touchAction: 'none', display: 'block', cursor: 'grab' }}
-        onPointerDown={onDown}
-        onPointerMove={onMove}
-        onPointerUp={() => { dragRef.current = null; }}
-        onPointerCancel={() => { dragRef.current = null; }}
       />
       <ControlPanel>
         <SelectControl label="연산" value={op} options={OPS} onChange={setOp} />

@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState } from 'react';
 import { ControlPanel, Slider } from '../../controls';
 import { useCanvas2d, type DrawCtx } from './useCanvas2d';
+import { usePointerDrag } from './usePointerDrag';
 import {
   v2,
   add,
@@ -172,45 +173,42 @@ export default function SphereTraceSteps() {
 
   const { ref } = useCanvas2d(draw, [origin, dir, shown, result]);
 
-  const onDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    const canvas = ref.current;
-    if (!canvas) return;
-    e.currentTarget.setPointerCapture(e.pointerId);
-    const rect = canvas.getBoundingClientRect();
-    const map = makeMapper(rect.width, rect.height);
-    const px = pointerToCanvas(e, canvas);
-    const oPx = map.toPx(originRef.current);
-    if (Math.hypot(px.x - oPx.x, px.y - oPx.y) < 18) {
-      // 원점 핸들 드래그
-      dragRef.current = 'origin';
-    } else {
-      // 빈 곳: 탭한 방향으로 각도 설정 + 드래그 중 계속 추적
-      dragRef.current = 'angle';
-      const s = map.toScene(px);
-      const a = Math.atan2(s.y - originRef.current.y, s.x - originRef.current.x);
-      setAngleDeg((a * 180) / Math.PI);
-    }
-  };
-
-  const onMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    if (!dragRef.current) return;
-    const canvas = ref.current;
-    if (!canvas) return;
-    const rect = canvas.getBoundingClientRect();
-    const map = makeMapper(rect.width, rect.height);
-    const s = map.toScene(pointerToCanvas(e, canvas));
-    if (dragRef.current === 'origin') {
-      setOrigin(
-        v2(Math.max(-1.9, Math.min(1.9, s.x)), Math.max(-1.4, Math.min(1.4, s.y))),
-      );
-    } else {
-      // 손가락 이동을 따라 각도를 연속 갱신
-      const a = Math.atan2(s.y - originRef.current.y, s.x - originRef.current.x);
-      setAngleDeg((a * 180) / Math.PI);
-    }
-  };
-
-  const onUp = () => { dragRef.current = null; };
+  usePointerDrag(ref, {
+    onDown: (e, canvas) => {
+      const rect = canvas.getBoundingClientRect();
+      const map = makeMapper(rect.width, rect.height);
+      const px = pointerToCanvas(e, canvas);
+      const oPx = map.toPx(originRef.current);
+      if (Math.hypot(px.x - oPx.x, px.y - oPx.y) < 18) {
+        // 원점 핸들 드래그
+        dragRef.current = 'origin';
+      } else {
+        // 빈 곳: 탭한 방향으로 각도 설정 + 드래그 중 계속 추적
+        dragRef.current = 'angle';
+        const s = map.toScene(px);
+        const a = Math.atan2(s.y - originRef.current.y, s.x - originRef.current.x);
+        setAngleDeg((a * 180) / Math.PI);
+      }
+    },
+    onMove: (e, canvas) => {
+      if (!dragRef.current) return;
+      const rect = canvas.getBoundingClientRect();
+      const map = makeMapper(rect.width, rect.height);
+      const s = map.toScene(pointerToCanvas(e, canvas));
+      if (dragRef.current === 'origin') {
+        setOrigin(
+          v2(Math.max(-1.9, Math.min(1.9, s.x)), Math.max(-1.4, Math.min(1.4, s.y))),
+        );
+      } else {
+        // 손가락 이동을 따라 각도를 연속 갱신
+        const a = Math.atan2(s.y - originRef.current.y, s.x - originRef.current.x);
+        setAngleDeg((a * 180) / Math.PI);
+      }
+    },
+    onUp: () => {
+      dragRef.current = null;
+    },
+  });
 
   return (
     <figure className="demo">
@@ -218,10 +216,6 @@ export default function SphereTraceSteps() {
         ref={ref}
         className="demo-canvas"
         style={{ height: 360, touchAction: 'none', display: 'block', cursor: 'pointer' }}
-        onPointerDown={onDown}
-        onPointerMove={onMove}
-        onPointerUp={onUp}
-        onPointerCancel={onUp}
       />
       <ControlPanel>
         <Slider
