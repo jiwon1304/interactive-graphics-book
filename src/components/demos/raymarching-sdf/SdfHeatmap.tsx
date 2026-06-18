@@ -130,7 +130,7 @@ export default function SdfHeatmap() {
       <canvas
         ref={ref}
         className="demo-canvas"
-        style={{ height: 360, cursor: 'crosshair', display: 'block' }}
+        style={{ height: 360, cursor: 'crosshair', display: 'block', touchAction: 'none' }}
         onPointerDown={(e) => {
           e.currentTarget.setPointerCapture(e.pointerId);
           onMove(e);

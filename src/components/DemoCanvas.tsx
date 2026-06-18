@@ -41,6 +41,7 @@ export default function DemoCanvas({
         frameloop={animate ? 'always' : 'demand'}
         camera={{ position: cameraPosition, fov: 50 }}
         gl={{ antialias: true, powerPreference: 'high-performance' }}
+        style={{ touchAction: 'none' }}
       >
         <Suspense fallback={null}>
           {lights && <StandardLights />}

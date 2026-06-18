@@ -376,6 +376,13 @@ figure.demo {
   touch-action: none;
 }
 
+/* touch-action은 비상속 속성이라 R3F/Canvas가 생성하는 <canvas> 자식에도 명시 필요.
+   OrbitControls가 domElement(<canvas>)에 직접 이벤트를 붙이기 때문에 여기에 없으면
+   iOS Safari가 터치를 스크롤로 처리해 3D 조작이 무력화된다. */
+.demo-canvas canvas {
+  touch-action: none;
+}
+
 .demo-controls {
   display: flex;
   flex-wrap: wrap;
