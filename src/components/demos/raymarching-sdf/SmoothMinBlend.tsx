@@ -9,6 +9,7 @@ import {
   distanceColor,
   makeMapper,
   pointerToCanvas,
+  blitImage,
   type Vec2,
   type BoolOp,
 } from './sdf2d';
@@ -61,7 +62,7 @@ export default function SmoothMinBlend() {
         }
       }
     }
-    ctx.putImageData(img, 0, 0);
+    blitImage(ctx, img, w, h);
 
     // 등거리선
     for (let level = -1.2; level <= 1.2 + 1e-6; level += 0.2) {

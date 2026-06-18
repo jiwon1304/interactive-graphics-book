@@ -9,6 +9,7 @@ import {
   distanceColor,
   pointerToCanvas,
   makeMapper,
+  blitImage,
   type Vec2,
 } from './sdf2d';
 
@@ -60,7 +61,7 @@ export default function SdfHeatmap() {
         }
       }
     }
-    ctx.putImageData(img, 0, 0);
+    blitImage(ctx, img, w, h);
 
     // 2) 등거리선 (iso-line): 일정 간격의 부호거리에서 윤곽선.
     if (showIso) {

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { ControlPanel, Slider, ToggleControl } from '../../controls';
 import { useCanvas2d, type DrawCtx } from './useCanvas2d';
-import { v2, sub, len, smin, iterColor, type Vec2 } from './sdf2d';
+import { v2, sub, len, smin, iterColor, blitImage, type Vec2 } from './sdf2d';
 
 // 같은 2D 씬 (원 + 박스 smooth-union).
 const CIRCLE_C = v2(0.4, -0.1);
@@ -127,7 +127,7 @@ export default function StepBudget() {
         }
       }
     }
-    ctx.putImageData(img, 0, 0);
+    blitImage(ctx, img, w, h);
   };
 
   const { ref } = useCanvas2d(draw, [maxSteps, eps, showIters]);

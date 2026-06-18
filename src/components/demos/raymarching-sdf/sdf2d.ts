@@ -199,6 +199,26 @@ export function setupCanvas(
   return { ctx, w, h, dpr };
 }
 
+/**
+ * dpr 변환이 걸린 ctx에 ImageData를 캔버스 전체로 올바르게 그린다.
+ * putImageData는 ctx 변환을 무시(논리 w×h를 디바이스 좌상단에만 그림)하므로,
+ * 오프스크린 버퍼를 거쳐 drawImage로 (0,0,w,h)에 올려 변환을 존중하게 한다.
+ */
+export function blitImage(
+  ctx: CanvasRenderingContext2D,
+  img: ImageData,
+  w: number,
+  h: number,
+): void {
+  const off = document.createElement('canvas');
+  off.width = img.width;
+  off.height = img.height;
+  const octx = off.getContext('2d');
+  if (!octx) return;
+  octx.putImageData(img, 0, 0);
+  ctx.drawImage(off, 0, 0, w, h);
+}
+
 /** 포인터 이벤트 → 캔버스 CSS 픽셀 좌표 */
 export function pointerToCanvas(
   e: { clientX: number; clientY: number },

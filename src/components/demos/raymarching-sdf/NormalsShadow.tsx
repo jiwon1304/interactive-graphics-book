@@ -11,6 +11,7 @@ import {
   smin,
   makeMapper,
   pointerToCanvas,
+  blitImage,
   type Vec2,
 } from './sdf2d';
 
@@ -128,7 +129,7 @@ export default function NormalsShadow() {
         }
       }
     }
-    ctx.putImageData(img, 0, 0);
+    blitImage(ctx, img, w, h);
 
     // 표면 윤곽선
     ctx.fillStyle = theme.text;
