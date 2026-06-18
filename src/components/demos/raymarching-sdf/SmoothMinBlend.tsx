@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { ControlPanel, Slider, SelectControl, type SelectOption } from '../../controls';
 import { useCanvas2d, type DrawCtx } from './useCanvas2d';
 import {
@@ -32,7 +32,7 @@ export default function SmoothMinBlend() {
   const [cB, setCB] = useState<Vec2>(v2(0.55, 0));
   const [k, setK] = useState(0.4);
   const [op, setOp] = useState<BoolOp>('union');
-  const [drag, setDrag] = useState<'A' | 'B' | null>(null);
+  const dragRef = useRef<'A' | 'B' | null>(null);
 
   const field = (p: Vec2): number => {
     const a = len(sub(p, cA)) - R_A;
@@ -106,18 +106,18 @@ export default function SmoothMinBlend() {
     const t = pick(e);
     if (t) {
       e.currentTarget.setPointerCapture(e.pointerId);
-      setDrag(t);
+      dragRef.current = t;
     }
   };
   const onMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    if (!drag) return;
+    if (!dragRef.current) return;
     const canvas = ref.current;
     if (!canvas) return;
     const rect = canvas.getBoundingClientRect();
     const map = makeMapper(rect.width, rect.height);
     const s = map.toScene(pointerToCanvas(e, canvas));
     const c = v2(Math.max(-1.7, Math.min(1.7, s.x)), Math.max(-1.3, Math.min(1.3, s.y)));
-    if (drag === 'A') setCA(c);
+    if (dragRef.current === 'A') setCA(c);
     else setCB(c);
   };
 
@@ -129,8 +129,8 @@ export default function SmoothMinBlend() {
         style={{ height: 360, touchAction: 'none', display: 'block', cursor: 'grab' }}
         onPointerDown={onDown}
         onPointerMove={onMove}
-        onPointerUp={() => setDrag(null)}
-        onPointerCancel={() => setDrag(null)}
+        onPointerUp={() => { dragRef.current = null; }}
+        onPointerCancel={() => { dragRef.current = null; }}
       />
       <ControlPanel>
         <SelectControl label="연산" value={op} options={OPS} onChange={setOp} />

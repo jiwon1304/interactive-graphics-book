@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { ControlPanel, Slider, ToggleControl } from '../../controls';
 import { useCanvas2d, type DrawCtx } from './useCanvas2d';
 import {
@@ -87,7 +87,7 @@ export default function NormalsShadow() {
   const [light, setLight] = useState<Vec2>(v2(-1.2, 1.1));
   const [k, setK] = useState(8);
   const [showNormals, setShowNormals] = useState(true);
-  const [drag, setDrag] = useState(false);
+  const dragRef = useRef(false);
 
   const draw = (d: DrawCtx) => {
     const { ctx, w, h, theme, map } = d;
@@ -189,7 +189,7 @@ export default function NormalsShadow() {
     const canvas = ref.current;
     if (!canvas) return;
     e.currentTarget.setPointerCapture(e.pointerId);
-    setDrag(true);
+    dragRef.current = true;
     moveLight(e);
   };
   const moveLight = (e: React.PointerEvent<HTMLCanvasElement>) => {
@@ -208,9 +208,9 @@ export default function NormalsShadow() {
         className="demo-canvas"
         style={{ height: 360, touchAction: 'none', display: 'block', cursor: 'crosshair' }}
         onPointerDown={onDown}
-        onPointerMove={(e) => drag && moveLight(e)}
-        onPointerUp={() => setDrag(false)}
-        onPointerCancel={() => setDrag(false)}
+        onPointerMove={(e) => { if (dragRef.current) moveLight(e); }}
+        onPointerUp={() => { dragRef.current = false; }}
+        onPointerCancel={() => { dragRef.current = false; }}
       />
       <ControlPanel>
         <Slider

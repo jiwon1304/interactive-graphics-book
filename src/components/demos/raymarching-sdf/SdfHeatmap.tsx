@@ -135,9 +135,7 @@ export default function SdfHeatmap() {
           e.currentTarget.setPointerCapture(e.pointerId);
           onMove(e);
         }}
-        onPointerMove={(e) => {
-          if (e.buttons || e.pointerType === 'mouse') onMove(e);
-        }}
+        onPointerMove={onMove}
         onPointerLeave={() => setProbe(null)}
       />
       <ControlPanel>
