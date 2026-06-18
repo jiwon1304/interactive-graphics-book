@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { ControlPanel, Slider } from '../../controls';
 import { useCanvas2d, type DrawCtx } from './useCanvas2d';
 import {
@@ -61,7 +61,7 @@ function march(o: Vec2, dir: Vec2): MarchResult {
   return { steps, hit };
 }
 
-type DragTarget = 'origin' | null;
+type DragTarget = 'origin' | 'angle' | null;
 
 /**
  * 스피어 트레이싱의 한 광선을 스텝 단위로 보여주는 핵심 위젯.
@@ -71,7 +71,12 @@ export default function SphereTraceSteps() {
   const [origin, setOrigin] = useState<Vec2>(v2(-1.6, -0.7));
   const [angleDeg, setAngleDeg] = useState(28);
   const [stepIdx, setStepIdx] = useState(MAX_STEPS); // 보여줄 스텝 수
-  const [drag, setDrag] = useState<DragTarget>(null);
+  // useState 대신 ref 사용: 모바일에서 pointermove가 setDrag 리렌더보다 먼저 발생해
+  // stale closure로 drag가 null처럼 읽히는 문제 방지.
+  const dragRef = useRef<DragTarget>(null);
+  // angle 계산에 항상 최신 origin을 쓰기 위한 ref
+  const originRef = useRef(origin);
+  originRef.current = origin;
 
   const dir = useMemo(() => {
     const a = (angleDeg * Math.PI) / 180;
@@ -174,31 +179,38 @@ export default function SphereTraceSteps() {
     const rect = canvas.getBoundingClientRect();
     const map = makeMapper(rect.width, rect.height);
     const px = pointerToCanvas(e, canvas);
-    const oPx = map.toPx(origin);
-    // 원점 근처면 원점 드래그
+    const oPx = map.toPx(originRef.current);
     if (Math.hypot(px.x - oPx.x, px.y - oPx.y) < 18) {
-      setDrag('origin');
+      // 원점 핸들 드래그
+      dragRef.current = 'origin';
     } else {
-      // 그 외에는 클릭 지점을 향하도록 각도 설정
+      // 빈 곳: 탭한 방향으로 각도 설정 + 드래그 중 계속 추적
+      dragRef.current = 'angle';
       const s = map.toScene(px);
-      const a = Math.atan2(s.y - origin.y, s.x - origin.x);
+      const a = Math.atan2(s.y - originRef.current.y, s.x - originRef.current.x);
       setAngleDeg((a * 180) / Math.PI);
     }
   };
 
   const onMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    if (!drag) return;
+    if (!dragRef.current) return;
     const canvas = ref.current;
     if (!canvas) return;
     const rect = canvas.getBoundingClientRect();
     const map = makeMapper(rect.width, rect.height);
     const s = map.toScene(pointerToCanvas(e, canvas));
-    const clamped = v2(
-      Math.max(-1.9, Math.min(1.9, s.x)),
-      Math.max(-1.4, Math.min(1.4, s.y)),
-    );
-    setOrigin(clamped);
+    if (dragRef.current === 'origin') {
+      setOrigin(
+        v2(Math.max(-1.9, Math.min(1.9, s.x)), Math.max(-1.4, Math.min(1.4, s.y))),
+      );
+    } else {
+      // 손가락 이동을 따라 각도를 연속 갱신
+      const a = Math.atan2(s.y - originRef.current.y, s.x - originRef.current.x);
+      setAngleDeg((a * 180) / Math.PI);
+    }
   };
+
+  const onUp = () => { dragRef.current = null; };
 
   return (
     <figure className="demo">
@@ -208,8 +220,8 @@ export default function SphereTraceSteps() {
         style={{ height: 360, touchAction: 'none', display: 'block', cursor: 'pointer' }}
         onPointerDown={onDown}
         onPointerMove={onMove}
-        onPointerUp={() => setDrag(null)}
-        onPointerCancel={() => setDrag(null)}
+        onPointerUp={onUp}
+        onPointerCancel={onUp}
       />
       <ControlPanel>
         <Slider
