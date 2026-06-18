@@ -56,16 +56,28 @@ function drawScene(c: Canvas2DContext, p: DrawParams) {
   ctx.setLineDash([]);
   ctx.globalAlpha = 1;
 
-  // 거시 법선 (가운데 위로) — 통계의 평균 방향
-  ctx.strokeStyle = colors.muted;
-  ctx.lineWidth = 1.5;
-  ctx.beginPath();
-  ctx.moveTo(width / 2, surfaceY);
-  ctx.lineTo(width / 2, surfaceY - 42);
-  ctx.stroke();
-  ctx.fillStyle = colors.muted;
-  ctx.font = '12px system-ui, sans-serif';
-  ctx.fillText('거시 법선 n', width / 2 + 6, surfaceY - 32);
+  // 거시 법선 (가운데 위로) — 통계의 평균 방향. 회색 광선·면 법선과 묻히지 않게 강조.
+  {
+    const nx = width / 2;
+    const tipY = surfaceY - 66;
+    ctx.strokeStyle = colors.text;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(nx, surfaceY);
+    ctx.lineTo(nx, tipY);
+    ctx.stroke();
+    // 화살촉
+    ctx.fillStyle = colors.text;
+    ctx.beginPath();
+    ctx.moveTo(nx, tipY - 3);
+    ctx.lineTo(nx - 5.5, tipY + 9);
+    ctx.lineTo(nx + 5.5, tipY + 9);
+    ctx.closePath();
+    ctx.fill();
+    // 라벨 (굵게)
+    ctx.font = 'bold 13px system-ui, sans-serif';
+    ctx.fillText('거시 법선 n', nx + 10, tipY + 6);
+  }
 
   // 각 패싯 그리기
   for (let i = 0; i < FACET_COUNT; i++) {
