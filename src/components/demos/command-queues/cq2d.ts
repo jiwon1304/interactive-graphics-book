@@ -66,15 +66,6 @@ export function setupCanvas(
   return { ctx, w, h, dpr };
 }
 
-/** 포인터 이벤트 → 캔버스 CSS 픽셀 좌표 */
-export function pointerToCanvas(
-  e: { clientX: number; clientY: number },
-  canvas: HTMLCanvasElement,
-): { x: number; y: number } {
-  const rect = canvas.getBoundingClientRect();
-  return { x: e.clientX - rect.left, y: e.clientY - rect.top };
-}
-
 // ---- 색 보조 ----
 
 /** 16진수 색 + 알파(0..1)를 8자리 hex로. 테마 색에 투명도를 입힐 때 사용. */

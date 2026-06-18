@@ -1,10 +1,9 @@
-import { useMemo, useState } from 'react';
-import { ControlPanel, Slider } from '../../controls';
+import { useMemo } from 'react';
 import { useCanvas2d, type DrawCtx } from './useCanvas2d';
 import { UE_COLORS, roundRect, withAlpha, monoFont } from './ue2d';
 
 // ---------------------------------------------------------------------------
-// 모델: RHI Submit Pipeline (Luke Thatcher (Epic) 발표)
+// 정적 도식: RHI Submit Pipeline (Luke Thatcher (Epic) 발표)
 //
 // 기존: 단일 RHI 스레드가 변환(translate)+제출(submit)+동기화(sync)를 직렬로 처리.
 //  - 역할이 너무 많아 병렬화가 제한적.
@@ -16,10 +15,15 @@ import { UE_COLORS, roundRect, withAlpha, monoFont } from './ue2d';
 //  - 동기화(Sync): 인터럽트 스레드가 GPU 펜스에 즉시 반응(polling X) → bubble ≈ 0.
 //    크래시도 마찬가지로 즉시 인지.
 //
-// 두 모델로 같은 N개 커맨드 리스트를 처리하고 makespan을 비교한다.
+// 같은 N개 커맨드 리스트를 두 모델로 처리한 간트 차트를 위·아래로 나란히 비교한다
+// (인터랙티브 아님 — 대표값 N=4, 폴링 지연=2로 고정).
 // ---------------------------------------------------------------------------
 
 const CANVAS_H = 340;
+
+// 정적 비교용 대표값.
+const N_LISTS = 4; // 커맨드 리스트 수
+const FENCE_LATENCY = 2; // 기존 모델의 폴링 버블 길이
 
 // 단위 시간(추상). 실제 ms 아님 — 비교용 상대값.
 const T_TRANSLATE = 3; // 커맨드 리스트 1개 변환 비용
@@ -141,11 +145,8 @@ function buildNew(n: number): Model {
 }
 
 export default function SubmitPipelineTimeline() {
-  const [n, setN] = useState(4);
-  const [fenceLatency, setFenceLatency] = useState(2);
-
-  const oldModel = useMemo(() => buildOld(n, fenceLatency), [n, fenceLatency]);
-  const newModel = useMemo(() => buildNew(n), [n]);
+  const oldModel = useMemo(() => buildOld(N_LISTS, FENCE_LATENCY), []);
+  const newModel = useMemo(() => buildNew(N_LISTS), []);
 
   const tMax = Math.max(oldModel.makespan, newModel.makespan, 1);
 
@@ -260,11 +261,21 @@ export default function SubmitPipelineTimeline() {
       return ry + 6; // 다음 블록 top
     };
 
-    const afterOld = drawModel('기존: 단일 RHI 스레드 (펜스 polling)', oldModel, 18, UE_COLORS.stall);
-    drawModel('신규: 변환(병렬) · 제출(전용) · 동기화(인터럽트)', newModel, afterOld + 12, UE_COLORS.ok);
+    const afterOld = drawModel(
+      `기존: 단일 RHI 스레드 (펜스 polling) — 버블 ${oldModel.bubbleTotal.toFixed(0)}`,
+      oldModel,
+      18,
+      UE_COLORS.stall,
+    );
+    drawModel(
+      '신규: 변환(병렬) · 제출(전용) · 동기화(인터럽트) — 버블 0',
+      newModel,
+      afterOld + 12,
+      UE_COLORS.ok,
+    );
   };
 
-  const { ref } = useCanvas2d(draw, [oldModel, newModel, tMax]);
+  const { ref } = useCanvas2d(draw, []);
 
   const saved = oldModel.makespan - newModel.makespan;
   const savedPct = oldModel.makespan > 0 ? (saved / oldModel.makespan) * 100 : 0;
@@ -276,26 +287,6 @@ export default function SubmitPipelineTimeline() {
         className="demo-canvas"
         style={{ height: CANVAS_H, touchAction: 'none', display: 'block' }}
       />
-      <ControlPanel>
-        <Slider
-          label="커맨드 리스트 수"
-          value={n}
-          min={2}
-          max={8}
-          step={1}
-          onChange={setN}
-          format={(v) => `${v}개`}
-        />
-        <Slider
-          label="펜스 polling 지연 (기존)"
-          value={fenceLatency}
-          min={0}
-          max={5}
-          step={0.5}
-          onChange={setFenceLatency}
-          format={(v) => `${v}`}
-        />
-      </ControlPanel>
       <div
         style={{
           marginTop: '0.6rem',
@@ -305,8 +296,8 @@ export default function SubmitPipelineTimeline() {
           lineHeight: 1.7,
         }}
       >
-        기존 makespan:{' '}
-        <span style={{ color: UE_COLORS.stall }}>{oldModel.makespan.toFixed(0)}</span> (버블{' '}
+        같은 {N_LISTS}개 커맨드 리스트 · 기존 makespan:{' '}
+        <span style={{ color: UE_COLORS.stall }}>{oldModel.makespan.toFixed(0)}</span> (폴링 버블{' '}
         <span style={{ color: UE_COLORS.stall }}>{oldModel.bubbleTotal.toFixed(0)}</span>) · 신규:{' '}
         <span style={{ color: UE_COLORS.ok }}>{newModel.makespan.toFixed(0)}</span> (버블{' '}
         <span style={{ color: UE_COLORS.ok }}>0</span>) · 단축:{' '}
@@ -315,18 +306,17 @@ export default function SubmitPipelineTimeline() {
         </span>
       </div>
       <figcaption>
-        새로운 RHI <strong>Submit Pipeline</strong> (Luke Thatcher (Epic) 발표). 위쪽 기존 모델은
+        새로운 RHI <strong>Submit Pipeline</strong> (Luke Thatcher (Epic) 발표). 같은{' '}
+        {N_LISTS}개 커맨드 리스트를 두 모델로 처리한 간트 차트입니다. <strong>위쪽 기존 모델</strong>은
         단일 RHI 스레드가 변환·제출·동기화를 <em>혼자 직렬로</em> 처리합니다. 게다가 GPU 펜스를{' '}
         <strong>polling</strong>으로 확인해, 펜스가 신호된 뒤에도 다음 polling까지 기다리는{' '}
-        <strong>버블</strong>(빗금 친 주황 유휴 구간)이 매번 생깁니다. 아래 신규 모델은 역할을 셋으로
-        쪼갭니다 — <strong>변환</strong>은 여러 워커 스레드가 <em>병렬</em>로, <strong>제출</strong>은
-        전용 스레드가 배칭해 빠르게, <strong>동기화</strong>는 <em>인터럽트</em> 스레드가 펜스에{' '}
-        <strong>즉시</strong> 반응(polling 없음)해 버블이 ≈0이 됩니다. 같은 인터럽트 경로로 GPU
-        크래시도 즉시 인지합니다.
-        <br />
-        <strong>직접 해보세요:</strong> "펜스 polling 지연"을 키워 보세요 — 기존 모델의 버블이 커져
-        makespan이 늘어나는 동안, 신규 모델은 그대로 타이트하게 유지됩니다. 커맨드 리스트 수를 늘리면
-        병렬 변환의 이득이 더 벌어집니다.
+        <strong>버블</strong>(빗금 친 주황 유휴 구간)이 매번 생겨 makespan을 부풀립니다.{' '}
+        <strong>아래 신규 모델</strong>은 역할을 셋으로 쪼갭니다 — <strong>변환</strong>은 여러 워커
+        스레드가 <em>병렬</em>로, <strong>제출</strong>은 전용 스레드가 배칭해 빠르게,{' '}
+        <strong>동기화</strong>는 <em>인터럽트</em> 스레드가 펜스에 <strong>즉시</strong> 반응(polling
+        없음)해 버블이 0이 됩니다. 두 makespan 자(아래 가로선)를 비교하면, 폴링 버블이 사라지고 변환이
+        병렬화되며 전체 시간이 크게 줄어든 것이 보입니다. 같은 인터럽트 경로로 GPU 크래시도 즉시
+        인지합니다.
       </figcaption>
     </figure>
   );

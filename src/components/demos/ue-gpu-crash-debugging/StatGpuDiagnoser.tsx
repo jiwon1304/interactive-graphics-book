@@ -1,117 +1,81 @@
-import { useMemo, useState } from 'react';
-import { ControlPanel, SelectControl, Slider, type SelectOption } from '../../controls';
 import { useCanvas2d, type DrawCtx } from './useCanvas2d';
 import { UE_COLORS, roundRect, withAlpha, monoFont } from './ue2d';
 
 // ---------------------------------------------------------------------------
-// 모델: Stat GPU — Busy / Wait / Idle 진단 (Luke Thatcher (Epic) 발표)
+// 정적 도식: Stat GPU — Busy / Wait / Idle 진단 (Luke Thatcher (Epic) 발표)
 //
 // 각 GPU 큐(그래픽스/컴퓨트)의 시간은 Busy / Wait / Idle로 쪼개진다.
-// 발표의 진단 규칙:
-//  - 그래픽스 큐의 Wait이 크면 → 문제 (큐가 무언가를 기다림).
+// 발표의 진단 규칙(직관에 반함):
+//  - 그래픽스 큐의 Wait이 크면 → 문제 (큐가 펜스/리소스를 기다림).
 //  - 컴퓨트 큐의 Wait → 정상 (AsyncCompute는 wait이 자연스러움).
 //  - Idle > 0 → CPU bound (CPU가 일감을 못 대줘 GPU가 굶음).
-// 사용자는 프리셋을 고르거나 슬라이더로 비율을 직접 조정해 진단을 도출한다.
+//
+// 이 그림은 세 시나리오를 한 화면에 나란히 정지시켜, "같은 Wait 막대라도
+// 어느 큐에 있느냐에 따라 결론이 정반대"가 됨을 각 패널의 판정 라벨로 보여준다
+// (인터랙티브 아님).
 // ---------------------------------------------------------------------------
 
-const CANVAS_H = 300;
+const CANVAS_H = 420;
 
-// 0..100 비율. graphicsWait/graphicsIdle만 조절, Busy는 100-Wait-Idle로 도출.
-interface Mix {
-  gWait: number;
-  gIdle: number;
-  cWait: number;
-  cIdle: number;
+interface QueueBar {
+  name: string;
+  busy: number;
+  wait: number;
+  idle: number;
+  /** 이 큐의 Wait이 "문제"로 칠해져야 하는가(그래픽스 큐만 빨강) */
+  waitIsBad: boolean;
 }
 
-type Scenario = 'normal' | 'gwait' | 'cwait' | 'idle' | 'custom';
+interface ScenarioFig {
+  title: string;
+  queues: QueueBar[];
+  verdict: string;
+  verdictColor: string;
+}
 
-const PRESETS: Record<Exclude<Scenario, 'custom'>, Mix> = {
-  // 정상(GPU bound): 그래픽스 거의 busy, wait/idle 작음.
-  normal: { gWait: 8, gIdle: 0, cWait: 12, cIdle: 0 },
-  // 그래픽스 Wait 큼(문제).
-  gwait: { gWait: 45, gIdle: 0, cWait: 20, cIdle: 0 },
-  // 컴퓨트 Wait(정상).
-  cwait: { gWait: 6, gIdle: 0, cWait: 55, cIdle: 0 },
-  // Idle>0 (CPU bound).
-  idle: { gWait: 10, gIdle: 35, cWait: 15, cIdle: 30 },
-};
-
-const SCENARIO_OPTIONS: ReadonlyArray<SelectOption<Scenario>> = [
-  { value: 'normal', label: '정상 (GPU bound)' },
-  { value: 'gwait', label: '그래픽스 Wait 큼 (문제)' },
-  { value: 'cwait', label: '컴퓨트 Wait (정상)' },
-  { value: 'idle', label: 'Idle>0 (CPU bound)' },
-  { value: 'custom', label: '직접 조정' },
+// 세 대표 시나리오(발표의 진단 규칙을 그대로 박아 둔다).
+const SCENARIOS: ReadonlyArray<ScenarioFig> = [
+  {
+    title: '① 그래픽스 큐 Wait이 큼',
+    queues: [
+      { name: '그래픽스', busy: 47, wait: 45, idle: 0, waitIsBad: true },
+      { name: '컴퓨트', busy: 80, wait: 20, idle: 0, waitIsBad: false },
+    ],
+    verdict: '⚠ 문제: 메인(그래픽스) 큐가 펜스·리소스를 기다리며 멈춰 있음 — 의존 구조 점검',
+    verdictColor: UE_COLORS.bad,
+  },
+  {
+    title: '② 컴퓨트 큐 Wait이 큼 (같은 양의 Wait)',
+    queues: [
+      { name: '그래픽스', busy: 94, wait: 6, idle: 0, waitIsBad: true },
+      { name: '컴퓨트', busy: 45, wait: 55, idle: 0, waitIsBad: false },
+    ],
+    verdict: '정상: AsyncCompute는 그래픽스 결과를 기다리도록 설계 — Wait이 보이는 게 자연스러움',
+    verdictColor: UE_COLORS.ok,
+  },
+  {
+    title: '③ Idle > 0',
+    queues: [
+      { name: '그래픽스', busy: 55, wait: 10, idle: 35, waitIsBad: true },
+      { name: '컴퓨트', busy: 55, wait: 15, idle: 30, waitIsBad: false },
+    ],
+    verdict: 'CPU bound: GPU가 다 비웠는데 CPU가 일감을 못 대줘 굶음 — GPU 최적화로는 안 빨라짐',
+    verdictColor: UE_COLORS.stall,
+  },
 ];
 
-interface Verdict {
-  text: string;
-  color: string;
-}
-
-/** 발표의 규칙으로 숫자에서 결론을 도출한다. */
-function diagnose(m: Mix): Verdict {
-  // Idle이 우선 신호: 큐 중 하나라도 Idle이 의미 있게 크면 CPU bound.
-  if (m.gIdle >= 12 || m.cIdle >= 12) {
-    return {
-      text: 'Idle > 0 → CPU bound: CPU가 일감을 못 대줘 GPU가 굶고 있습니다.',
-      color: UE_COLORS.stall,
-    };
-  }
-  // 그래픽스 Wait이 크면 문제.
-  if (m.gWait >= 25) {
-    return {
-      text: '⚠ 그래픽스 큐 Wait이 큽니다 → 문제: 큐가 무언가(펜스/리소스)를 기다리는 중.',
-      color: UE_COLORS.bad,
-    };
-  }
-  // 컴퓨트 Wait은 커도 정상.
-  if (m.cWait >= 25) {
-    return {
-      text: '컴퓨트 Wait이 큽니다 → 정상: AsyncCompute는 그래픽스를 기다리는 게 자연스럽습니다.',
-      color: UE_COLORS.ok,
-    };
-  }
-  return {
-    text: '정상 (GPU bound): 그래픽스가 대부분 Busy, Wait·Idle이 작습니다.',
-    color: UE_COLORS.ok,
-  };
-}
-
 export default function StatGpuDiagnoser() {
-  const [scenario, setScenario] = useState<Scenario>('gwait');
-  const [custom, setCustom] = useState<Mix>(PRESETS.normal);
-
-  const mix: Mix = scenario === 'custom' ? custom : PRESETS[scenario];
-  const verdict = useMemo(() => diagnose(mix), [mix]);
-
-  // 비율 정규화(Busy = 100 - Wait - Idle, 음수면 클램프).
-  const gBusy = Math.max(0, 100 - mix.gWait - mix.gIdle);
-  const cBusy = Math.max(0, 100 - mix.cWait - mix.cIdle);
-
-  // 슬라이더 조작 시 custom 모드로 전환.
-  const editMix = (patch: Partial<Mix>): void => {
-    const base = scenario === 'custom' ? custom : PRESETS[scenario];
-    setCustom({ ...base, ...patch });
-    setScenario('custom');
-  };
-
   const draw = (d: DrawCtx): void => {
     const { ctx, w, h, theme } = d;
     ctx.fillStyle = theme.surface;
     ctx.fillRect(0, 0, w, h);
 
     const padX = 16;
-    const labelW = 78;
+    const labelW = 64;
     const plotX = padX + labelW;
     const plotW = w - plotX - padX;
 
-    const barH = 38;
-    const top = 26;
-    const rowGap = 30;
-
-    // 범례
+    // 범례(상단)
     ctx.font = monoFont(10);
     ctx.textBaseline = 'middle';
     const legend: Array<{ c: string; t: string }> = [
@@ -129,21 +93,15 @@ export default function StatGpuDiagnoser() {
       ctx.fillText(item.t, lx + 17, 14);
       lx += 17 + ctx.measureText(item.t).width + 16;
     }
+    ctx.textBaseline = 'alphabetic';
 
-    // 한 큐의 스택 막대를 그린다.
-    const drawQueue = (
-      name: string,
-      y: number,
-      busy: number,
-      wait: number,
-      idle: number,
-      waitIsBad: boolean,
-    ): void => {
-      ctx.font = monoFont(11);
+    // 한 큐의 스택 막대.
+    const drawQueue = (q: QueueBar, y: number, barH: number): void => {
+      ctx.font = monoFont(10.5);
       ctx.fillStyle = theme.text;
       ctx.textAlign = 'right';
       ctx.textBaseline = 'middle';
-      ctx.fillText(name, plotX - 8, y + barH / 2);
+      ctx.fillText(q.name, plotX - 8, y + barH / 2);
       ctx.textAlign = 'left';
       ctx.textBaseline = 'alphabetic';
 
@@ -153,14 +111,14 @@ export default function StatGpuDiagnoser() {
       ctx.fill();
 
       const segs: Array<{ frac: number; color: string; label: string }> = [
-        { frac: busy / 100, color: UE_COLORS.graphics, label: 'Busy' },
+        { frac: q.busy / 100, color: UE_COLORS.graphics, label: 'Busy' },
         {
-          frac: wait / 100,
+          frac: q.wait / 100,
           // 그래픽스 Wait은 빨강(문제), 컴퓨트 Wait은 주황(정상이지만 wait).
-          color: waitIsBad && wait >= 25 ? UE_COLORS.bad : UE_COLORS.stall,
+          color: q.waitIsBad && q.wait >= 25 ? UE_COLORS.bad : UE_COLORS.stall,
           label: 'Wait',
         },
-        { frac: idle / 100, color: withAlpha(theme.muted, 0.45), label: 'Idle' },
+        { frac: q.idle / 100, color: withAlpha(theme.muted, 0.45), label: 'Idle' },
       ];
       let x = plotX;
       for (const s of segs) {
@@ -172,17 +130,12 @@ export default function StatGpuDiagnoser() {
         ctx.fillStyle = s.color;
         ctx.fillRect(x, y, sw, barH);
         ctx.restore();
-        // 세그먼트 라벨(폭 충분할 때만)
         if (sw > 34) {
-          ctx.font = monoFont(10);
+          ctx.font = monoFont(9.5);
           ctx.fillStyle = '#fff';
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';
-          ctx.fillText(
-            `${s.label} ${Math.round(s.frac * 100)}`,
-            x + sw / 2,
-            y + barH / 2,
-          );
+          ctx.fillText(`${s.label} ${Math.round(s.frac * 100)}`, x + sw / 2, y + barH / 2);
           ctx.textAlign = 'left';
           ctx.textBaseline = 'alphabetic';
         }
@@ -195,49 +148,51 @@ export default function StatGpuDiagnoser() {
       ctx.stroke();
     };
 
-    drawQueue('그래픽스 큐', top, gBusy, mix.gWait, mix.gIdle, true);
-    drawQueue('컴퓨트 큐', top + barH + rowGap, cBusy, mix.cWait, mix.cIdle, false);
+    // 시나리오 패널들을 세로로 쌓는다.
+    const topStart = 30;
+    const panelGap = 8;
+    const panelH = (h - topStart - padX - panelGap * (SCENARIOS.length - 1)) / SCENARIOS.length;
+    const barH = 26;
+    const barGap = 6;
+    const verdictH = 26;
 
-    // --- 진단 결론 배너 ---
-    const bannerY = top + (barH + rowGap) * 2 + 4;
-    const bannerH = h - bannerY - 10;
-    if (bannerH > 16) {
-      roundRect(ctx, padX, bannerY, w - padX * 2, bannerH, 7);
-      ctx.fillStyle = withAlpha(verdict.color, 0.14);
+    for (let s = 0; s < SCENARIOS.length; s++) {
+      const sc = SCENARIOS[s];
+      const py = topStart + s * (panelH + panelGap);
+
+      // 시나리오 제목
+      ctx.font = monoFont(11);
+      ctx.fillStyle = theme.text;
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'alphabetic';
+      ctx.fillText(sc.title, padX, py + 10);
+
+      // 두 큐 막대
+      const barsTop = py + 18;
+      for (let qi = 0; qi < sc.queues.length; qi++) {
+        drawQueue(sc.queues[qi], barsTop + qi * (barH + barGap), barH);
+      }
+
+      // 판정 배너
+      const vy = barsTop + sc.queues.length * (barH + barGap) + 2;
+      roundRect(ctx, padX, vy, w - padX * 2, verdictH, 6);
+      ctx.fillStyle = withAlpha(sc.verdictColor, 0.14);
       ctx.fill();
-      ctx.strokeStyle = withAlpha(verdict.color, 0.7);
+      ctx.strokeStyle = withAlpha(sc.verdictColor, 0.7);
       ctx.lineWidth = 1;
       ctx.stroke();
-
-      ctx.font = monoFont(10.5);
-      ctx.fillStyle = verdict.color;
+      ctx.font = monoFont(9.5);
+      ctx.fillStyle = sc.verdictColor;
       ctx.textAlign = 'left';
       ctx.textBaseline = 'middle';
-      // 긴 진단 텍스트 줄바꿈
-      const words = verdict.text.split(' ');
-      const maxW = w - padX * 2 - 20;
-      const lines: string[] = [];
-      let cur = '';
-      for (const word of words) {
-        const test = cur ? `${cur} ${word}` : word;
-        if (ctx.measureText(test).width > maxW && cur) {
-          lines.push(cur);
-          cur = word;
-        } else {
-          cur = test;
-        }
-      }
-      if (cur) lines.push(cur);
-      const lineH = 15;
-      const startY = bannerY + bannerH / 2 - ((lines.length - 1) * lineH) / 2;
-      for (let i = 0; i < lines.length; i++) {
-        ctx.fillText(lines[i], padX + 10, startY + i * lineH);
-      }
+      // 한 줄로 — 폭이 좁으면 줄여 그리되 핵심 결론 유지.
+      ctx.fillText(sc.verdict, padX + 10, vy + verdictH / 2);
+      ctx.textAlign = 'left';
       ctx.textBaseline = 'alphabetic';
     }
   };
 
-  const { ref } = useCanvas2d(draw, [mix, verdict, gBusy, cBusy]);
+  const { ref } = useCanvas2d(draw, []);
 
   return (
     <figure className="demo">
@@ -246,53 +201,15 @@ export default function StatGpuDiagnoser() {
         className="demo-canvas"
         style={{ height: CANVAS_H, touchAction: 'none', display: 'block' }}
       />
-      <ControlPanel>
-        <SelectControl<Scenario>
-          label="시나리오"
-          value={scenario}
-          options={SCENARIO_OPTIONS}
-          onChange={setScenario}
-        />
-        <Slider
-          label="그래픽스 Wait"
-          value={mix.gWait}
-          min={0}
-          max={80}
-          step={1}
-          onChange={(v) => editMix({ gWait: v })}
-          format={(v) => `${v}%`}
-        />
-        <Slider
-          label="그래픽스 Idle"
-          value={mix.gIdle}
-          min={0}
-          max={60}
-          step={1}
-          onChange={(v) => editMix({ gIdle: v })}
-          format={(v) => `${v}%`}
-        />
-        <Slider
-          label="컴퓨트 Wait"
-          value={mix.cWait}
-          min={0}
-          max={80}
-          step={1}
-          onChange={(v) => editMix({ cWait: v })}
-          format={(v) => `${v}%`}
-        />
-      </ControlPanel>
       <figcaption>
         <strong>Stat GPU</strong>는 각 큐의 시간을 <strong>Busy / Wait / Idle</strong>로 쪼개
-        보여줍니다 (Luke Thatcher (Epic) 발표). 핵심 진단 규칙은 직관적이지 않습니다 —{' '}
-        <strong>그래픽스 큐의 Wait이 크면 문제</strong>입니다(메인 큐가 펜스나 리소스를 기다리며
-        멈춰 있다는 뜻). 반대로 <strong>컴퓨트 큐의 Wait은 정상</strong>입니다: AsyncCompute는
-        그래픽스 큐의 결과를 기다리도록 설계됐으니까요. 그리고 어느 큐든{' '}
-        <strong>Idle &gt; 0이면 CPU bound</strong> — GPU가 다 처리했는데 CPU가 다음 일감을 못 만들어
-        GPU가 굶고 있는 상황입니다.
-        <br />
-        <strong>직접 해보세요:</strong> 시나리오를 바꿔 막대 구성과 결론이 어떻게 달라지는지 보세요.
-        그다음 슬라이더로 직접 비율을 움직여 보세요 — "그래픽스 Wait"을 키우면 빨간 경고가 뜨지만,
-        같은 양을 "컴퓨트 Wait"에 줘도 정상으로 판정됩니다. "Idle"을 올리면 CPU bound로 바뀝니다.
+        보여줍니다 (Luke Thatcher (Epic) 발표). 핵심 진단 규칙은 직관적이지 않습니다 — 위 세 패널이
+        "같은 막대, 다른 결론"을 한눈에 보여 줍니다. ①과 ②는 <em>똑같은 양의 Wait</em>이지만, ①처럼{' '}
+        <strong>그래픽스 큐에 있으면 문제</strong>(메인 큐가 펜스·리소스를 기다리며 멈춤)이고 ②처럼{' '}
+        <strong>컴퓨트 큐에 있으면 정상</strong>입니다(AsyncCompute는 그래픽스 결과를 기다리도록
+        설계됐으니까요). ③처럼 어느 큐든 <strong>Idle &gt; 0이면 CPU bound</strong> — GPU가 다
+        처리했는데 CPU가 다음 일감을 못 만들어 GPU가 굶고 있는 상황이라, GPU를 아무리 최적화해도
+        프레임이 빨라지지 않습니다. 각 패널 아래의 <em>판정 라벨</em>이 이 규칙의 결론입니다.
       </figcaption>
     </figure>
   );

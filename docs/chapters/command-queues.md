@@ -1,5 +1,16 @@
 # 챕터 핸드오프: 명령 큐와 동기화
 
+> **2026-06-18 개정 — 정적화(static-first):** 이 챕터는 **비-렌더링 시스템 주제**(GPU 명령 제출·
+> 동기화·API)다. AUTHORING-GUIDE §1의 정제된 원칙("렌더링은 인터랙티브가 맞고, 그 외 시스템 주제는
+> 대개 정적 다이어그램이 낫다")에 따라 **위젯 6개를 전부 정적 도식으로 전환**했다. 각 위젯이 "라이브
+> 조작이 정적 라벨 그림으로는 못 주는 과정을 진짜로 드러내는가?"를 따졌고, 6개 모두 **NO**였다 —
+> 타임라인/도식은 잘 고른 한 스냅샷 + 직접 그린 라벨/주석이 슬라이더·스크럽·드래그보다 더 또렷하다.
+> 전환 내용: `ControlPanel`/`Slider`/`ToggleControl`/`SelectControl` 제거, rAF 애니메이션 제거,
+> `useState`/포인터 드래그 제거, `usePointerDrag.ts` **삭제**, `cq2d.ts`의 `pointerToCanvas` 제거.
+> 시뮬/체커 로직은 **그대로 보존**하되 대표 고정값으로 한 번만 그린다. 모든 위젯은 여전히
+> `useCanvas2d`로 테마 인식·HiDPI 정확(§5.1 함정 회피)·리사이즈/테마 변경 재드로우를 유지한다.
+> (정적이어도 `client:visible`은 그대로 — 테마 변수를 읽으려면 클라이언트에서 1회 그려야 한다.)
+
 - **slug**: `command-queues`
 - **section**: `GPU 명령 제출` (이 책 GPU 하드웨어/저수준 API 영역의 **첫 챕터**, 이후 ~110개 GPU 챕터의 템플릿)
 - **mdx**: `src/pages/chapters/command-queues.mdx`
@@ -28,82 +39,86 @@ Enhanced Barriers/synchronization2의 정밀 마스크, 멀티 GPU는 7절에서
 > SDF 씬 매퍼(x∈[-2,2])가 아니라 **픽셀 공간**에 직접 그립니다. 이를 위해 별도 헬퍼를 둠.
 
 - `cq2d.ts` — HiDPI 캔버스 셋업(`setupCanvas`, dpr 상한 2), 테마 색 읽기(`readTheme`),
-  테마 변경 감시(`observeTheme`), 포인터→캔버스 좌표(`pointerToCanvas`), 색 보조
-  (`withAlpha`, 의미색 상수 `QUEUE_COLORS` = graphics 파랑/compute 보라/copy 청록/
-  ok 초록/bad 빨강/stall 주황), 그리기 보조(`roundRect`, `drawArrow`, `pill`).
+  테마 변경 감시(`observeTheme`), 색 보조(`withAlpha`, 의미색 상수 `QUEUE_COLORS` = graphics 파랑/
+  compute 보라/copy 청록/ok 초록/bad 빨강/stall 주황), 그리기 보조(`roundRect`, `drawArrow`, `pill`).
+  (정적화 후 `pointerToCanvas`는 쓰는 곳이 없어 제거함.)
 - `useCanvas2d.ts` — **픽셀 공간** 2D 위젯 공용 훅(raymarching판과 달리 좌표 매퍼 없음).
   HiDPI 셋업 + ResizeObserver + 테마 변경 재드로우 + deps 변경 재드로우. `draw({ctx,w,h,theme})`.
-- `usePointerDrag.ts` — iOS Safari 안전 네이티브 포인터 드래그(raymarching-sdf와 동일 패턴의
-  **사본**; 챕터 폴더 자기완결성을 위해 복사). 시그니처 동일(`onDown/onMove/onUp/onHover/onLeave`).
+  정적 도식은 `useCanvas2d(draw, [])`로 호출 — 마운트 시 1회 그리고, 리사이즈/테마 변경 때만 다시 그린다.
+- ~~`usePointerDrag.ts`~~ — **삭제됨**(정적화로 드래그가 사라짐). 후속 GPU 챕터에서 드래그가
+  다시 필요하면 raymarching-sdf의 `usePointerDrag.ts`를 사본으로 가져오면 된다(이전과 동일 패턴).
 
-모든 위젯: 캔버스 `className="demo-canvas"` + `touchAction:'none'`, 컨트롤은 `<Canvas>` 밖
-DOM(`ControlPanel` + `Slider`/`ToggleControl`/`SelectControl`), 버튼 프리미티브가 없어
-플레인 `<button>`을 CSS 변수로만 스타일링(테마 적응). `QUEUE_COLORS`는 라이트/다크 공통 의미색.
+모든 위젯: 캔버스 `className="demo-canvas"`, `<figure className="demo">` 안에 캔버스 + `figcaption`.
+컨트롤(`ControlPanel`/`Slider`/`Toggle`/`Select`)·버튼은 정적화로 **전부 제거**. `QUEUE_COLORS`는
+라이트/다크 공통 의미색. AsyncOverlap만 캔버스 아래에 작은 읽기용 수치 줄(직렬/makespan/절감/스톨)을 둠.
 
-## 위젯별 정리 (의도적 배치 — 개념이 도입되는 그 자리)
+## 위젯별 정리 (전부 정적 도식 — 정적화 후)
 
-### 1. CommandLifecycle.tsx — 과정 (record→submit→execute) · 1절
-- **개념**: 명령의 세 단계와 **비동기 갭**. 3레인(CPU 기록 / 큐 / GPU 실행), 명령을 기록·제출,
-  GPU가 큐를 **FIFO로 드레인**. 제출 ≠ 실행을 눈으로 보게 함.
-- **PROCESS/RESULT**: PROCESS.
-- **상호작용**: "명령 기록"(Draw→Dispatch→Copy→Clear 순환), "제출"(열린 리스트→큐, 점선 배치),
-  "한 칸 실행"(수동 step), "자동 실행" 토글(RAF, commands/sec 슬라이더), "리셋". 읽기값:
-  열린 리스트/큐 대기 배치/GPU 완료 수.
-- **드라이브**: 자동 실행 시 RAF가 진행도를 슬라이더 속도로 전진, `queue[0]`에서 FIFO 드레인.
+> 6개 전부 **STATIC**. 아래 "왜 정적이면 충분한가"가 곧 판단 근거다(라이브가 정적 라벨 그림으로
+> 못 주는 과정을 드러내지 못함). 시뮬/체커/스케줄러 **로직은 보존**하고 대표 고정값으로 한 번 그린다.
 
-### 2. FenceFramesInFlight.tsx — 과정 (펜스 + frames-in-flight) · 2절 (챕터의 심장)
-- **개념**: 펜스(단조 카운터)로 CPU↔GPU 동기화. 슬롯 `k mod N` 규칙 `fence ≥ k−N+1`로 CPU가
-  GPU를 N프레임까지 앞섬. 처리량·레이턴시·메모리 삼각 트레이드오프.
-- **PROCESS/RESULT**: PROCESS.
-- **상호작용**: SelectControl N(1/2/3/4), Slider CPU/GPU 프레임 시간(ms), 재생/속도, 리셋.
-  주황 해치=스톨, 펜스 큰 숫자 틱, 초록 점선 화살표=GPU완료→CPU언블록(펜스 시그널).
-  읽기값: 펜스 값, CPU/GPU 롤링 stall %, 측정 레이턴시.
-- **시뮬 모델(중요·정확)**: `simulate(N,cpu,gpu,60)`이 `cpuFree/gpuFree`로 60프레임 사전
-  계산(파라미터 변경 시만). CPU는 `gpuExecEnd[k−N]` 대기, GPU는 `max(gpuFree, cpuEnd)` 대기.
-  펜스=`gpuExecEnd ≤ now` 개수, 레이턴시=`cpuRecorded − fence`. now를 RAF로 흘리고 끝에서 0 루프.
-- **교육 비트**: N=1 핑퐁(양쪽 스톨), N≥2 오버랩, GPU-bound면 레이턴시→N, CPU-bound면 GPU 기아.
+### 1. CommandLifecycle.tsx — STATIC · 1절
+- **개념**: 명령의 세 단계(record→submit→execute)와 **비동기 갭**. 제출 ≠ 실행.
+- **정적 도식**: 3레인 스냅샷 — ① CPU 열린 리스트(Draw, Clear) ② 큐에 제출된 배치 #1[Draw,Dispatch]/
+  #2[Copy,Draw]가 FIFO 대기(점선 묶음, "← 먼저 꺼냄") ③ GPU가 배치 #1의 한 명령(Dispatch, 55%
+  진행) 실행 중 + 완료 history 2개. ①→②(제출)·②→③(드레인) 흐름 화살표와 라벨.
+- **왜 정적이면 충분한가**: "제출했지만 아직 실행 안 됨, 큐에 FIFO로 쌓임"은 **한 장면의 공간 배치**로
+  완전히 전달된다. 명령을 하나씩 눌러 쌓는 과정은 같은 그림을 손으로 재현할 뿐 새 통찰이 없다.
 
-### 3. TimelineSemaphoreGater.tsx — 과정 (큐↔큐 순서, happens-before) · 3절
-- **개념**: 세마포어=큐↔큐(펜스=CPU↔GPU와 대비). 타임라인 값으로 happens-before 못박기
-  (P가 v 시그널, Q가 ≥v 대기 ⇒ P≺Q). 이진 세마포어는 v∈{0,1} 특수경우.
-- **PROCESS/RESULT**: PROCESS.
-- **상호작용**: 두 큐 타임라인(그래픽스 G0/G1/G2, 컴퓨트 C0/C1). Slider "C1 대기 임계값 W"(0..3),
-  SelectControl 어느 G가 시그널하는지/시그널 값, 재생/속도, 캔버스 위 "▲ 시각(t)" 스크럽 드래그.
-  주황 스톨=동기화 비용, 초록 점선=G1→C1 happens-before. W=0이면 빨간 "준비 전 읽기" 경고.
-- **교육 비트**: W=0 read-too-early 해저드 → W 올려 C1 대기 → 스톨이 곧 GPU 유휴(비용).
+### 2. FenceFramesInFlight.tsx — STATIC (2개 비교 패널) · 2절
+- **개념**: 펜스(단조 카운터)로 CPU↔GPU 동기화. 슬롯 `k mod N` 규칙 `fence ≥ k−N+1`. 처리량·
+  레이턴시·메모리 삼각 트레이드오프.
+- **정적 도식**: **N=1 vs N=3을 세로로 나란히**(둘 다 cpu=gpu=8 ms, 같은 ms→px 스케일, 0..56 ms 창).
+  N=1은 주황 해치 스톨이 번갈아 = 핑퐁, 펜스 박스 **3**. N=3은 두 레인이 겹쳐 거의 꽉 참, 펜스 박스
+  **6**(같은 창에서 2배 처리량). 초록 점선 = 펜스 시그널(스톨을 푸는 순간, N=1 패널에 표시).
+- **시뮬(보존·정확)**: `simulate(N,8,8,8)`. CPU는 `gpuExecEnd[k−N]` 대기, GPU는 `max(gpuFree,cpuEnd)`.
+  펜스 = `gpuExecEnd ≤ 56` 개수.
+- **왜 정적이면 충분한가**: 핵심 통찰은 "N을 키우면 두 레인이 겹친다"인데, **N=1과 N=3을 동시에
+  나란히 두는 정적 비교**가 시간을 흘려보내며 N 슬라이더를 바꾸는 것보다 오히려 더 직접적이다.
+  (GPU≫CPU 레이턴시→N 수렴은 figcaption 한 문장으로 언급.) **이 챕터에서 가장 인터랙티브를 고민한
+  위젯**이지만, 비교-정적이 더 또렷하다고 판단.
 
-### 4. HazardChecker.tsx — 과정 (RAW/WAR/WAW + 올바른 배리어) · 4절
-- **개념**: 같은 리소스 연속 두 연산의 세 해저드와, 그걸 막는 배리어(src/dst 스테이지+접근,
-  이미지면 레이아웃 전이). 명시적 API는 자동으로 안 넣어줌 = 정확성은 사용자 몫.
-- **PROCESS/RESULT**: PROCESS(정확성 체커).
-- **상호작용**: SelectControl 시나리오 (RAW write→read[레이아웃 전이 필요] / WAW / WAR).
-  하단 BARRIER 토큰을 A/B 틈으로 **드래그**(usePointerDrag) 또는 토글. "src/dst 단계·접근 지정"·
-  "레이아웃 전이 포함" 토글. 검증 결과 pill(✗ 해저드 / ✗ 레이아웃 누락 / ✓ 해저드 없음) + 정밀 사유.
-- **체커 진리표(정확)**: 배리어 없음/단계 미지정 → 해당 해저드. RAW+배리어+단계지만 레이아웃 누락
-  → `missingLayout`. (레이아웃 포함 || 비RAW) → ok. ok일 때만 B 카드 리소스 상태 칩이 새
-  레이아웃으로 전이(교육 비트).
+### 3. TimelineSemaphoreGater.tsx — STATIC · 3절
+- **개념**: 세마포어=큐↔큐. 타임라인 값으로 happens-before 못박기(P가 v 시그널, Q가 ≥v 대기 ⇒ P≺Q).
+- **정적 도식**: 고정 설정 **G1이 값 2 시그널 / C1은 ≥2 대기**, 스케줄 종료 시점 1컷. G1 끝(t=3.0)에
+  signal 2 마커(초록 점), C1은 자연 시작(1.3)부터 G1 끝(3.0)까지 **주황 스톨** 후 실행. G1→C1 초록
+  점선 "happens-before". 타임라인 값 카운터 v=2(틱 0..3), `C1: wait ≥ 2` 알약. W=0 위험은 caption으로.
+- **왜 정적이면 충분한가**: 의존이 한 작업을 "붙잡아 두는" 구조는 **스톨 구간 + 화살표**라는 정적
+  주석으로 완결된다. 스크럽으로 값이 차오르는 걸 보는 건 같은 그림을 시간축으로 훑을 뿐.
 
-### 5. BarrierStageScope.tsx — 과정 (배리어=스코프, 과/저동기화) · 4절
-- **개념**: 배리어는 "벽"이 아니라 파이프라인 스테이지 **범위**. srcStage="앞 명령이 이 단계까지
-  도달", dstStage="뒤 명령을 이 단계부터 막음". 너무 넓으면 직렬화(오버랩 죽음), 좁으면 해저드.
-- **PROCESS/RESULT**: PROCESS.
-- **상호작용**: 좌우 스테이지 사다리(producer/consumer), 그래픽스 순서
-  `TOP_OF_PIPE→VERTEX_SHADER→EARLY_FRAGMENT_TESTS→FRAGMENT_SHADER→COLOR_ATTACHMENT_OUTPUT→BOTTOM_OF_PIPE`.
-  왼쪽 src 핸들·오른쪽 dst 핸들 **드래그**. SelectControl 3개 시나리오, "전체 배리어" 토글.
-- **체커(정확)**: `covered = (src ≥ writeStage) && (dst ≤ readStage)`,
-  `over = max(0,src−write) + max(0,read−dst)`. over=0이면 tight, >0이면 과동기화 N단계.
+### 4. HazardChecker.tsx — STATIC · 4절
+- **개념**: RAW/WAR/WAW 세 해저드와 그걸 막는 배리어(src/dst 스테이지+접근, 이미지면 레이아웃 전이).
+- **정적 도식**: 대표로 **RAW(렌더 타깃→샘플)** 1컷에 **올바른 배리어**를 그림 — A 카드(write,
+  COLOR_ATTACHMENT) → BARRIER(세로 막대, `COLOR_ATTACHMENT_OUTPUT/WRITE ▸ FRAGMENT_SHADER/READ`,
+  레이아웃 `COLOR_ATTACHMENT_OPTIMAL ▸ SHADER_READ_ONLY_OPTIMAL`) → B 카드(read, 새 레이아웃 칩).
+  우상단 `✓ 해저드 없음`. **하단에 두 실패 모드를 텍스트로**: ① 배리어 없음 → RAW 해저드, ② 레이아웃
+  누락 → 쓰레기 샘플. (체커 `evaluate` 진리표는 정적화로 제거 — 정답 1컷만 그림.)
+- **왜 정적이면 충분한가**: 원래는 드래그-퀴즈(맞히기)였는데, 가르치려는 것은 "올바른 배리어의 구성과
+  두 실패 모드"라는 **사실**이다. 정답 + 실패 주석을 직접 라벨로 보여주는 게 더 빠르고 확실하다.
 
-### 6. AsyncOverlapTimeline.tsx — 과정+결과 (멀티 큐 오버랩 이득·비용) · 5절
-- **개념**: 독립 작업을 다른 큐에 올리면 GPU에서 동시 실행(async 컴퓨트가 노는 ALU 메움).
-  교차 큐 의존은 세마포어 대기=스톨(동기화 비용). `순이득=오버랩 절감−스톨`.
-- **PROCESS/RESULT**: PROCESS(블록 탭으로 스케줄 재구성)+RESULT(makespan/절감 수치).
-- **상호작용**: 5패스 Gantt(그래픽스/컴퓨트 2레인). 패스 블록을 **탭**해 큐 전환(usePointerDrag
-  히트테스트). Slider SSAO·Lighting 길이, ToggleControl "교차 큐 의존(세마포어)", 리셋.
-  점선 세마포어 화살표 C-SSAO→G-Lighting, 주황 스톨, 페이드 직렬 기준선, makespan 자.
-- **스케줄러(정확)**: 큐 내 FIFO 직렬, 큐 간 동시. 의존(라이팅←SSAO)은 두 패스가 다른 큐일 때만
-  적용. 손검증: 기본 직렬18/makespan11/39%절감, SSAO 길게+의존 시 스톨3→makespan14.
-- **교육 비트**: 전부 그래픽스=0%, 컴퓨트 옮기면 makespan↓, 의존 켜면 스톨이 절감 갉아먹음,
-  SSAO 키우면 오버랩이 더는 이득 아님.
+### 5. BarrierStageScope.tsx — STATIC · 4절
+- **개념**: 배리어 = 파이프라인 스테이지 **범위**. srcStage="앞 명령이 이 단계까지 도달", dstStage=
+  "뒤 명령을 이 단계부터 막음". 너무 넓으면 직렬화(오버랩 죽음), 좁으면 해저드.
+- **정적 도식**: 시나리오 고정 **RT→샘플링**(쓰기=COLOR_OUTPUT, 읽기=FRAGMENT)에서 **tight한 정답
+  스코프**(src=COLOR_OUTPUT, dst=FRAGMENT) 1컷. 좌 사다리 src 이하 주황 음영(+"↑ 안 기다림"),
+  우 사다리 dst 이상 파랑 음영(+"↓ 먼저 진행 가능"), 빨간 "실제 쓰기"/초록 "실제 읽기" 강조,
+  초록 커버 화살표. 하단에 tight vs 전체 배리어(과동기화) 비교 주석.
+- **체커(보존·정확)**: `covered = (src ≥ write) && (dst ≤ read)`, `over = max(0,src−write)+max(0,read−dst)`
+  관계 자체는 그림이 보여줌(여기선 over=0). 핸들은 드래그 불가 — 위치 표시 점으로만.
+- **왜 정적이면 충분한가**: "딱 맞는 스코프"의 모양은 **음영 + 강조 테두리 + 화살표**로 한눈에 보인다.
+  드래그로 어긋나게 해보는 건 figcaption의 "너무 넓으면/좁으면" 문장이 대신한다.
+
+### 6. AsyncOverlapTimeline.tsx — STATIC · 5절
+- **개념**: 독립 작업을 다른 큐에 올리면 동시 실행(노는 ALU 메움). 교차 큐 의존 = 세마포어 대기 = 스톨.
+- **정적 도식**: 대표 스케줄 **컴퓨트 패스(C-SSAO/C-Particles)는 컴퓨트 레인 + 교차 큐 의존 ON** 1컷.
+  고정 길이: shadow=3, gbuffer=3, ssao=8, particles=3, lighting=4(스톨이 또렷이 보이게 고름).
+  위 "직렬 기준선"(faded) vs 아래 두 레인 간트, C-SSAO→G-Lighting **세마포어 점선 + 주황 스톨**,
+  초록 makespan 자. 캔버스 아래 수치 줄: **직렬 21 / makespan 12 / 절감 9(43%) / 스톨 2**.
+- **스케줄러(보존·정확)**: 큐 내 FIFO 직렬, 큐 간 동시, 의존(lighting←ssao)은 다른 큐일 때만 적용.
+  손검증: graphics[shadow 0–3, gbuffer 3–6, lighting **8–12**(ssao 신호 8 대기 → stall 2)],
+  compute[ssao 0–8, particles 8–11]. makespan=12, serial=21, stall=2. (수치는 caption 아래 줄에 라이브 계산.)
+- **왜 정적이면 충분한가**: "오버랩이 이득을 주다가 의존 스톨이 갉아먹는다"는 메시지는 **한 장에 직렬
+  기준선 + 겹친 스케줄 + 스톨**을 같이 두면 다 보인다. 블록을 탭해 옮기는 건 그 결론을 손으로 재현할 뿐.
 
 ## 기술 노트 / 단순화
 
