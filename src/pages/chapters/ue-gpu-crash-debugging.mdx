@@ -1,0 +1,263 @@
+---
+layout: ../../layouts/ChapterLayout.astro
+title: "언리얼 GPU 프로파일링 & 크래시 디버깅"
+description: RHI breadcrumbs·새 제출 파이프라인·Stat GPU·Unreal Insights·TDR/page fault·크래시 리포트 자동화를 인터랙티브로
+---
+
+import BreadcrumbTracer from '../../components/demos/ue-gpu-crash-debugging/BreadcrumbTracer.tsx';
+import SubmitPipelineTimeline from '../../components/demos/ue-gpu-crash-debugging/SubmitPipelineTimeline.tsx';
+import StatGpuDiagnoser from '../../components/demos/ue-gpu-crash-debugging/StatGpuDiagnoser.tsx';
+import InsightsFenceTimeline from '../../components/demos/ue-gpu-crash-debugging/InsightsFenceTimeline.tsx';
+import TdrCountdown from '../../components/demos/ue-gpu-crash-debugging/TdrCountdown.tsx';
+import PageFaultViz from '../../components/demos/ue-gpu-crash-debugging/PageFaultViz.tsx';
+import CrashReportPipeline from '../../components/demos/ue-gpu-crash-debugging/CrashReportPipeline.tsx';
+
+# 언리얼 GPU 프로파일링 & 크래시 디버깅
+
+## 왜 GPU는 죽고 나서 2초 뒤에 들키는가
+
+CPU가 잘못된 메모리를 건드리면, 그 순간 프로세스가 멈추고 디버거가 정확한 줄과 콜스택을
+손에 쥐여 줍니다. 범인이 현장에 그대로 서 있는 셈이죠. **GPU는 그렇지 않습니다.**
+
+CPU와 GPU는 서로 다른 시계로 도는 별개의 프로세서이고, 그 사이는 깊은 **명령 큐**로
+이어져 있습니다. CPU는 그릴 명령을 큐에 던져 넣고는 곧장 다음 프레임 일을 하러 떠납니다.
+GPU는 그 명령들을 **한참 뒤에** 꺼내 실행하죠. 그래서 GPU 안에서 무언가 터져도, CPU가
+"어, GPU가 응답이 없네?"라고 알아채기까지 보통 **약 2초**가 걸립니다. 게다가 GPU 위에는
+수천 개의 스레드(워프/웨이브)가 동시에 돌고, 특히 **컴퓨트 셰이더는 어디서 무엇이 돌고
+있었는지 추적하기가 까다롭습니다.**
+
+> 범인은 2초 전에 도망쳤고, 목격자는 수천 명인데 다들 입을 다물고 있는 사건 —
+> 이것이 GPU 크래시 디버깅입니다.
+
+이 챕터는 **Luke Thatcher (Epic) 발표**를 따라, 최신 언리얼 엔진이 이 문제를 어떻게
+공략하는지를 따라갑니다. 핵심 도구는 **흔적 남기기(breadcrumbs)** 입니다. GPU가 죽은
+*뒤에* 어디서 죽었는지를 되짚을 수 있도록, 진행하는 내내 작은 단서를 흘려 두는 것이죠.
+먼저 그 흔적이 어떻게 범인을 짚어내는지 직접 보겠습니다.
+
+<BreadcrumbTracer client:visible />
+
+## 1. RHI Breadcrumbs — 죽은 자리에 남는 흔적
+
+아이디어는 헨젤과 그레텔만큼 단순합니다. GPU 작업은 여러 **렌더 패스**(섀도, 베이스
+패스, 라이팅, 포스트프로세스 …)의 연속입니다. 각 패스가 **시작될 때**, GPU가 작은 버퍼에
+정수 하나를 적습니다. 그 정수는 패스를 지날 때마다 **단조 증가(monotonic)** 합니다.
+
+$$
+b_0 < b_1 < b_2 < \cdots, \qquad b_k = k+1
+$$
+
+여기서 $b_k$는 $k$번째 패스가 시작될 때 버퍼에 기록되는 값입니다. 단조성이 결정적입니다 —
+값이 **절대 되돌아가지 않으므로**, 크래시 직후 버퍼에 남은 **마지막 값** $b_{\text{last}}$가
+곧 "여기까지는 분명히 도달했고, 그다음에서 멈췄다"를 가리킵니다. 패스 $p$가 hang에
+빠지면 $b_{\text{last}} = p+1$에서 카운터가 얼어붙고, 우리는 인덱스를 역으로 풀어
+**정확히 그 패스**를 지목할 수 있습니다.
+
+엔진은 이 흔적을 여러 층위로 겹쳐 남깁니다 — **스코프(scope)**, **RDG 이벤트 스코프**,
+**RHI breadcrumb**, **RDG 패스 이름**. 그래서 단지 "몇 번째 패스"가 아니라 사람이 읽을 수
+있는 이름("ShadowDepths", "Lighting")으로 위치가 떨어집니다.
+
+가장 중요한 점은 이것이 **일관성의 토대**라는 것입니다. **Stat GPU**도, **Profile GPU**도,
+**Unreal Insights**도 전부 이 RHI Breadcrumb 위에서 동작합니다. 덕분에 CPU 스레드에서
+보는 이름과 GPU 타임라인에서 보는 이름이 **항상 같게** 유지됩니다. 위 위젯에서 크래시를
+주입한 패스가 어떻게 "마지막 기록값"으로 정확히 호명되는지, 그리고 그동안 CPU는 약 2초간
+아무 일 없다는 듯 굴다가 뒤늦게 인지하는지를 확인했을 겁니다.
+
+## 2. RHI Submit Pipeline — 폴링이 만드는 거품을 걷어내기
+
+흔적으로 "어디서"를 알게 됐다면, 다음 질문은 "이 모든 걸 **빠르게**, 그리고 **즉시 반응
+가능하게** 처리하려면 파이프라인을 어떻게 짜야 하는가"입니다.
+
+그래픽스 파이프라인은 큐로 흘러가는데, 작업 사이에는 **펜스(fence)** 로 서로를 기다리는
+지점이 생깁니다. 기다리는 동안 일을 안 하면 그 구간은 **버블(bubble)**, 즉 낭비된 유휴
+시간이 됩니다. 옛 구조에서는 **단일 RHI 스레드** 하나가 너무 많은 역할을 떠맡았습니다 —
+커맨드 변환도, GPU 큐 제출도, 동기화도 혼자서요. 그 결과:
+
+- **병렬화가 제한적**입니다. 변환을 여러 코어에 나눠 줄 수가 없습니다.
+- 펜스를 **폴링(polling)** 으로 확인합니다. 즉, 주기적으로 "끝났나? 아직? 끝났나?"를
+  되묻습니다. 신호가 실제로 도착한 시각 $t_s$와 다음 폴링 시각 사이의 간격 $\Delta$만큼,
+  스레드는 이미 끝난 일을 모른 채 **버블**을 만듭니다.
+
+$N$개의 커맨드 리스트를 직렬로 처리하면 옛 모델의 총 시간(makespan)은 대략
+
+$$
+M_{\text{old}} \;\approx\; \sum_{i=1}^{N}\bigl(t_{\text{translate}} + t_{\text{submit}} + t_{\text{gpu}}\bigr)
+\;+\; \underbrace{N\,\Delta}_{\text{폴링 버블}}
+$$
+
+처럼 **폴링 버블 $N\Delta$가 그대로 더해집니다.** 그래서 새 엔진은 RHI 스레드의 세 역할을
+**분리**합니다.
+
+- **변환(Translate)**: 여러 워커 스레드가 RHI 커맨드를 **병렬로** 변환합니다.
+  $N$개의 변환을 $W$개 워커가 나눠 맡으면 변환 구간이 $\sum t_{\text{translate}}$에서
+  대략 $\lceil N/W\rceil\, t_{\text{translate}}$로 줄어듭니다.
+- **제출(Submit)**: 전용 스레드 하나가 변환된 것을 **배칭(batching)** 해 GPU 큐에 빠르게
+  밀어 넣습니다.
+- **동기화(Sync)**: **인터럽트 스레드**가 GPU 펜스에 **즉시** 반응합니다. 폴링이 아니라
+  하드웨어 인터럽트라서, 신호가 오는 순간 깨어납니다 — 버블 $\Delta \to 0$. 그리고 같은
+  인터럽트 경로로 **GPU 크래시도 즉시** 알아챕니다(2초를 기다리지 않아도 되는 길이 여기서
+  열립니다).
+
+아래에서 같은 $N$개의 커맨드 리스트를 두 모델로 돌려, 폴링 버블이 옛 모델의 makespan을
+어떻게 부풀리는지 — 그리고 새 모델이 어떻게 타이트하게 유지되는지를 나란히 비교해 보세요.
+
+<SubmitPipelineTimeline client:visible />
+
+## 3. 프로파일링 ①: Stat GPU의 Busy / Wait / Idle 읽는 법
+
+크래시가 아니라 **느린** 프레임을 잡을 차례입니다. 가장 가벼운 도구는 콘솔의 **Stat GPU**로,
+각 큐의 시간을 세 가지로 쪼개 줍니다.
+
+$$
+T_{\text{queue}} = \underbrace{T_{\text{busy}}}_{\text{일하는 중}}
+\;+\; \underbrace{T_{\text{wait}}}_{\text{펜스·리소스 대기}}
+\;+\; \underbrace{T_{\text{idle}}}_{\text{줄 일감이 없음}}
+$$
+
+함정은 이 숫자들을 **곧이곧대로 읽으면 안 된다**는 데 있습니다. 발표가 알려 주는 진단 규칙은
+직관에 반합니다.
+
+- **그래픽스 큐의 Wait이 크다 → 문제.** 메인 큐가 펜스나 리소스를 기다리며 멈춰 있다는
+  뜻이고, 보통 의존 구조가 잘못 짜인 신호입니다.
+- **컴퓨트 큐의 Wait → 정상.** AsyncCompute는 그래픽스 큐의 결과를 *기다리도록 설계*된
+  존재라서, wait이 보이는 게 자연스럽습니다. 같은 "Wait"이라도 어느 큐에 있느냐에 따라
+  의미가 정반대입니다.
+- **$T_{\text{idle}} > 0$ → CPU bound.** GPU가 할 일을 다 비웠는데 CPU가 다음 일감을 못
+  만들어 주는 상황입니다. GPU가 굶고 있는 것이고, 이때는 GPU를 아무리 최적화해도 프레임이
+  빨라지지 않습니다 — 병목은 CPU에 있으니까요.
+
+이 "같은 막대, 다른 결론" 규칙을 손에 익히는 게 핵심입니다. 시나리오를 바꾸고 슬라이더로
+비율을 직접 움직여, 같은 양의 Wait이 그래픽스에선 빨간 경고가 되고 컴퓨트에선 정상으로
+판정되는 걸 직접 확인해 보세요.
+
+<StatGpuDiagnoser client:visible />
+
+## 4. 프로파일링 ②: Unreal Insights와 펜스 화살표 — 그리고 데드락
+
+Stat GPU가 요약 막대라면, **Unreal Insights**는 그 아래 깔린 **전체 타임라인**입니다.
+CPU와 GPU의 작업을 **하나의 시간축**에 올리고, GPU의 **graphics 큐**와 **compute 큐**
+각각의 busy/wait/idle을 보여 줍니다.
+
+멀티 큐에서 길을 잃지 않게 해 주는 장치가 **펜스 화살표(fence arrow)** 입니다. 한 큐가
+펜스를 **signal**하면 다른 큐가 그 값을 **wait**하고, Insights는 그 둘을 화살표로 잇습니다.
+화살표에는 두 가지가 붙습니다.
+
+- **펜스 번호**: 어느 신호와 어느 대기가 짝인지 식별합니다.
+- **latency**: signal을 받은 순간부터 GPU가 셰이더를 준비해 **실제 커널을 런치하기까지의
+  시간**입니다. 이 지연은 작은 스톨로 나타나 makespan을 늘립니다.
+
+펜스로 표현되는 대기 관계를 의존 그래프 $G=(V,E)$로 보면, 정상적인 스케줄은 **비순환
+(acyclic)** 이어야 합니다. 그런데 그래픽스가 컴퓨트의 펜스를 기다리는데 컴퓨트도 그래픽스의
+펜스를 기다리면, 그래프에 **사이클**이 생깁니다.
+
+$$
+G_{\text{fx}} \xrightarrow{\text{wait}} C_{\text{cmp}} \xrightarrow{\text{wait}} G_{\text{fx}}
+$$
+
+서로가 서로의 신호를 영원히 기다리는 **데드락(deadlock)** 입니다. 발표의 실제 사례 ②가
+정확히 이것이었습니다: "AsyncCompute가 active인데, 알고 보니 **Graphics 큐의 펜스를 대기
+중**"이었던 교착. 아래에서 펜스 방향을 바꿔 latency가 만드는 스톨을 관찰하고, 그다음
+방향을 **순환**으로 돌려 두 큐가 빨갛게 얼어붙는 데드락을 직접 만들어 보세요.
+
+<InsightsFenceTimeline client:visible />
+
+> 참고: 옛 방식의 **immediate 커맨드 리스트**를 쓰면 RHI 커맨드를 병렬로 변환할 수 없어
+> single thread로만 처리됩니다. §2의 병렬 변환은 deferred(기록형) 커맨드 리스트 위에서
+> 비로소 가능해집니다.
+
+## 5. 크래시 디버깅 워크플로 — TDR과 Page Fault
+
+이제 가장 어려운 경우, **실제 크래시**입니다. CPU 크래시와 달리 GPU는 늦게 멈추고 스레드가
+많아 범인을 찾기 어렵습니다. 원인은 크게 둘로 나뉩니다.
+
+### 5.1 TDR (Timeout) — 2초 안에 못 끝내면 OS가 죽인다
+
+OS는 GPU가 정해진 시간 안에 작업을 마치지 못하면 드라이버를 리셋하고 프로세스를 강제
+종료합니다. 이를 **TDR(Timeout Detection and Recovery)** 이라 하고, Windows의 기본 한계는
+**약 2초**입니다. 작업 길이 $L$에 대한 결과는 단순한 임계 규칙입니다.
+
+$$
+\text{결과} =
+\begin{cases}
+\text{정상 완료} & L < T_{\text{TDR}} \ (=2\text{초}) \\[2pt]
+\text{TDR 강제 종료} & L \ge T_{\text{TDR}}
+\end{cases}
+$$
+
+발표의 사례 ①이 이 경로였습니다: 잘못된 주소를 참조해 **큰 수로 루프**를 돌다 **행(hang)**
+($L \to \infty$)에 빠졌고, 2초 뒤 OS가 정확히 한계에서 프로세스를 죽였습니다. 그리고 §0에서
+말한 "2초 늦게 터지는 크래시"의 정체가 바로 이 $T_{\text{TDR}}$입니다. 슬라이더로 작업 길이를
+2초 안팎으로 넘나들며, 무엇이 정상 완료를 hang으로 — 그리고 TDR 강제 종료로 — 바꾸는지
+직접 보세요.
+
+<TdrCountdown client:visible />
+
+### 5.2 Page Fault — 없는 주소를 읽으면
+
+두 번째 원인은 **page fault**입니다. 해제됐거나(evicted) 아직 레지던트가 아닌 리소스에
+셰이더가 접근하면, **존재하지 않는 주소**를 읽게 되어 폴트가 납니다. 흔한 무대가 텍스처의
+**MIP 체인**입니다. 각 MIP의 메모리 비용은 해상도의 제곱에 비례해, 레벨이 낮을수록(=고해상도)
+가파르게 큽니다.
+
+$$
+\text{cost}(\text{MIP}_\ell) \;\propto\; 4^{\,(L-1)-\ell}
+\quad\Longrightarrow\quad 256 : 64 : 16 : 4 : 1
+$$
+
+메모리가 빠듯하면 스트리밍 시스템은 **가장 비싼 고해상도 MIP부터** 밀어냅니다. 그 결과 가용
+예산 $B$가 줄면 레지던트 집합이 작은 MIP 쪽으로 쪼그라들고, 셰이더가 이미 해제된 MIP을
+참조하면 폴트가 터집니다. 발표의 사례 ③이 이것 — "**MIP3가 없는데 참조**"였고, 메모리
+부족으로 해제됐던 것이었죠. 이런 폴트의 **주소·MIP 같은 세부 정보**는 엔진만으로는 알기
+어렵고, **벤더 소프트웨어**의 도움을 받습니다(NVIDIA의 경우 **Aftermath**).
+
+<PageFaultViz client:visible />
+
+### 5.3 그래서 실제 흐름은
+
+이 도구들을 엮으면 워크플로가 됩니다.
+
+1. **Sanity check 먼저.** 그래픽 드라이버 최신화, background 프로세스 정리, GPU 메모리
+   사용량 확인, 재현용 개발 환경 점검. 의외로 여기서 끝나는 경우도 많습니다.
+2. **디버거를 켠다.** 실행 인자 `-gpucrashdebugging -gpubreadcrumbs`(약 **2MB 공유
+   메모리**를 씁니다). 이걸로 §1의 breadcrumb가 크래시 시점에 보존됩니다.
+3. **재현 조건을 단순화한다.** 타이밍과 비동기성을 걷어내 버그를 고정합니다 —
+   `-onethread`(멀티스레드 렌더 타이밍 제거), `-rdgimmediate`(RDG 병렬/비동기 끄기),
+   `-d3ddebug`(검증 레이어 켜기).
+4. **active 단계를 짚는다.** breadcrumb로 크래시 시점에 active였던 패스를 찾고, 거기서부터
+   원인(TDR? page fault? 데드락?)을 좁혀 들어갑니다. 필요하면 벤더 툴로 주소를 캡니다.
+
+## 6. 조립: 크래시 리포트 자동화
+
+마지막 조각은 **규모**입니다. 출시된 게임에서는 크래시 리포트가 하루에 수천 건씩 쏟아지고,
+사람이 일일이 볼 수 없습니다. 발표가 소개한 자동화 파이프라인은 §1의 breadcrumb를 끝까지
+밀어붙입니다.
+
+1. 보고가 들어오면 **전체 로그가 아니라 active 상태였던 콜스택만** 수집합니다(작고 핵심적인
+   신호만).
+2. 그 콜스택 문자열을 **해시**해 상황을 고유하게 식별합니다. 콜스택 $s$에 대해
+   $h = \text{hash}(s)$를 키로 삼는 것이죠.
+3. dedup 테이블에서 $h$를 조회해, 처음 보면 새 행($\text{count}=1$)으로 넣고 이미 본
+   해시면 **카운트를 1 올립니다**. 같은 크래시가 자주 들어올수록 그 행의 count가 커지고,
+   그에 따라 **Jira 우선순위**가 올라갑니다.
+
+핵심 이득은 **dedup**입니다. 똑같은 콜스택의 홍수를 해시로 **한 줄로 접고** 빈도로
+정렬하면, $O(\text{리포트 수})$의 잡음이 $O(\text{고유 버그 수})$의 **우선순위 매겨진
+백로그**로 바뀝니다. "무엇부터 고쳐야 하는가"의 답이 데이터에서 저절로 떨어집니다. 같은
+크래시를 여러 번 흘려보내 한 행의 우선순위가 Minor → Major → Critical → Blocker로
+올라가며 재정렬되는 걸 직접 해 보세요.
+
+<CrashReportPipeline client:visible />
+
+## 더 나아가기
+
+- **여기서 멈춘 곳**: 이 챕터는 모델을 **개념적으로** 단순화했습니다. 위젯의 시간 단위는
+  실제 ms가 아닌 비교용 상대값이고, 스케줄러도 작은 리스트 스케줄러입니다. 실제 RHI는 백엔드
+  (D3D12 / Vulkan)마다 펜스·배리어·메모리 레지던시 정책이 다릅니다.
+- **다음 단계**: RDG(Render Dependency Graph)가 패스 의존성과 리소스 수명·배리어를 어떻게
+  자동으로 푸는지, 그리고 그 위에서 transient 메모리 별칭(aliasing)이 어떻게 page fault의
+  온상이 되는지. 또한 벤더 툴(NVIDIA Aftermath, PIX, RenderDoc, RGP)이 breadcrumb를 받아
+  실제 디스어셈블리·페이지 폴트 주소를 어떻게 짚어내는지.
+- **관련 토픽**: 명령 큐와 동기화(펜스/세마포어/배리어), 비동기 컴퓨트 오버랩, GPU 메모리
+  스트리밍.
+
+> 모든 모델과 사실관계는 **Luke Thatcher (Epic) 발표**를 1차 출처로 합니다. 위젯은 그
+> 메커니즘을 *과정*으로 드러내기 위해 의도적으로 단순화한 시뮬레이터입니다.

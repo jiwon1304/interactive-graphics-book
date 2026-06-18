@@ -79,6 +79,20 @@ export const chapters: Chapter[] = [
     section: '렌더링',
     draft: true,
   },
+  // ── GPU 명령 제출 ──
+  {
+    slug: 'command-queues',
+    title: '명령 큐와 동기화',
+    description: '명령 제출 생명주기·펜스·세마포어·배리어·async 오버랩',
+    section: 'GPU 명령 제출',
+  },
+  // ── Unreal RHI ──
+  {
+    slug: 'ue-gpu-crash-debugging',
+    title: '언리얼 GPU 프로파일링 & 크래시 디버깅',
+    description: 'RHI breadcrumbs·새 제출 파이프라인·Stat GPU·Unreal Insights·TDR/page fault·크래시 리포트 자동화',
+    section: 'Unreal RHI',
+  },
 ];
 
 /**
