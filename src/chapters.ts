@@ -113,6 +113,12 @@ export const chapters: Chapter[] = [
     section: 'GPU ↔ 렌더링',
   },
   {
+    slug: 'texture-filtering-mipmapping',
+    title: 'Texture Filtering과 Mipmap',
+    description: '밉 LOD 선택 다음 — bilinear·trilinear·anisotropic 샘플링과 minification aliasing·prefilter',
+    section: 'GPU ↔ 렌더링',
+  },
+  {
     slug: 'texture-compression',
     title: '텍스처 압축 — 블록 안에 색을 가두다',
     description: '블록 압축(BCn/ASTC)·BC1 해부·아티팩트·BC5 노멀맵·하드웨어 디코드·채널 패킹',
