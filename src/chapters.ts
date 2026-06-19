@@ -95,8 +95,8 @@ export const chapters: Chapter[] = [
   },
   {
     slug: 'warp-divergence-occupancy',
-    title: '워프 다이버전스와 점유율',
-    description: '다이버전스·재수렴·프레디케이션·스케줄러/스코어보딩·지연 은닉·점유율',
+    title: '워프 divergence와 occupancy',
+    description: 'divergence·재수렴·predication·스케줄러/스코어보딩·지연 은닉·occupancy',
     section: 'GPU 실행 모델',
   },
   // ── GPU ↔ 렌더링 ──
