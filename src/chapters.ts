@@ -99,6 +99,25 @@ export const chapters: Chapter[] = [
     description: '다이버전스·재수렴·프레디케이션·스케줄러/스코어보딩·지연 은닉·점유율',
     section: 'GPU 실행 모델',
   },
+  // ── GPU ↔ 렌더링 ──
+  {
+    slug: 'graphics-pipeline-journey',
+    title: '삼각형의 여정 — 정점에서 픽셀까지',
+    description: '삼각형 하나가 GPU 파이프라인을 통과하는 전 과정 — 클리핑·원근 분할·에지 함수 래스터화·early-Z·ROP',
+    section: 'GPU ↔ 렌더링',
+  },
+  {
+    slug: 'rendering-execution-model',
+    title: '렌더링에서의 GPU 실행 — 픽셀 쿼드와 깊이 컬링',
+    description: '워프 락스텝이 픽셀 셰이딩으로 — 2×2 쿼드·화면공간 미분과 밉 LOD·early-Z/Hi-Z/오버드로',
+    section: 'GPU ↔ 렌더링',
+  },
+  {
+    slug: 'texture-compression',
+    title: '텍스처 압축 — 블록 안에 색을 가두다',
+    description: '블록 압축(BCn/ASTC)·BC1 해부·아티팩트·BC5 노멀맵·하드웨어 디코드·채널 패킹',
+    section: 'GPU ↔ 렌더링',
+  },
   // ── Unreal RHI ──
   {
     slug: 'ue-gpu-crash-debugging',
