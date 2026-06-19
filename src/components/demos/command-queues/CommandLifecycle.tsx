@@ -51,7 +51,7 @@ export default function CommandLifecycle() {
 
     const padX = 14;
     const laneH = 64;
-    const laneGap = 18;
+    const laneGap = 34; // 레인 사이 간격 — 화살표 라벨(제출/드레인)이 레인 헤더와 안 겹치게
     const top0 = 30;
     const laneX = padX;
     const laneW = w - laneX - padX;
@@ -191,7 +191,8 @@ export default function CommandLifecycle() {
       ctx.save();
       ctx.font = '9px ui-monospace, monospace';
       ctx.fillStyle = theme.muted;
-      ctx.fillText('제출', midX + 8, (lanes[0].y + laneH + lanes[1].y) / 2 + 3);
+      // 라벨은 출발 레인 바로 아래(갭 상단)에 둠 → 도착 레인 헤더(갭 하단)와 분리
+      ctx.fillText('제출', midX + 8, lanes[0].y + laneH + 12);
       ctx.restore();
       // ② → ③
       drawArrow(
@@ -206,7 +207,7 @@ export default function CommandLifecycle() {
       ctx.save();
       ctx.font = '9px ui-monospace, monospace';
       ctx.fillStyle = theme.muted;
-      ctx.fillText('드레인(나중에)', midX + 8, (lanes[1].y + laneH + lanes[2].y) / 2 + 3);
+      ctx.fillText('드레인(나중에)', midX + 8, lanes[1].y + laneH + 12);
       ctx.restore();
     }
   };

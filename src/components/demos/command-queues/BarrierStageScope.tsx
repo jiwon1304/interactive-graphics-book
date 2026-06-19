@@ -46,10 +46,12 @@ export default function BarrierStageScope() {
     const top = 56;
     const bottomPad = 52; // 하단 주석 공간
     const rowH = Math.min(40, (h - top - bottomPad) / STAGES.length);
-    const colW = Math.min(150, (w - padX * 2 - 24) / 2);
+    // 가운데 거터(gutter)는 점/화살표/주석이 들어갈 공간이라 좁은 폭에서도 최소 폭을 보장.
+    const colW = Math.min(150, (w - padX * 2 - 56) / 2);
     const gap = w - padX * 2 - colW * 2;
     const leftX = padX;
     const rightX = padX + colW + gap;
+    const gutterCx = (leftX + colW + rightX) / 2;
 
     // 시나리오 제목.
     ctx.font = '11px ui-monospace, monospace';
@@ -118,32 +120,38 @@ export default function BarrierStageScope() {
     drawLadder(leftX, 'left');
     drawLadder(rightX, 'right');
 
-    // "안 기다림" / "먼저 진행 가능" 주석.
+    // "안 기다림" / "먼저 진행 가능" 주석 — 거터(가운데)에 가운데 정렬로 둬서
+    // 사다리 셀의 긴 스테이지 이름과 겹치지 않게 한다. 화살표가 지나는 행(SRC..DST)
+    // 바깥의 행(SRC+1, DST-1)에 배치해 화살표/점과도 분리된다.
     ctx.font = '9px ui-monospace, monospace';
-    ctx.textAlign = 'left';
+    ctx.textAlign = 'center';
     if (SRC < STAGES.length - 1) {
-      const y = top + (SRC + 1) * rowH;
+      const y = top + (SRC + 1) * rowH + rowH / 2;
       ctx.fillStyle = theme.muted;
-      ctx.fillText('↑ 안 기다림', leftX + 8, y + rowH / 2 + 12);
+      ctx.fillText('↑ 안 기다림', gutterCx, y + 3);
     }
     if (DST > 0) {
-      const y = top + (DST - 1) * rowH;
+      const y = top + (DST - 1) * rowH + rowH / 2;
       ctx.fillStyle = theme.muted;
-      ctx.fillText('↓ 먼저 진행 가능', rightX + 8, y + rowH / 2 + 12);
+      ctx.fillText('↓ 먼저 진행 가능', gutterCx, y + 3);
     }
+    ctx.textAlign = 'left';
 
-    // 커버 화살표: src(좌) → dst(우), 커버됨 = 초록.
+    // 점(드래그 아님 — src/dst 스테이지 위치 표시) — 거터 안쪽에 둔다.
+    const srcDotX = leftX + colW + 12;
+    const dstDotX = rightX - 12;
+
+    // 커버 화살표: src 점 → dst 점, 커버됨 = 초록.
     {
       const sY = top + SRC * rowH + rowH / 2;
       const dY = top + DST * rowH + rowH / 2;
-      drawArrow(ctx, leftX + colW, sY, rightX, dY, QUEUE_COLORS.ok, {
+      drawArrow(ctx, srcDotX, sY, dstDotX, dY, QUEUE_COLORS.ok, {
         dashed: true,
         width: 1.5,
         head: 7,
       });
     }
 
-    // 핸들(드래그 아님 — 위치 표시용 점).
     const drawDot = (hx: number, stageIdx: number, color: string, label: string, anchor: 'left' | 'right'): void => {
       const cy = top + stageIdx * rowH + rowH / 2;
       ctx.beginPath();
@@ -166,8 +174,9 @@ export default function BarrierStageScope() {
       ctx.textBaseline = 'alphabetic';
       ctx.textAlign = 'left';
     };
-    drawDot(leftX, SRC, QUEUE_COLORS.stall, 'src', 'left');
-    drawDot(rightX + colW, DST, QUEUE_COLORS.graphics, 'dst', 'right');
+    // src 점은 라벨을 오른쪽(거터)으로, dst 점은 왼쪽(거터)으로 → 화면 밖으로 안 나감.
+    drawDot(srcDotX, SRC, QUEUE_COLORS.stall, 'src', 'right');
+    drawDot(dstDotX, DST, QUEUE_COLORS.graphics, 'dst', 'left');
 
     // 하단 주석: tight vs 전체 배리어 비교.
     const noteY = h - 34;

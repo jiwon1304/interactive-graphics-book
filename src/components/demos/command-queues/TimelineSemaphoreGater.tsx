@@ -266,12 +266,16 @@ export default function TimelineSemaphoreGater() {
     ctx.fillText(`v = ${finalValue}`, x1, VALUE_BOX_Y);
     ctx.textAlign = 'start';
 
-    // C1 대기 임계값 알약.
+    // C1 대기 임계값 알약 — 값 카운터 줄(틱·v=N) 아래 별도 줄에 둬서
+    // 좁은 폭에서도 v=N·틱 숫자와 가로로 겹치지 않게 한다.
+    ctx.font = '10px ui-monospace, monospace';
+    const waitText = `C1: wait ≥ ${WAIT_W}`;
+    const pillCx = x0 + ctx.measureText(waitText).width / 2 + 6;
     pill(
       ctx,
-      tickX0 + 3 * 26 + 64,
-      VALUE_BOX_Y,
-      `C1: wait ≥ ${WAIT_W}`,
+      pillCx,
+      VALUE_BOX_Y + 30,
+      waitText,
       withAlpha(QUEUE_COLORS.ok, 0.9),
       '#ffffff',
       '10px ui-monospace, monospace',

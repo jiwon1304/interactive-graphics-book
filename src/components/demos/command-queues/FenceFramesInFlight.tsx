@@ -109,22 +109,22 @@ export default function FenceFramesInFlight() {
     const drawPanel = (spec: PanelSpec, panelTop: number): void => {
       const sim = simulate(spec.N, FRAME_TIME, FRAME_TIME, SIM_FRAMES);
 
-      // 패널 제목 + 노트
+      // 패널 제목 + 노트 (제목·노트·레인 라벨이 겹치지 않게 충분히 띄움)
       ctx.font = 'bold 12px ui-monospace, monospace';
       ctx.fillStyle = theme.text;
-      ctx.fillText(spec.title, plotX, panelTop + 16);
+      ctx.fillText(spec.title, plotX, panelTop + 14);
       ctx.font = '10px ui-monospace, monospace';
       ctx.fillStyle = theme.muted;
-      ctx.fillText(spec.note, plotX, panelTop + 31);
+      ctx.fillText(spec.note, plotX, panelTop + 30);
 
-      const cpuLaneY = panelTop + 44;
+      const cpuLaneY = panelTop + 54;
       const gpuLaneY = cpuLaneY + laneH + 24;
 
       // 레인 라벨
       ctx.font = '10px ui-monospace, monospace';
       ctx.fillStyle = theme.muted;
-      ctx.fillText('CPU 기록', plotX, cpuLaneY - 4);
-      ctx.fillText('GPU 실행', plotX, gpuLaneY - 4);
+      ctx.fillText('CPU 기록', plotX, cpuLaneY - 6);
+      ctx.fillText('GPU 실행', plotX, gpuLaneY - 6);
 
       // 레인 배경
       for (const y of [cpuLaneY, gpuLaneY]) {
@@ -212,7 +212,7 @@ export default function FenceFramesInFlight() {
       {
         const bw = 72;
         const bx = w - padX - bw;
-        const by = panelTop + 44;
+        const by = cpuLaneY; // CPU 레인 상단에 맞춤
         roundRect(ctx, bx, by, bw, 50, 10);
         ctx.fillStyle = withAlpha(theme.border, 0.4);
         ctx.fill();
@@ -230,7 +230,7 @@ export default function FenceFramesInFlight() {
       // 슬롯 표시(N개) — 펜스 박스 아래
       {
         const sx = w - padX - 72;
-        const sy = panelTop + 100;
+        const sy = cpuLaneY + 56; // 펜스 박스(높이 50) 바로 아래
         ctx.font = '9px ui-monospace, monospace';
         ctx.fillStyle = theme.muted;
         ctx.fillText('슬롯:', sx, sy - 2);
