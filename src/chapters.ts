@@ -124,6 +124,18 @@ export const chapters: Chapter[] = [
     description: '블록 압축(BCn/ASTC)·BC1 해부·아티팩트·BC5 노멀맵·하드웨어 디코드·채널 패킹',
     section: 'GPU ↔ 렌더링',
   },
+  {
+    slug: 'tile-based-rendering',
+    title: 'Tile-Based Rendering과 모바일 GPU',
+    description: '모바일 GPU가 화면을 타일로 그리는 이유 — DRAM 대역폭과 전력. IMR vs TBR/TBDR·GMEM·binning·HSR·overdraw·load/store op',
+    section: 'GPU ↔ 렌더링',
+  },
+  {
+    slug: 'memory-bandwidth-roofline',
+    title: '메모리 대역폭과 Roofline',
+    description: '현대 GPU의 진짜 병목 — roofline·arithmetic intensity·ridge point·대역폭 예산·DCC·Morton swizzle',
+    section: 'GPU ↔ 렌더링',
+  },
   // ── Unreal RHI ──
   {
     slug: 'ue-gpu-crash-debugging',

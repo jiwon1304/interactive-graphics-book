@@ -1,0 +1,250 @@
+---
+layout: ../../layouts/ChapterLayout.astro
+title: "메모리 대역폭과 Roofline"
+description: 현대 GPU의 진짜 병목은 연산이 아니라 메모리 대역폭이다 — roofline model로 형식화하고, 대역폭 예산을 셈하고, DCC·Morton swizzle로 트래픽을 아끼는 법까지
+---
+
+import ComputeVsBandwidth from '../../components/demos/memory-bandwidth-roofline/ComputeVsBandwidth.tsx';
+import Roofline from '../../components/demos/memory-bandwidth-roofline/Roofline.tsx';
+import BandwidthBudget from '../../components/demos/memory-bandwidth-roofline/BandwidthBudget.tsx';
+import DeltaColorCompression from '../../components/demos/memory-bandwidth-roofline/DeltaColorCompression.tsx';
+import MortonSwizzle from '../../components/demos/memory-bandwidth-roofline/MortonSwizzle.tsx';
+
+# 메모리 대역폭과 Roofline
+
+숫자 하나로 시작합시다. 요즘 데스크톱 GPU 한 장은 초당 약 $4\times10^{13}$번(40 TFLOP/s)
+부동소수점 연산을 합니다. 같은 칩의 메모리 대역폭은 초당 약 $1\times10^{12}$ byte(1 TB/s)입니다.
+나눠 보면, **메모리에서 byte 하나를 가져오는 동안 칩은 부동소수점 연산을 40번 할 수 있습니다.**
+float 하나는 4 byte이므로, float 한 개를 읽어 오는 시간에 연산은 160번 가능합니다.
+
+그러니 float 하나를 읽어 곱하기 한 번 하고 다시 쓰는 — 그래픽스에 널린 — 커널은, 연산을 1번
+하는 동안 데이터 왕복(8 byte)을 기다리느라 칩의 산술 유닛을 **99% 넘게 놀립니다.** 우리는
+보통 "GPU가 빠르다"를 FLOPS로 말하지만, 실제로 대부분의 커널이 기다리는 것은 연산이 아니라
+**데이터**입니다. 이 챕터는 그 사실을 직접 만져 보고, `roofline model`로 형식화하고, 하드웨어가
+대역폭을 아끼려고 부리는 수법까지 따라갑니다.
+
+<ComputeVsBandwidth client:visible />
+
+## 1. 왜 대역폭이 병목인가 — 벌어지는 격차
+
+이게 우연이 아니라 구조적인 이유가 있습니다. 트랜지스터를 더 넣어 산술 유닛(ALU)을 늘리는 것은
+실리콘 면적의 문제라, 칩이 커지고 공정이 좋아질수록 **FLOPS는 빠르게 늘어납니다.** 반면 메모리
+대역폭은 칩 밖 DRAM과 핀으로 데이터를 주고받는 물리적 한계(핀 수 × 신호 속도)에 묶여 있어, **훨씬
+더디게 늡니다.** 세대를 거듭할수록 연산 능력 대 대역폭의 비($\text{FLOP}/\text{byte}$)는 계속
+벌어집니다 — 이게 종종 *memory wall*이라 불리는 현상입니다.
+
+결과는 명확합니다. 산술 유닛은 남아도는데 그것을 먹일 데이터가 제때 안 옵니다. 그래서 커널의
+성능을 가르는 질문은 "연산이 얼마나 무거운가"가 아니라 **"읽고 쓴 byte당 연산을 몇 번 하는가"**가
+됩니다. 이 비를 `arithmetic intensity`라 부릅니다.
+
+$$
+I \;=\; \frac{\text{연산 수 (FLOP)}}{\text{메모리 트래픽 (byte)}}
+\qquad [\text{FLOP/byte}].
+$$
+
+intensity가 낮은 커널(byte당 연산이 적음)은 데이터를 기다립니다 — `bandwidth-bound`.
+intensity가 높은 커널은 가져온 데이터로 오래 계산하므로 산술 유닛이 병목입니다 — `compute-bound`.
+위 위젯에서 본 게 바로 이 둘의 경쟁입니다. 그럼 "어디서 한쪽이 다른 쪽을 이기는가"를 정확히
+그릴 수 있을까요? 그게 roofline입니다.
+
+## 2. Roofline model — 두 지붕의 min
+
+성능의 상한을 두 가지가 동시에 정합니다.
+
+첫째, 아무리 데이터가 빨리 와도 산술 유닛이 초당 $P_\text{peak}$ FLOP 이상은 못 합니다. 이게
+수평 천장입니다.
+
+$$
+P \;\le\; P_\text{peak} \qquad [\text{FLOP/s}].
+$$
+
+둘째, 대역폭 $B$ (byte/s)로 데이터를 가져오는데 byte당 $I$번 연산하므로, 데이터가 허락하는
+연산 속도는 $I \cdot B$를 넘을 수 없습니다.
+
+$$
+P \;\le\; I \cdot B
+\qquad [\text{FLOP/byte} \times \text{byte/s} = \text{FLOP/s}].
+$$
+
+단위가 정확히 맞습니다 — intensity의 byte와 대역폭의 byte가 약분되어 FLOP/s가 남습니다.
+달성 가능한 성능은 둘 중 더 *낮은* 한계, 즉 두 상한의 min입니다.
+
+$$
+\boxed{\;P \;=\; \min\!\left(P_\text{peak},\; I \cdot B\right)\;}
+$$
+
+이걸 $I$에 대한 그래프로 그리면 두 직선이 됩니다. 낮은 $I$에서는 $I\cdot B$가 작아 이게 천장이고
+(기울기 $B$인 경사 — 대역폭 지붕), 높은 $I$에서는 $P_\text{peak}$가 천장입니다(수평 — compute
+지붕). 두 지붕이 만나는 곳에서 $P_\text{peak} = I^* \cdot B$이므로
+
+$$
+\boxed{\;I^* \;=\; \frac{P_\text{peak}}{B}\;} \qquad [\text{FLOP/byte}].
+$$
+
+이 $I^*$가 `ridge point`입니다. 커널의 intensity가 $I^*$보다 작으면 대역폭이, 크면 연산이 병목을
+잡습니다. 앞의 숫자(40 TFLOP/s, 1 TB/s)로 계산하면 $I^* = 40$ FLOP/byte — **byte 하나를
+읽어 40번 넘게 계산해야 비로소 산술 유닛을 다 쓴다**는 뜻입니다. 대부분의 그래픽스 커널은
+거기 한참 못 미칩니다.
+
+로그-로그 축으로 그리면 경사 지붕이 깔끔한 직선(기울기 1)으로, 천장이 수평선으로 나옵니다.
+커널 점을 좌우로 끌어 ridge를 넘나들어 보세요.
+
+<Roofline client:visible />
+
+> **2-독자 레이어링.**
+>
+> <details>
+> <summary>roofline로 무엇을 읽나 — 최적화의 방향</summary>
+>
+> 커널 점이 지붕에서 얼마나 떨어져 있는지가 "얼마나 더 짜낼 수 있는가"입니다. 점이 지붕에
+> 딱 붙어 있으면 그 하드웨어 한계까지 다 쓴 것이고, 한참 아래면 다른 비효율(레이턴시 은닉
+> 실패, occupancy 부족, 캐시 미스)이 있다는 신호입니다.
+>
+> 더 중요한 건 *어느 지붕*에 붙었느냐입니다. **bandwidth-bound**(경사 지붕)면 연산을 줄여도
+> 빨라지지 않습니다 — byte를 줄여야 합니다(트래픽 압축, 재계산 vs 재로드, 데이터 포맷 축소,
+> 더 나은 캐시 지역성으로 intensity를 *오른쪽으로* 미는 것). **compute-bound**(수평 천장)면
+> 반대로 연산을 줄이거나 더 싼 근사를 써야 합니다. roofline은 "지금 무엇을 고쳐야 하는가"를
+> 한 점의 위치로 알려 줍니다.
+> </details>
+
+## 3. 대역폭 예산 — 컬러 버퍼만으로도 빠듯하다
+
+추상적인 intensity 말고, 실제 프레임이 대역폭을 얼마나 먹는지 직접 셈해 봅시다. 화면에 픽셀을
+하나 칠할 때 컬러 버퍼에서 일어나는 트래픽은:
+
+$$
+\text{BW} \;=\; \underbrace{W \cdot H}_{\text{픽셀 수}} \cdot\; b_{px} \cdot
+\underbrace{(\text{read} + \text{write})}_{\text{블렌딩 시 2}} \cdot\;
+d_\text{overdraw} \cdot \text{fps}
+\qquad [\text{byte/s}].
+$$
+
+각 항을 풀면: $W\cdot H$는 픽셀 수, $b_{px}$는 픽셀당 byte(RGBA8이면 4, FP16이면 8),
+read+write는 블렌딩이 목적지를 읽고 결과를 다시 쓰므로 보통 2, $d_\text{overdraw}$는 한
+픽셀 자리에 평균 몇 번 칠하는가(겹친 삼각형들), fps는 초당 프레임입니다.
+
+1080p($1920\times1080 \approx 2.07\text{M}$ 픽셀), RGBA8(4 byte), 블렌딩(×2),
+overdraw 3×, 60 fps를 넣으면
+
+$$
+\text{BW} = 2.07\times10^6 \cdot 4 \cdot 2 \cdot 3 \cdot 60
+\;\approx\; 3.0 \times 10^9\ \text{byte/s} = 3.0\ \text{GB/s}.
+$$
+
+여기까지는 작아 보입니다. 그런데 이건 **컬러 한 장만** 센 값입니다 — depth 버퍼 read/write,
+텍스처 fetch, 정점·인덱스, G-buffer 여러 장은 한 byte도 안 들어갔습니다. 해상도를 4K로 올리고
+HDR(FP16)·높은 overdraw·144 fps로 가면 컬러만으로도 GPU 예산을 넘기 시작합니다. 직접 넘겨
+보세요.
+
+<BandwidthBudget client:visible />
+
+대역폭은 곧 **전력**이기도 합니다 — DRAM에서 byte를 옮기는 에너지가 연산보다 수백~수천 배
+비싸, 모바일에서는 대역폭이 배터리와 발열을 직접 좌우합니다. 이 전력 비대칭과 그것을 타일
+메모리로 푸는 법은 자매 챕터 [tile-based-rendering](tile-based-rendering)에서 따로 다룹니다.
+여기서는 "대역폭이 모자라다"는 사실에서 출발해, 하드웨어가 그 트래픽을 어떻게 줄이는지를 봅니다.
+
+## 4. 트래픽을 줄이는 법 ① — DCC (delta color compression)
+
+가장 직접적인 절약은 메모리에 오가는 byte 자체를 줄이는 것입니다. 화면을 보면 대부분의 영역이
+*매끈*합니다 — 이웃 픽셀끼리 색이 거의 같습니다. 그렇다면 한 블록(보통 $8\times8$ 또는
+$4\times4$)을 통째로 저장할 게 아니라, 대표값(`anchor`) 하나와 나머지를 anchor 대비 작은
+차이(`delta`)로 적으면 됩니다. 매끈한 블록의 delta는 작아서 적은 비트로 충분합니다.
+
+$4\times4=16$ 픽셀, 채널당 8 bit를 가정하면 원본은 $16\times8 = 128$ bit입니다. anchor에 8 bit를
+쓰고 나머지 15개를 각 $b_\delta$ bit delta로 적으면
+
+$$
+\text{DCC 크기} = 8 + 15\,b_\delta\ \text{bit},
+\qquad
+\text{절감비} = \frac{128}{8 + 15\,b_\delta}.
+$$
+
+매끈한 블록은 $b_\delta = 2$ bit면 충분해 $128 \to 38$ bit, 약 $3.4\times$입니다. 노이즈 블록은
+$b_\delta$가 커져 거의 안 줄어듭니다. 두 경우를 나란히 보면:
+
+<DeltaColorCompression client:visible />
+
+DCC의 핵심 성질 두 가지를 짚어 둡니다. 첫째, **무손실**입니다 — delta가 커서 압축이 안 되는
+블록은 원본 그대로 저장하면 되므로 화질을 한 톨도 잃지 않습니다(압축은 *대역폭*만 줄입니다).
+둘째, **메타데이터**로 관리합니다 — 어느 블록이 어떤 비트폭으로 압축됐는지를 작은 보조 표에
+적어 두고, 메모리에는 압축된 채로 두다가 ROP나 TMU가 읽을 때만 펴서 디코드합니다. 그래서
+평균 컬러 트래픽이 30~70% 줄어드는데, 화면이 매끈할수록(=대개) 더 많이 줄어듭니다.
+
+같은 메타데이터 아이디어를 끝까지 밀면 `fast clear`가 나옵니다. 화면을 한 색으로 지울 때
+($8.3$ MB짜리 4K 버퍼를 통째로 그 색으로 덮어쓰는 대신) "이 타일은 clear color다"라는 플래그
+몇 byte만 메타데이터에 적습니다. 실제 byte 쓰기를 수 KB로 줄여 $100\sim1000\times$ 싸집니다.
+나중에 그 타일을 처음 건드릴 때만 진짜 색을 채웁니다.
+
+## 5. 트래픽을 줄이는 법 ② — Morton/Z-order swizzle
+
+byte 수를 줄이는 게 DCC라면, *가져온 byte를 헛되이 버리지 않는* 것이 swizzle입니다. 메모리는
+1차원 주소 공간인데 텍스처·렌더 타깃은 2차원입니다. 그래서 2D 좌표 $(x,y)$를 1D 주소로 펴는
+규칙이 필요합니다. 가장 단순한 건 행 우선(`row-major`):
+
+$$
+\text{addr}_\text{linear}(x, y) = y \cdot W + x.
+$$
+
+문제는 캐시가 **연속 주소 한 덩어리(cache line)** 단위로 메모리를 가져온다는 점입니다. linear
+배치에서 가로 이웃 $(x{+}1, y)$는 주소가 1 차이지만, *세로* 이웃 $(x, y{+}1)$은 주소가 $W$만큼
+떨어져 있습니다. 그런데 텍스처 샘플링은 거의 항상 2D로 뭉친 접근입니다 — bilinear는 $2\times2$,
+필터 footprint는 작은 사각형. 세로로 이웃한 텍셀이 멀리 떨어져 있으면, 작은 $2\times2$ 블록조차
+서로 다른 캐시 라인 여럿에 흩어지고, 각 라인은 footprint가 쓰지도 않을 가로 이웃까지 끌어옵니다
+— 가져온 byte의 상당수가 버려집니다.
+
+해법은 **2D로 가까운 텍셀을 1D 주소로도 가깝게** 두는 배치입니다. `Morton`(또는 `Z-order`)
+코드는 두 좌표의 비트를 번갈아 끼워 넣어(bit interleave) 이를 달성합니다. $x = x_2x_1x_0$,
+$y = y_2y_1y_0$ (이진)일 때
+
+$$
+\text{Morton}(x, y) \;=\; y_2\,x_2\,y_1\,x_1\,y_0\,x_0 \quad (\text{이진}),
+$$
+
+즉 짝수 비트 자리에 $x$의 비트를, 홀수 비트 자리에 $y$의 비트를 채웁니다. 이렇게 하면 작은
+2D 블록 안의 텍셀들이 주소 공간에서도 한 덩어리로 모여, 한 캐시 라인이 그 블록 대부분을
+덮습니다. 같은 footprint를 linear와 Morton에서 비교해 보세요.
+
+<MortonSwizzle client:visible />
+
+GPU의 텍스처/렌더 타깃은 거의 다 이런 *swizzle된 tiled* 레이아웃으로 저장됩니다(정확한 비트
+패턴은 벤더·포맷마다 다르지만 원리는 같습니다). 그래서 2D 지역성이 캐시 라인 지역성으로
+이어지고, 한 번 가져온 라인이 이웃 픽셀까지 먹여 같은 대역폭으로 더 많은 일을 합니다 — 이게
+intensity를 ridge point 쪽(오른쪽)으로 미는 한 방법입니다.
+
+## 6. 조립 — 한 프레임의 대역폭 가계부
+
+이제 흩어진 조각을 한 그림으로 모읍니다. 한 프레임을 그리는 동안 GPU는:
+
+1. **요구**: $W\cdot H\cdot b_{px}\cdot(\text{read}+\text{write})\cdot d_\text{overdraw}$만큼의 컬러
+   트래픽에, depth·텍스처·정점·G-buffer까지 더해진 총 byte를 메모리와 주고받아야 한다.
+2. **공급**: 그 byte를 GPU 대역폭 $B$로만 나를 수 있다. 요구가 공급을 넘으면 fps가 무너진다(§3).
+3. **절약**: DCC가 매끈한 컬러/depth의 트래픽을 30~70% 깎고(§4), fast clear가 지우기를 거의
+   공짜로 만들고, Morton swizzle이 가져온 캐시 라인을 알뜰히 써서 *헛 트래픽*을 줄인다(§5).
+4. **판정**: 이 모든 절약 뒤에도 커널의 arithmetic intensity가 ridge point보다 낮으면 그 커널은
+   여전히 bandwidth-bound다(§2). 그러면 연산을 줄이는 최적화는 *효과가 없다* — byte를 줄여야 한다.
+
+"GPU가 빠르다"는 말의 절반은 산술 유닛이고, 나머지 절반 — 실전에서 더 자주 발목을 잡는 쪽 —
+은 그 유닛을 먹일 데이터를 제때 나르는 능력입니다. roofline은 그 둘을 한 장에 겹쳐, 지금 커널이
+어느 천장에 막혀 있는지를 한 점으로 보여 줍니다.
+
+## 7. 더 나아가기
+
+- **Z/depth 압축.** 컬러의 DCC와 형제로, depth 버퍼는 삼각형 안에서 깊이가 평면처럼 변한다는
+  성질을 이용합니다 — 평면 predictor로 예측하고 그 잔차(residual)만 Golomb-Rice 같은 코드로
+  적습니다. Hi-Z의 타일 min/max도 같은 메타데이터 흐름 위에 있습니다.
+
+- **MSAA와 FMASK.** MSAA는 한 픽셀에 여러 샘플을 두는데, 한 픽셀 안 샘플들이 대개 같은 색입니다.
+  coverage(어느 샘플이 어느 조각에 속하는가)를 FMASK라는 작은 표로 분리해 두면, 실제 색은 픽셀당
+  한두 개만 저장해도 돼 MSAA의 대역폭 폭증을 막습니다.
+
+- **채널/뱅크 인터리빙.** DRAM은 여러 채널·뱅크로 나뉘어 병렬로 동작합니다. 주소를 채널에 고루
+  뿌리는(spray) 매핑이 아니면 한 채널만 붐비는 camping이 생겨 유효 대역폭이 폭락합니다 — swizzle이
+  캐시뿐 아니라 채널 분산에도 관여하는 이유입니다.
+
+- **표시 가능 DCC.** 압축된 컬러 표면을 디코드 없이 디스플레이로 직접 스캔아웃하면, render-to-texture
+  뒤의 복사·압축 해제가 no-op이 됩니다 — 절약을 파이프라인 끝(스캔아웃)까지 끌고 가는 최신 흐름입니다.
+
+대역폭이 *왜* 그렇게 비싼지(전력)와, 모바일이 그것을 타일 온칩 메모리로 어떻게 통째로 우회하는지는
+[tile-based-rendering](tile-based-rendering)에서 이어집니다. 트래픽을 줄이는 또 한 축인 텍스처의
+블록 압축은 [texture-compression](texture-compression)에서, 이 모든 대역폭 절약이 깔려 있는
+픽셀 백엔드(early-Z·overdraw)는 [rendering-execution-model](rendering-execution-model)에서 다룹니다.

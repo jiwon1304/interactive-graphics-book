@@ -1,0 +1,244 @@
+---
+layout: ../../layouts/ChapterLayout.astro
+title: "Tile-Based Rendering과 모바일 GPU"
+description: 모바일 GPU가 화면을 타일로 쪼개 그리는 이유 — DRAM 대역폭과 전력. IMR vs TBR/TBDR, GMEM·binning·HSR·overdraw·load/store op, 그리고 대역폭=전력
+---
+
+import ImrVsTbr from '../../components/demos/tile-based-rendering/ImrVsTbr.tsx';
+import TileBinning from '../../components/demos/tile-based-rendering/TileBinning.tsx';
+import BandwidthCalc from '../../components/demos/tile-based-rendering/BandwidthCalc.tsx';
+import HsrOverdraw from '../../components/demos/tile-based-rendering/HsrOverdraw.tsx';
+import BandwidthIsPower from '../../components/demos/tile-based-rendering/BandwidthIsPower.tsx';
+
+# Tile-Based Rendering과 모바일 GPU
+
+여러분 주머니 속 폰의 GPU는 데스크톱 GPU와 **근본적으로 다른 방식으로** 화면을 그립니다.
+같은 OpenGL ES / Vulkan 코드를 돌려도, 내부에서 픽셀이 메모리에 쓰이는 순서와 횟수가 전혀
+다릅니다. 숫자 하나로 시작합시다. 1080p 화면을 평균 overdraw 4배로, 초당 60프레임 그린다고
+할 때, 데스크톱식 즉시 모드(IMR)가 color 프레임버퍼에만 쏟아붓는 외부 DRAM 트래픽은
+
+$$
+1920 \times 1080 \times 4\,\text{B} \times 2 \times 4 \times 60 \;\approx\; 3.8\ \text{GB/s}
+$$
+
+입니다. depth까지 더하면 더 큽니다. 그런데 모바일 기기의 DRAM은 CPU·디스플레이·카메라까지
+나눠 쓰는 데다, **대역폭 1바이트마다 전력을 먹습니다.** 폰이 이걸 그대로 했다간 배터리가
+순식간에 녹고 손이 뜨거워집니다. 그래서 모바일 GPU는 다른 길을 갑니다 — 화면을 작은
+**타일**로 쪼개, 한 타일을 칩 위 작은 메모리에서 완성한 뒤 *딱 한 번만* 바깥 DRAM에 씁니다.
+이 챕터는 "왜 타일인가"에 답합니다. 답은 처음부터 끝까지 **대역폭과 전력**입니다.
+
+먼저, overdraw가 늘 때 두 방식의 외부 트래픽이 어떻게 갈리는지 직접 만져 봅시다.
+
+<ImrVsTbr client:visible />
+
+## 1. IMR — 모든 프래그먼트가 DRAM을 만진다
+
+[지난 챕터](rendering-execution-model)에서 픽셀 셰이더가 2×2 quad로 돌고, 깊이 테스트가
+early-Z·late-Z로 프래그먼트를 거르는 과정을 봤습니다. 거기서 한 가지를 당연하게 넘어갔습니다 —
+셰이딩이 끝난 색이 **어디에** 쓰이는가? 데스크톱 GPU의 답은 "VRAM(DRAM)에 있는 프레임버퍼"
+입니다. 이 방식이 **IMR(immediate-mode rendering)**, 즉 즉시 모드입니다.
+
+IMR에서 GPU는 삼각형을 받는 즉시 래스터화하고 셰이딩해, 결과를 그 자리에서 프레임버퍼에
+씁니다. 문제는 프레임버퍼가 DRAM에 있다는 점입니다. 한 프래그먼트를 쓸 때마다:
+
+- **depth test**: 그 픽셀의 현재 깊이를 DRAM에서 **읽고**, 통과하면 새 깊이를 **쓴다**.
+- **blend / color write**: 그 픽셀의 현재 색을 DRAM에서 **읽고**(블렌딩이면), 새 색을 **쓴다**.
+
+즉 한 픽셀 처리는 본질적으로 DRAM의 read-modify-write입니다. 게다가 같은 픽셀이 여러 번
+덮이면(overdraw) 이 왕복이 그만큼 반복됩니다. 화면 해상도가 $W \times H$, 픽셀당 color가
+$b$바이트, 평균 overdraw가 $d$, 프레임률이 $F$라면, color만 따져도 외부 트래픽은
+
+$$
+B_{\text{IMR}} \;\approx\; W H \cdot b \cdot (r + w) \cdot d \cdot F
+$$
+
+이고, color RMW의 read+write $= 2$를 넣으면
+
+$$
+B_{\text{IMR}} \;\approx\; 2\, W H\, b\, d\, F.
+$$
+
+위 위젯의 IMR 막대가 overdraw $d$에 정비례해 늘어난 게 정확히 이 $d$ 항입니다. 데스크톱
+GPU는 이 트래픽을 감당하려고 **수백 GB/s급 GDDR/HBM**과 큰 전력 예산을 씁니다. 모바일엔
+둘 다 없습니다.
+
+## 2. GMEM — 타일을 칩 위에서 완성한다
+
+TBR(tile-based rendering)의 핵심 아이디어는 단순합니다. 화면 전체를 한꺼번에 그리지 말고,
+작은 직사각형 **타일**(보통 16×16 ~ 32×32 픽셀) 단위로 나눠, **한 타일을 통째로 칩 위
+SRAM에 올려놓고** 거기서 끝낸다. 이 온칩 타일 메모리를 **GMEM**(또는 on-chip tile memory)
+이라 부릅니다.
+
+한 타일을 셰이딩하는 동안 모든 depth test·blend·overdraw는 GMEM 안에서 일어납니다. GMEM은
+칩 위에 있어 접근이 빠르고 싸며, 무엇보다 **외부 DRAM 트래픽을 만들지 않습니다.** 타일을
+다 그리고 나서야, 그 타일의 최종 color 한 장을 DRAM에 **한 번** 씁니다. 그래서 TBR의 외부
+트래픽은 overdraw와 거의 무관하게
+
+$$
+B_{\text{TBR}} \;\approx\; W H\, b\, F \;+\; (\text{geometry / parameter buffer})
+$$
+
+입니다 — color는 타일당 1회 write이므로 $d$ 항이 사라졌습니다. 이게 1번 위젯에서 TBR
+막대가 overdraw에 꿈쩍도 않은 이유입니다.
+
+이게 성립하려면 GMEM이 한 타일을 담을 만큼은 커야 하고, 동시에 칩에 넣을 만큼은 작아야
+합니다. 32×32 타일에 color(RGBA8, 4B)와 depth(24~32bit, 4B)를 함께 두면
+
+$$
+32 \times 32 \times (4 + 4)\,\text{B} \;=\; 8\,192\ \text{B} \;\approx\; 8\ \text{KB}
+$$
+
+입니다. MSAA 4×면 샘플이 4배라 약 32KB. 타일을 여럿 동시에 처리하고 여러 attachment를
+두더라도 GMEM은 보통 수십 KB ~ 수 MB SRAM이면 충분합니다 — 칩에 넣을 수 있는 크기입니다.
+반대로 1080p 프레임버퍼 전체(color+depth)는 약 $1920 \times 1080 \times 8\,\text{B}
+\approx 16.6\,\text{MB}$로, 통째로 SRAM에 올릴 수는 없습니다. **"화면 전체는 못 올려도 타일
+하나는 올릴 수 있다"** — 이 비대칭이 타일링의 출발점입니다.
+
+## 3. Binning — 타일링의 대가
+
+GMEM에서 한 타일을 그리려면, 그 타일에 **어떤 삼각형이 걸치는지**를 먼저 알아야 합니다.
+그런데 삼각형은 도착하는 대로 들어오지, 타일 순서로 오지 않습니다. 그래서 TBR은 한 프레임을
+두 패스로 나눕니다.
+
+1. **binning pass**(또는 tiling pass): 프레임의 모든 지오메트리를 먼저 vertex 처리·클립한
+   뒤, 각 삼각형이 어느 타일들에 걸치는지 가려내 **타일별 primitive 리스트**를 만든다. 이
+   리스트(변환된 정점·인덱스 등)는 DRAM의 **parameter buffer**에 쌓인다.
+2. **rendering pass**: 타일을 하나씩 골라, parameter buffer에서 그 타일의 리스트를 읽어와
+   GMEM에서 셰이딩하고, 끝나면 color를 DRAM에 write 한다.
+
+<TileBinning client:visible />
+
+여기에 IMR과의 근본적 차이가 있습니다. IMR은 삼각형을 받는 즉시 그리지만, **TBR은 한 프레임의
+지오메트리를 전부 모은 뒤에야 픽셀을 그리기 시작합니다.** 이 "먼저 다 모으는" 일이 공짜가
+아닙니다 — 변환된 지오메트리를 parameter buffer에 썼다가 타일마다 다시 읽으므로, 그만큼
+추가 외부 트래픽이 생깁니다. 이게 2절 식의 두 번째 항입니다. 지오메트리가 폭증하면(정점이
+수백만 개) 이 버퍼가 커지고, 한도를 넘으면 GPU가 중간에 **부분 플러시**를 해 타일을 두 번
+훑기도 합니다. 즉 TBR은 **픽셀 트래픽(overdraw)을 지오메트리 트래픽과 맞바꾼** 것입니다 —
+픽셀이 많고 지오메트리가 적당한 전형적 모바일 렌더에서 이 거래는 압도적으로 이득입니다.
+
+## 4. 대역폭 절감 — 숫자로
+
+이제 두 트래픽을 나눠 절감비를 봅시다. parameter buffer를 잠시 무시하면
+
+$$
+\frac{B_{\text{IMR}}}{B_{\text{TBR}}}
+\;\approx\;
+\frac{2\, W H\, b\, d\, F}{W H\, b\, F}
+\;=\; 2d.
+$$
+
+overdraw $d=4$면 이론상 8배까지도 갑니다. 하지만 현실의 TBR도 parameter buffer를 쓰고,
+초기 타일 load가 필요할 때도 있고, IMR도 캐시로 일부를 흡수합니다. 그래서 측정된 실제
+절감은 더 보수적입니다 — 흔히 인용되는 값이 **외부 대역폭 약 1.96× 절감**입니다. 슬라이더로
+직접 계산해 보세요.
+
+<BandwidthCalc client:visible />
+
+핵심은 절대 숫자가 아니라 **기울기**입니다. overdraw를 올리면 IMR은 비례해 치솟는데 TBR은
+거의 평평합니다. 모바일 콘텐츠는 UI·파티클·반투명이 겹쳐 overdraw가 쉽게 높아지므로, 이
+기울기 차이가 곧 모바일에서 TBR이 사실상 유일한 선택지인 이유입니다.
+
+## 5. HSR — 보이는 픽셀만 셰이딩
+
+타일을 GMEM에 올려두면 한 가지가 더 가능해집니다. 타일 안의 모든 삼각형을 미리 알고 있으니,
+**셰이딩을 시작하기 전에** 각 픽셀에서 어느 삼각형이 최종적으로 보이는지를 먼저 완전히 풀 수
+있습니다. 보이지 않을 면은 픽셀 셰이더를 **아예 돌리지 않습니다.** 이게 **HSR(hidden surface
+removal)**이고, 이걸 하는 아키텍처를 특히 **TBDR**(tile-based deferred rendering)이라 부릅니다
+(Imagination PowerVR, Apple GPU 계열).
+
+<HsrOverdraw client:visible />
+
+HSR이 켜지면 불투명 지오메트리의 픽셀당 셰이딩은 그리기 순서와 무관하게 **항상 1회** —
+이론상 **zero overdraw**입니다. [지난 챕터](rendering-execution-model)에서 IMR의 모범 답안은
+"불투명을 front-to-back으로 정렬해 early-Z로 가리는 것"이었는데, TBDR은 그걸 정렬 없이
+하드웨어가 공짜로 해줍니다. 그래서 **모바일에서는 z-prepass(깊이 전용 선행 패스)가 오히려
+역효과**입니다 — HSR이 이미 같은 일을 하므로, 깊이만 그리는 패스를 추가하면 지오메트리를
+한 번 더 처리하는 손해만 남습니다.
+
+## 6. 모바일에서 overdraw가 비싼 이유 — HSR이 깨질 때
+
+HSR은 "어느 면이 보이는지를 셰이딩 전에 확정할 수 있다"는 전제 위에 섭니다. 이 전제를
+깨뜨리는 것들이 있습니다.
+
+- **반투명(blend)**: 뒤의 면도 결과에 기여하므로 "맨 앞 하나만"으로 끝낼 수 없습니다. 겹친
+  레이어를 전부 셰이딩해 순서대로 블렌딩해야 합니다.
+- **`discard` / alpha-test**: 픽셀 셰이더가 실행돼 봐야 그 프래그먼트가 살아남을지 알 수
+  있으므로, 깊이/가시성을 미리 확정할 수 없습니다. early-ZS(early depth/stencil)도 함께
+  꺼집니다.
+- **`SV_Depth` 출력**(셰이더가 깊이를 직접 씀): 같은 이유.
+
+위 5번 위젯에서 "반투명/discard 섞기"를 켜면 픽셀당 셰이딩이 다시 레이어 수만큼 올라간
+것이 이것입니다. 그래서 모바일의 황금률은:
+
+> **불투명 → alpha-test/discard → 반투명** 순서로, HSR로 거를 수 있는 불투명을 먼저 그려
+> 가시성을 확정한 뒤, HSR을 깨는 것들을 맨 뒤로 모은다.
+
+겹친 반투명(파티클·이펙트)이 많을수록 모바일에서 프레임이 급격히 느려지는 건, overdraw가
+GMEM 안에서도 **셰이딩 횟수**로 직접 비용이 되기 때문입니다. IMR에서 overdraw가 *대역폭*
+문제였다면, TBDR에서 (HSR이 깨진) overdraw는 *셰이딩* 문제입니다.
+
+## 7. load/store op — 타일과 DRAM 사이의 화살표
+
+타일이 시작·종료될 때 GMEM과 DRAM 사이에 무슨 트래픽이 오가는지는 렌더 패스의
+**load/store op**가 정확히 제어합니다. Vulkan/Metal에서 각 attachment마다 지정합니다.
+
+- **loadOp**: 타일을 GMEM에 채울 때 — `Clear`(상수로 초기화, DRAM read 없음), `Load`(DRAM에서
+  기존 값을 읽어 옴), `DontCare`(아무거나).
+- **storeOp**: 타일이 끝날 때 — `Store`(GMEM → DRAM write), `DontCare`(버림, write 없음).
+
+TBR에서 이 둘은 곧 **DRAM 왕복 횟수**입니다. 매 프레임 화면을 새로 그린다면 color는
+`loadOp=Clear`(기존 값을 읽을 필요 없음)가 맞고, depth 버퍼는 프레임이 끝나면 보통 다시 안
+쓰므로 `storeOp=DontCare`로 두면 그 write가 통째로 사라집니다. 반대로 무심코 `loadOp=Load`를
+두면 매 타일이 DRAM을 한 번씩 더 읽어, 애써 줄인 트래픽이 되돌아옵니다. 모바일에서
+load/store op를 정확히 다루는 것은 셰이더 최적화만큼이나 중요합니다.
+
+## 8. 조립 — 한 프레임이 모바일 GPU에서 흐르는 길
+
+이제 전체 그림이 꿰집니다.
+
+1. CPU가 한 프레임의 draw call을 제출한다([command queues](command-queues)에서 다룬 그 제출).
+2. **binning pass**: 모든 지오메트리를 vertex 처리·클립하고, 타일별 primitive 리스트를
+   parameter buffer(DRAM)에 쓴다.
+3. 타일을 하나씩:
+   - `loadOp`에 따라 GMEM을 초기화(Clear) 또는 DRAM에서 load.
+   - (TBDR이면) HSR로 각 픽셀의 보이는 면을 먼저 확정.
+   - 보이는 프래그먼트만 GMEM에서 셰이딩·블렌딩. 모든 overdraw·depth가 GMEM 안에서.
+   - `storeOp`에 따라 최종 color를 DRAM에 write(depth는 보통 DontCare).
+4. 모든 타일을 합치면 한 프레임이 완성돼 디스플레이로 스캔아웃.
+
+IMR이 "삼각형마다 DRAM을 만진다"면, TBR/TBDR은 "타일마다 DRAM을 딱 한 번 만진다"입니다.
+그 차이가 모바일에서 같은 화면을 **몇 분의 일의 전력**으로 그리게 합니다. 마지막으로, 왜
+대역폭이 그렇게까지 중요한지 — 그게 곧 전력이기 때문이라는 걸 수치로 봅시다.
+
+<BandwidthIsPower client:visible />
+
+DRAM 한 바이트를 옮기는 데 약 60~150 pJ가 듭니다. 온칩 접근은 그 ~100분의 1, 연산 한 번은
+~0.05 pJ로 DRAM 한 바이트의 **약 2000분의 1**입니다. 이 비대칭이 모든 것을 설명합니다 —
+모바일 GPU 설계가 "연산을 아끼자"가 아니라 "DRAM 왕복을 없애자"에 집착하는 이유, 그리고
+타일링·HSR·load/store op·압축이 전부 한 방향(외부 트래픽 줄이기)을 가리키는 이유입니다.
+**대역폭을 줄이는 것이 곧 배터리를 늘리는 것입니다.**
+
+## 9. 더 나아가기
+
+여기까지가 "왜 타일인가"의 핵심입니다. 타일을 칩 위에 두는 구조는 더 멀리까지 활용됩니다 —
+포인터만 남깁니다.
+
+- **subpass on-tile deferred.** deferred shading의 G-buffer(노멀·albedo·깊이 등)를 DRAM에
+  쓰지 않고 **타일 안에서** 생성·소비할 수 있습니다. Vulkan의 subpass와 input attachment로
+  G-buffer를 만든 직후 같은 타일에서 라이팅에 쓰면, G-buffer의 DRAM 왕복이 **0**이 됩니다 —
+  모바일 deferred를 실용적으로 만드는 결정적 트릭입니다.
+
+- **PLS / framebuffer fetch.** 픽셀 셰이더가 같은 픽셀의 **이전 타일 값**을 직접 읽어
+  read-modify-write 할 수 있게 하는 확장(pixel local storage, framebuffer fetch)으로,
+  커스텀 블렌딩이나 타일 기반 알고리즘을 DRAM 없이 구현합니다.
+
+- **벤더별 구현.** Adreno의 **FlexRender/LRZ**는 binned(타일)와 direct(IMR식) 모드를 장면에
+  따라 동적으로 전환하고 저해상도 Z로 조기 기각합니다. Apple/Metal의 **TBDR**은 imageblock·
+  tile shader·`memoryless` attachment로 타일 메모리를 셰이더에 명시적으로 노출합니다.
+
+- **직교하는 절감들.** 이 챕터의 타일링은 [texture compression](texture-compression)과
+  곱으로 쌓입니다 — 타일링은 *프레임버퍼* 트래픽을, 블록 압축은 *텍스처 읽기* 트래픽을 줄여,
+  둘 다 같은 DRAM 대역폭 예산을 아낍니다.
+
+모바일이 화면을 타일로 그리는 이유는 처음부터 하나였습니다 — **DRAM 대역폭과 전력.** 타일은
+그 둘을 동시에 줄이는, 모바일 GPU의 가장 근본적인 설계 결정입니다.
