@@ -86,6 +86,19 @@ export const chapters: Chapter[] = [
     description: '명령 제출 생명주기·펜스·세마포어·배리어·async 오버랩',
     section: 'GPU 명령 제출',
   },
+  // ── GPU 실행 모델 ──
+  {
+    slug: 'gpu-execution-model',
+    title: 'GPU 실행 모델 — 워프와 락스텝',
+    description: 'SM/CU 구조·코어 수의 정체·블록→워프 분해·SIMT와 락스텝',
+    section: 'GPU 실행 모델',
+  },
+  {
+    slug: 'warp-divergence-occupancy',
+    title: '워프 다이버전스와 점유율',
+    description: '다이버전스·재수렴·프레디케이션·스케줄러/스코어보딩·지연 은닉·점유율',
+    section: 'GPU 실행 모델',
+  },
   // ── Unreal RHI ──
   {
     slug: 'ue-gpu-crash-debugging',
