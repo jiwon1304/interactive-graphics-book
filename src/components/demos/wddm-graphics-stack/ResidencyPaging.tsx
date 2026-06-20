@@ -78,11 +78,11 @@ export default function ResidencyPaging() {
       // 컬럼 헤더
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.font = monoFont(narrow ? 11 : 12.5, 'bold');
+      ctx.font = monoFont(narrow ? 10.5 : 12.5, 'bold');
       ctx.fillStyle = COLORS.vram;
-      ctx.fillText(`VRAM (device-local)  예산 ${budget}`, vramX + colW / 2, headY);
+      ctx.fillText(narrow ? `VRAM  예산 ${budget}` : `VRAM (device-local)  예산 ${budget}`, vramX + colW / 2, headY);
       ctx.fillStyle = COLORS.sysmem;
-      ctx.fillText('system memory', sysX + colW / 2, headY);
+      ctx.fillText(narrow ? 'system mem' : 'system memory', sysX + colW / 2, headY);
       ctx.textAlign = 'start';
       ctx.textBaseline = 'alphabetic';
 
@@ -137,17 +137,27 @@ export default function ResidencyPaging() {
       ctx.font = monoFont(narrow ? 10 : 11, 'bold');
       if (!submitted) {
         ctx.fillStyle = theme.muted;
-        ctx.fillText('"프레임 제출"을 누르면 VidMm이 참조 allocation을 resident로 만든다', w / 2, statusY);
+        ctx.fillText(
+          narrow ? '"프레임 제출" → VidMm 패스' : '"프레임 제출"을 누르면 VidMm이 참조 allocation을 resident로 만든다',
+          w / 2,
+          statusY,
+        );
       } else if (overBudget) {
         ctx.fillStyle = COLORS.era1;
         ctx.fillText(
-          `참조 ${refCount} > VRAM 예산 ${budget} — 다 못 올림. 매 프레임 paging thrash`,
+          narrow
+            ? `참조 ${refCount} > 예산 ${budget} — paging thrash`
+            : `참조 ${refCount} > VRAM 예산 ${budget} — 다 못 올림. 매 프레임 paging thrash`,
           w / 2,
           statusY,
         );
       } else {
         ctx.fillStyle = COLORS.vram;
-        ctx.fillText('참조된 allocation이 모두 VRAM에 resident — 스케줄 가능', w / 2, statusY);
+        ctx.fillText(
+          narrow ? '참조 모두 resident — 스케줄 가능' : '참조된 allocation이 모두 VRAM에 resident — 스케줄 가능',
+          w / 2,
+          statusY,
+        );
       }
       ctx.textAlign = 'start';
       ctx.textBaseline = 'alphabetic';

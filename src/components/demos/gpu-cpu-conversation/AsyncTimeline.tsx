@@ -19,7 +19,7 @@ export default function AsyncTimeline() {
   const [flight, setFlight] = useState(2);
 
   const draw = (d: DrawCtx) => {
-    const { ctx, w, h, theme } = d;
+    const { ctx, w, theme } = d;
     const pad = 12;
     const leftW = 42;
     const x0 = pad + leftW;

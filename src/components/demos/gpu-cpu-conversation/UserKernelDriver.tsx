@@ -8,7 +8,7 @@ import { COLORS, label, box, withAlpha, monoFont, drawArrow, wrapText } from './
 
 export default function UserKernelDriver() {
   const draw = (d: DrawCtx) => {
-    const { ctx, w, h, theme } = d;
+    const { ctx, w, theme } = d;
     const pad = 12;
     const bw = w - pad * 2;
     const narrow = w < 480;

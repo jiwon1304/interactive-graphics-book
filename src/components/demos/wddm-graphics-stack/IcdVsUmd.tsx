@@ -1,5 +1,5 @@
 import { useCanvas2d, type DrawCtx } from './useCanvas2d';
-import { COLORS, box, drawArrow, monoFont, withAlpha, wrapText, type ThemeColors } from './wgs2d';
+import { COLORS, box, drawArrow, monoFont, withAlpha, wrapText } from './wgs2d';
 
 // IcdVsUmd (정적): 같은 커널(Dxgkrnl/VidMm/VidSch + KMD + GPU) 위에
 // D3D(runtime + UMD) 와 Vulkan(loader + ICD) 두 user-mode 경로가 얹힌다.
@@ -110,13 +110,17 @@ export default function IcdVsUmd() {
     box(ctx, padX, y, kernW, kernH, COLORS.kernel, '', theme, { alpha: 0.16 });
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.font = monoFont(narrow ? 11 : 12.5, 'bold');
+    ctx.font = monoFont(narrow ? 10.5 : 12.5, 'bold');
     ctx.fillStyle = theme.text;
-    ctx.fillText('공유: Dxgkrnl (VidMm · VidSch)  →  KMD  →  GPU', w / 2, y + (narrow ? 18 : kernH / 2 - 4));
-    ctx.font = monoFont(subPx);
+    ctx.fillText(
+      narrow ? '공유: Dxgkrnl → KMD → GPU' : '공유: Dxgkrnl (VidMm · VidSch)  →  KMD  →  GPU',
+      w / 2,
+      y + (narrow ? 18 : kernH / 2 - 4),
+    );
+    ctx.font = monoFont(narrow ? 8.5 : subPx);
     ctx.fillStyle = theme.muted;
     if (narrow) {
-      ctx.fillText('같은 D3DKMT* 제출 · 같은 GPUVA · 같은 residency', w / 2, y + 38);
+      ctx.fillText('같은 D3DKMT* · GPUVA · residency', w / 2, y + 38);
     } else {
       ctx.fillText('같은 D3DKMT* 제출 · 같은 GPUVA · 같은 residency', w / 2, y + kernH / 2 + 12);
     }

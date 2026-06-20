@@ -86,11 +86,36 @@ export const chapters: Chapter[] = [
     description: '명령 제출 생명주기·펜스·세마포어·배리어·async 오버랩',
     section: 'GPU 명령 제출',
   },
+  // ── 그래픽스 드라이버 ──
   {
-    slug: 'directx-driver-internals',
-    title: 'DirectX 드라이버 내부 — DX9·DX11·DX12 Under the Hood',
-    description: 'WDDM 스택·UMD/KMD·command buffer 제출·상태 변환 타이밍·hazard tracking·residency·draw call 비용',
-    section: 'GPU 명령 제출',
+    slug: 'gpu-cpu-conversation',
+    title: 'CPU와 GPU의 대화 — 명령 버퍼와 비동기',
+    description: 'GPU는 별도의 비동기 프로세서다 — command buffer에 기록하면 GPU가 나중에 소비한다. ring buffer·frames in flight·fence·user/kernel 드라이버',
+    section: '그래픽스 드라이버',
+  },
+  {
+    slug: 'wddm-graphics-stack',
+    title: 'Windows 그래픽스 스택 — WDDM: runtime·UMD·KMD',
+    description: 'WDDM 5겹 스택·DDI 호출 흐름·VRAM↔system residency/paging·WDDM 1.x patch vs 2.0 GPUVA·Vulkan loader+ICD',
+    section: '그래픽스 드라이버',
+  },
+  {
+    slug: 'draw-call-journey',
+    title: '드로우 콜의 일생 — Draw 한 번이 GPU에 닿기까지',
+    description: 'Draw() 한 번이 runtime 검증·UMD 변환·command buffer·커널 제출을 거쳐 GPU에 닿기까지. per-draw vs 제출 단위 비용, D3D11 immediate vs D3D12/Vulkan 기록',
+    section: '그래픽스 드라이버',
+  },
+  {
+    slug: 'pipeline-state-shaders',
+    title: '상태·셰이더·PSO — 드라이버가 하는 변환',
+    description: '파이프라인 상태 변환 시점(DX9→DX11→DX12/Vulkan)·셰이더 2단 컴파일(DXBC/DXIL/SPIR-V→ISA)·바인딩 모델 대응',
+    section: '그래픽스 드라이버',
+  },
+  {
+    slug: 'dx-evolution-vulkan',
+    title: 'DX9 → DX11 → DX12, 그리고 Vulkan',
+    description: '세대별로 무엇이·왜 바뀌었나 — hazard·residency·스레딩·draw call 오버헤드와 D3D12↔Vulkan 1:1 대응',
+    section: '그래픽스 드라이버',
   },
   // ── GPU 실행 모델 ──
   {

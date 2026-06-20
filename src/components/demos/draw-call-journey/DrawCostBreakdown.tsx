@@ -24,7 +24,7 @@ export default function DrawCostBreakdown() {
   const frameMs = (PER_DRAW_NS * draws) / 1e6;
 
   const draw = (d: DrawCtx) => {
-    const { ctx, w, h, theme } = d;
+    const { ctx, w, theme } = d;
     const pad = 12;
 
     // ---- 위: per-draw 분해 막대(한 Draw = PER_DRAW_NS) ----

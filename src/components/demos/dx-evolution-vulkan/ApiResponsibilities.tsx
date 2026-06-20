@@ -53,7 +53,7 @@ const COLS = [
 
 export default function ApiResponsibilities() {
   const draw = (d: DrawCtx) => {
-    const { ctx, w, h, theme } = d;
+    const { ctx, w, theme } = d;
     const pad = 6;
     const labelW = Math.min(96, Math.max(58, w * 0.18));
     const colW = (w - pad * 2 - labelW) / COLS.length;

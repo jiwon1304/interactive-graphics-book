@@ -222,8 +222,8 @@ VidMm이 참조 allocation의 residency를 보장하고, VidSch가 GPU 엔진에
 - **드로우 콜의 일생 (3편).** 이번 편은 "어느 레이어가 무엇을 하나"라는 *정적 구조*였습니다.
   다음 편은 그 구조 위에서 한 번의 `Draw`가 시간선을 따라 어떻게 흘러가는지 — DDI 호출,
   command buffer append, 제출, residency 검사, 스케줄, GPU 실행 — 를 *시간순*으로 따라갑니다.
-- **세대별 책임 분담 (1편).** 같은 이 스택 위에서 DX9·11·12가 draw-time 변환·hazard
-  tracking·residency·디스크립터를 어떻게 다르게 나누는지는 [DirectX 드라이버 내부](directx-driver-internals)
+- **세대별 책임 분담 (종합편).** 같은 이 스택 위에서 DX9·11·12가 draw-time 변환·hazard
+  tracking·residency·디스크립터를 어떻게 다르게 나누는지는 [DX9~12·Vulkan 비교](dx-evolution-vulkan)
   에서 다뤘습니다.
 - **GPU 스케줄링의 진화.** VidSch의 소프트웨어 스케줄링은 WDDM 2.7의 **GPU hardware
   scheduling(HAGS)** 으로 일부를 하드웨어/펌웨어에 위임합니다 — 제출 지연과 컨텍스트 전환

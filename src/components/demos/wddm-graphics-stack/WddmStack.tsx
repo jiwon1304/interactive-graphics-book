@@ -19,7 +19,7 @@ const LAYERS: Layer[] = [
 
 export default function WddmStack() {
   const draw = (d: DrawCtx) => {
-    const { ctx, w, h, theme } = d;
+    const { ctx, w, theme } = d;
     const bx = Math.max(12, w * 0.05);
     const bw = w - bx * 2;
     const narrow = w < 460;

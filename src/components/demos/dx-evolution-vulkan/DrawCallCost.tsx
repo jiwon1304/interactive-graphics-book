@@ -26,7 +26,7 @@ export default function DrawCallCost() {
     CATS.reduce((s, c) => s + c[which] * draws, 0) / 1e6; // ms
 
   const draw = (d: DrawCtx) => {
-    const { ctx, w, h, theme } = d;
+    const { ctx, w, theme } = d;
     const pad = 12;
     const leftW = 64;
     const barX = pad + leftW;

@@ -22,7 +22,7 @@ const KERNEL_STEPS = [
 
 export default function DrawCallPath() {
   const draw = (d: DrawCtx) => {
-    const { ctx, w, h, theme } = d;
+    const { ctx, w, theme } = d;
     const narrow = w < 520;
     const pad = 10;
 

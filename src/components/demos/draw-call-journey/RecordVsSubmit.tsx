@@ -21,7 +21,7 @@ export default function RecordVsSubmit() {
   const kernelPerDrawNs = (submits * KERNEL_NS) / DRAWS;
 
   const draw = (d: DrawCtx) => {
-    const { ctx, w, h, theme } = d;
+    const { ctx, w, theme } = d;
     const pad = 12;
 
     // --- 위: 제출 묶음 시각화 ---
