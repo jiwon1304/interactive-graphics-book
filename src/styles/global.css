@@ -366,19 +366,37 @@ figure.demo {
   margin: 2rem 0;
 }
 
+/* 2D 도식(figure 직속 <canvas>)은 좁은 화면에서 글자가 겹치지 않도록 최소 너비를 유지하고
+   필요하면 가로로 스크롤한다. 캡션·컨트롤은 뷰포트 왼쪽에 고정해 그대로 읽히게 한다.
+   (:has로 3D 데모 figure[직속이 div.demo-canvas]는 제외된다.) */
+figure.demo:has(> canvas.demo-canvas) {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+figure.demo > canvas.demo-canvas {
+  min-width: 440px;
+}
+figure.demo:has(> canvas.demo-canvas) > figcaption,
+figure.demo:has(> canvas.demo-canvas) > div {
+  position: sticky;
+  left: 0;
+  max-width: calc(100vw - 2.5rem);
+}
+
 .demo-canvas {
   width: 100%;
   border: 1px solid var(--border);
   border-radius: 10px;
   overflow: hidden;
   background: var(--surface);
-  /* 캔버스 위 제스처(회전/줌)가 페이지 스크롤과 충돌하지 않도록 */
-  touch-action: none;
 }
 
-/* touch-action은 비상속 속성이라 R3F/Canvas가 생성하는 <canvas> 자식에도 명시 필요.
-   OrbitControls가 domElement(<canvas>)에 직접 이벤트를 붙이기 때문에 여기에 없으면
-   iOS Safari가 터치를 스크롤로 처리해 3D 조작이 무력화된다. */
+/* touch-action은 비상속이라 R3F/Canvas가 생성하는 <canvas> 자식에 명시한다.
+   OrbitControls가 domElement(<canvas>)에 직접 이벤트를 붙이므로, 없으면 iOS Safari가
+   터치를 스크롤로 처리해 3D 조작이 무력화된다.
+   ⚠️ 정적 2D 도식 <canvas>에는 touch-action을 걸지 않는다 — 그래야 도식 위에서도 페이지
+   스크롤이 된다. 드래그가 필요한 2D 위젯은 usePointerDrag가 그 캔버스에만 touch-action:none을
+   직접 설정한다. */
 .demo-canvas canvas {
   touch-action: none;
 }

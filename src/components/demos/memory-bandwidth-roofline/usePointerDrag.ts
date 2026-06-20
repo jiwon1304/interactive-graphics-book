@@ -38,6 +38,10 @@ export function usePointerDrag(
   useEffect(() => {
     const canvas = ref.current;
     if (!canvas) return;
+    // 드래그가 필요한 캔버스에만 touch-action:none(드래그가 페이지 스크롤에 안 먹힘).
+    // 정적 도식 캔버스는 이 훅을 안 써서 기본 스크롤이 유지된다(global.css 참고).
+    canvas.style.touchAction = 'none';
+    canvas.style.minWidth = '0';
 
     const onDown = (e: PointerEvent) => {
       e.preventDefault();
