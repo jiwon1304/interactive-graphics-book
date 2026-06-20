@@ -1,0 +1,260 @@
+---
+layout: ../../layouts/ChapterLayout.astro
+title: "DX9 → DX11 → DX12, 그리고 Vulkan — 무엇이·왜 바뀌었나"
+description: 네 세대의 그래픽스 API를 한자리에 — hazard tracking·residency·스레딩·draw call 오버헤드가 세대마다 어떻게 바뀌었고, 왜 통제가 드라이버에서 앱으로 넘어갔으며, D3D12와 Vulkan이 어떻게 같은 답에 도달했는가
+---
+
+import ApiResponsibilities from '../../components/demos/dx-evolution-vulkan/ApiResponsibilities.tsx';
+import CommandRecordingThreads from '../../components/demos/dx-evolution-vulkan/CommandRecordingThreads.tsx';
+import DrawCallCost from '../../components/demos/dx-evolution-vulkan/DrawCallCost.tsx';
+import D3d12VulkanMap from '../../components/demos/dx-evolution-vulkan/D3d12VulkanMap.tsx';
+
+# DX9 → DX11 → DX12, 그리고 Vulkan — 무엇이·왜 바뀌었나
+
+이 시리즈의 앞 네 편에서 우리는 같은 한 가지를 네 각도에서 봤습니다. CPU와 GPU가 어떻게
+대화하는가([gpu-cpu-conversation](gpu-cpu-conversation)), 그 대화가 Windows에서 어떤 레이어를
+지나는가([wddm-graphics-stack](wddm-graphics-stack)), `Draw()` 한 번이 드라이버 안에서 무슨
+일을 겪는가([draw-call-journey](draw-call-journey)), 그리고 파이프라인 상태와 셰이더가 어떻게
+하드웨어 형식으로 변환되는가([pipeline-state-shaders](pipeline-state-shaders)). 부분은 충분히
+봤습니다. 이제 그 부분들을 **세대 축**에 올려놓고 한꺼번에 봅시다.
+
+질문은 하나입니다. **DX9에서 DX11로, DX12로, 그리고 Vulkan으로 오면서 정확히 무엇이, 왜
+바뀌었는가?** 답을 미리 한 줄로 말하면 이렇습니다 — 바뀐 것은 하드웨어가 아니라 **일의
+주인**입니다. draw마다 드라이버가 조용히 해 주던 일들이 한 세대씩 앱으로 넘어왔고, DX12와
+Vulkan에 이르면 드라이버는 거의 명령 통역만 남깁니다. 통제와 책임을 맞바꾼 역사죠.
+
+먼저 그 분담이 세대마다 어떻게 다른지 한 장으로 봅시다.
+
+<ApiResponsibilities client:visible />
+
+이 표의 각 행을 — 상태 변환, hazard, residency, 스레딩, 바인딩, 셰이더 IR — 하나씩 풀어
+가겠습니다. 마지막에는 DX12와 Vulkan의 열이 왜 이렇게 닮았는지(거의 1:1로 대응합니다)까지
+보게 됩니다.
+
+## 1. 무엇이 비싼가 — draw call CPU 오버헤드
+
+세대 변화를 추동한 힘부터 짚어야 나머지가 이해됩니다. 그 힘은 **draw call 하나가 CPU에서
+소비하는 시간**입니다.
+
+[draw-call-journey](draw-call-journey)에서 봤듯, `Draw()`의 비용은 거의 전부 **user 모드
+변환**에 있습니다 — runtime이 인자를 검증하고, 드라이버가 현재 상태·바인딩을 하드웨어 명령으로
+풀어내는 부분이죠. 커널 제출은 한 번에 수백~수천 draw를 담아 분할 상환되므로 draw당 거의
+공짜에 가깝습니다. 문제는 윗줄입니다.
+
+DX11에서 draw 하나가 드라이버 안에서 쓰는 CPU는 흔히 수백 ns~수 µs 수준입니다. 한 프레임에
+draw가 1~2만 개를 넘어가면 렌더 스레드 한 코어가 *드라이버 코드만으로* 60fps 예산(16.6ms)을
+다 써 버립니다. GPU는 한가한데 CPU가 병목이 되는 것이죠. 슬라이더로 draw 수를 늘려 보면 이
+벽이 어디서 오는지 보입니다.
+
+<DrawCallCost client:visible />
+
+막대를 보면 DX11에서 큰 덩어리는 **상태·hazard 검사**와 **디스크립터 패치**입니다. 드라이버가
+매 draw마다 바인딩 테이블을 훑어 위험을 확인하고, 슬롯에 꽂힌 리소스를 하드웨어 디스크립터로
+변환하기 때문입니다. 이 두 덩어리를 어떻게 없애느냐가 다음 절들의 주제이고, 그 답이 곧 DX12와
+Vulkan입니다.
+
+> **이 숫자는 어디서 왔나.** 위젯의 ns 값은 특정 드라이버 측정값이 아니라 *구성비와 기울기*를
+> 보이려는 도식용 대표 차수입니다. 실제 비용은 드라이버·GPU·장면에 따라 크게 다릅니다. 요점은
+> "DX11의 per-draw 합이 explicit API보다 한 자릿수 배 크다"는 정성적 사실입니다.
+
+### 왜 이게 갑자기 중요해졌나 — Mantle
+
+이 병목이 학술적 호기심이 아니라 *제품의 문제*로 떠오른 계기가 **Mantle**입니다. 2013년 AMD와
+DICE가 DX11·OpenGL의 draw call 오버헤드를 줄이려고 만든 저수준 API로, command buffer를 앱이
+직접 기록·제출하게 해서 CPU 병목 상황을 크게 완화했습니다. AMD는 Mantle 명세를 Microsoft와
+공유했고, 이는 DX12의 직접적 동기가 됩니다. Mantle 자체는 2015년 공개 개발이 중단되었지만, 그
+설계는 Khronos에 기증되어 **Vulkan**의 출발점이 되었습니다.
+
+그래서 DX12와 Vulkan은 형제입니다. 같은 진단("드라이버 per-draw 오버헤드가 문제다")에서
+출발해 같은 처방("그 일을 앱으로 옮기고 드라이버를 얇게")에 도달했죠. 아래에서 그 처방을 항목별로
+봅니다.
+
+## 2. 상태 변환은 *언제* 일어나는가 — draw-time에서 creation-time으로
+
+가장 큰 축은 **파이프라인 상태를 하드웨어 형식으로 바꾸는 시점**입니다.
+
+**DX9**는 상태를 잘게 흩어진 호출로 받습니다 — `SetRenderState`, `SetSamplerState`,
+`SetTexture`. 이 호출들은 값을 기록만 하고, 실제 검증과 하드웨어 명령 변환은 **`Draw` 순간에**
+일어납니다(draw-time validation). draw마다 드라이버가 dirty된 상태를 전부 훑어 레지스터 명령으로
+풀어내므로 per-draw 비용이 큽니다.
+
+**DX10이 도입하고 DX11이 이어받은** 해법이 **immutable state object**입니다. blend, rasterizer,
+depth-stencil, sampler 상태를 미리 묶어 객체로 만들어 두면, 변환 비용의 상당 부분이 *생성
+시점*으로 당겨집니다. draw 때는 객체를 바인딩만 하면 되죠. 다만 드라이버는 여전히 바인딩을
+검사하고 hazard를 추적하므로(다음 절) per-draw 비용이 0은 아닙니다.
+
+**DX12**는 이를 끝까지 밀어 **PSO**(pipeline state object)로 만듭니다. 셰이더들, 입력 레이아웃,
+blend/raster/depth, 렌더 타깃 포맷까지 — 파이프라인을 정하는 거의 모든 것을 하나의 불변 객체로
+묶어 `CreatePipelineState`에서 **하드웨어 ISA와 상태로 완전히 컴파일**합니다. draw 경로에는
+`SetPipelineState`로 그 결과를 꽂는 일만 남아, per-draw 변환 비용이 사실상 사라집니다.
+
+**Vulkan**은 똑같은 일을 `vkCreateGraphicsPipelines`로 만드는 **VkPipeline**에서 합니다. 역시
+셰이더 모듈·고정 함수 상태·렌더 패스 정보를 하나의 불변 객체로 묶어 생성 시점에 컴파일하죠. 이름만
+다를 뿐 PSO와 같은 물건입니다.
+
+대가도 같습니다. PSO / VkPipeline 생성이 무겁다는 것 — 첫 사용 시 hitching의 원인이고, 그래서
+PSO 캐시(`ID3D12PipelineLibrary` / `VkPipelineCache`)와 사전 워밍업이 양쪽 모두에서 중요합니다.
+
+**셰이더 IR**도 함께 진화했습니다. DX9~11은 HLSL을 `fxc`로 **DXBC**로 컴파일하고 UMD JIT가
+ISA로 바꿉니다(셰이더 생성/첫 사용 시). DX12는 `dxc`가 내는 **DXIL**을, Vulkan은 **SPIR-V**를
+쓰며, 양쪽 모두 UMD JIT가 PSO/파이프라인 생성 시점에 ISA를 만듭니다. 중간 IR이 표준화되고 ISA
+변환이 *생성 시점*으로 통일된 것이 핵심입니다.
+
+## 3. Hazard tracking과 전이 — 드라이버가 대신 하던 일 ①
+
+DX9/DX11에서 드라이버가 *조용히* 처리해 주던 일의 첫째가 hazard tracking입니다.
+
+같은 텍스처를 한 draw에서 render target으로 쓰고 다음 draw에서 셰이더 입력(SRV)으로 읽으려면,
+그 사이에 쓰기 완료를 기다리고 캐시를 flush하며 리소스 레이아웃을 바꾸는 **배리어**가
+필요합니다. 이걸 빠뜨리면 GPU가 아직 안 쓰인 데이터를 읽어 결과가 깨집니다.
+
+**DX11 드라이버**는 바인딩 변화를 추적해 이런 전이를 자동으로 삽입합니다. SRV와 RTV에 같은
+리소스가 동시에 바인딩되는 위험을 감지하면 한쪽을 자동으로 unbind까지 해 줍니다. 편하지만,
+드라이버는 앱의 의도를 모르므로 *보수적으로* — 즉 필요 이상으로 — 배리어를 넣습니다. 그 보수적
+배리어가 GPU 파이프라인을 불필요하게 직렬화해 성능을 깎습니다.
+
+**DX12**는 이 추적을 없애고 앱이 **`ResourceBarrier`**로 전이를 명시하게 합니다
+(`COMMON`→`RENDER_TARGET`→`PIXEL_SHADER_RESOURCE` 같은 상태 전이, UAV 배리어, aliasing
+배리어). **Vulkan**도 똑같이 앱이 **`vkCmdPipelineBarrier`**로 명시합니다 — source/destination
+파이프라인 스테이지 마스크와 메모리 배리어로, "이 스테이지의 쓰기가 끝난 뒤 저 스테이지의 읽기를
+시작하라"를 직접 지정하죠.
+
+두 API의 모델은 사실상 같습니다. 앱이 리소스의 *과거와 미래 용도*를 알기 때문에 드라이버보다
+정확한 — 즉 더 적은 — 배리어를 넣을 수 있습니다. 대가는 틀리면 곧장 깨진다는 것. 드라이버가
+쥐고 있던 안전망이 사라진 자리에 앱의 책임이 들어옵니다.
+
+> Vulkan은 배리어 API를 한 번 더 다듬었습니다. 초기의 `vkCmdPipelineBarrier`는 stage 마스크가
+> 거칠어 과동기화가 쉬웠는데, `VK_KHR_synchronization2`(Vulkan 1.3 코어)의
+> `vkCmdPipelineBarrier2`가 배리어마다 stage/access를 더 정밀하게 지정하게 해 줍니다. 개념은
+> 같고 표현력만 올라간 것입니다.
+
+## 4. Residency와 메모리 — 드라이버가 대신 하던 일 ②
+
+둘째가 **residency** — 어떤 allocation이 지금 VRAM에 있어야 하는가입니다.
+
+[wddm-graphics-stack](wddm-graphics-stack)에서 본 **VidMM**(video memory manager)이 DX9/11에서는
+참조 빈도에 따라 리소스를 자동으로 페이지인/아웃합니다. 앱은 신경 쓸 필요가 없죠. 대신 대형 씬에서
+예측 못 한 페이징이 일어나면 프레임 도중 hitch가 생기는데, 앱은 그걸 제어할 수단이 없습니다.
+
+**DX12**는 `MakeResident`/`Evict`와 DXGI 메모리 예산(`QueryVideoMemoryInfo`)으로 앱이 residency를
+직접 관리하게 합니다. **Vulkan**은 한 발 더 나아가 메모리 자체를 앱이 관리합니다 —
+`vkAllocateMemory`로 디바이스 메모리를 잡고 `vkBindBufferMemory`/`vkBindImageMemory`로 리소스에
+바인딩하며, 어떤 힙에 무엇을 둘지(`VkMemoryHeap`/`VkMemoryType`)를 앱이 고릅니다. 두 경우 모두
+목표는 같습니다 — 페이징으로 인한 hitch를 *앱이* 제어하는 것.
+
+DX11이 자동으로 해 주던 또 하나가 **버퍼 renaming**입니다. `Map(D3D11_MAP_WRITE_DISCARD)`로
+상수/동적 버퍼를 갱신하면 드라이버는 내부적으로 versioning을 합니다 — GPU가 아직 이전 버전을
+읽는 중이어도 stall 없이 새 메모리 블록을 돌려주죠. DX12·Vulkan에는 이런 자동 renaming이 없어,
+앱이 ring buffer 형태의 upload 메모리를 직접 굴리고 fence로 수명을 관리합니다. 편의가 사라진
+자리를 다시 앱의 코드가 메웁니다.
+
+## 5. 스레딩 — 직렬 지점을 어떻게 없앴나
+
+드라이버 오버헤드를 *여러 코어로 나눌 수 있는가*도 세대마다 다릅니다. 위 절들이 "draw당 일을
+줄이는" 이야기였다면, 이건 "남은 일을 코어로 펼치는" 이야기입니다.
+
+<CommandRecordingThreads client:visible />
+
+**DX9**의 device는 사실상 immediate context 하나라, 렌더 명령 기록·제출이 단일 스레드에
+묶입니다. 멀티코어가 있어도 draw 제출을 병렬화할 수 없습니다.
+
+**DX11**은 `ID3D11Device`의 자원 생성은 free-threaded로 풀고, 렌더링은 immediate context 하나가
+담당하되 **deferred context**로 다른 스레드에서 command list를 기록할 수 있게 했습니다. 그런데
+IHV 드라이버가 네이티브 command list(`D3D11_FEATURE_DATA_THREADING.DriverCommandLists`)를
+지원하지 않으면, runtime이 deferred 기록을 immediate에서 다시 재생하는 식으로 **에뮬레이트**해
+실질 병렬 이득이 제한적이었습니다. 직렬 지점(immediate context 하나)이 여전히 남아 있던 것이죠.
+
+**DX12**는 그 직렬 지점을 없앱니다. 각 스레드가 자기 **command allocator**(기록 메모리 backing)와
+**command list**에 독립적으로 명령을 기록하고, `ExecuteCommandLists`로 큐에 제출합니다. 큐는
+**Direct(그래픽스)·Compute·Copy** 세 종류라 비동기 compute·DMA를 별도 엔진으로 보낼 수 있고,
+동기화는 **`ID3D12Fence`**로 명시합니다.
+
+**Vulkan**은 구조가 거의 같습니다. 스레드마다 **VkCommandPool**(기록 메모리)에서
+**VkCommandBuffer**를 할당해 독립적으로 기록하고, `vkQueueSubmit`으로 **VkQueue**에 제출합니다.
+큐는 디바이스가 노출하는 **queue family**(graphics/compute/transfer 등)에서 받아 오죠. 한 가지
+규칙이 더 명시적인데, command buffer는 *자신이 할당된 pool의 queue family*에서만 제출할 수
+있습니다 — DX12에서 list가 큐 타입에 묶이는 것과 같은 제약을 Vulkan은 명세에 못 박은 것입니다.
+
+[command-queues](command-queues)에서 다룬 fence/세마포어/배리어 모델이 양쪽에 그대로 적용됩니다.
+두 API 모두 드라이버 안의 직렬 지점이 사라져, **기록이 코어 수만큼 확장**됩니다. 1절에서 본
+DX11의 CPU 벽을 넘는 두 번째 무기가 바로 이것입니다 — per-draw 일을 줄이고(2~4절), 남은 일을
+코어로 펼친다(5절).
+
+## 6. 동기화 — 같은 모델, 살짝 다른 이름
+
+명령을 여러 스레드·여러 큐로 펼치면, 그것들이 *언제 끝났는지* 알아야 합니다. CPU가 GPU를
+기다리거나, 한 큐가 다른 큐의 결과를 기다리는 것 — 이 동기화를 두 API가 어떻게 다루는지가 거의
+유일하게 갈리는 지점입니다.
+
+**DX12**는 `ID3D12Fence` 하나로 두 가지를 다 합니다. fence에 값을 Signal하고, CPU가
+`SetEventOnCompletion`으로 그 값을 기다리거나(host 대기), 다른 큐가 `Wait`로 기다립니다(GPU↔GPU
+대기). 단일 primitive로 통합돼 있죠.
+
+**Vulkan**은 둘을 나눕니다. **VkFence**는 host↔device 동기화 전용입니다 — GPU 작업이 끝났는지
+CPU가 `vkWaitForFences`로 기다리는 데 씁니다. 큐와 큐 사이(GPU↔GPU)의 대기는 **VkSemaphore**로
+하는데, 이건 CPU를 막지 않고 GPU 위에서만 대기가 일어납니다. 둘을 헷갈려 쓰면 동작하지 않으므로
+역할을 분명히 구분해야 합니다.
+
+흥미롭게도 Vulkan은 나중에 이 둘을 다시 합쳤습니다. Vulkan 1.2의 **timeline semaphore**는
+단조 증가하는 카운터를 가진 primitive로, 기존 binary VkSemaphore와 VkFence의 기능을 모두
+포괄합니다 — 결국 DX12의 통합 fence 모델로 수렴한 셈입니다. 같은 문제에 두 API가 같은 답으로
+다가가는 패턴이 동기화에서도 반복됩니다.
+
+## 7. 정리 — D3D12와 Vulkan은 거의 같은 API다
+
+지금까지 본 것을 한 장으로 합치면, DX12와 Vulkan이 얼마나 닮았는지가 분명해집니다.
+
+<D3d12VulkanMap client:visible />
+
+파이프라인은 PSO ↔ VkPipeline, 바인딩 레이아웃은 root signature ↔ VkPipelineLayout, 디스크립터는
+descriptor heap ↔ VkDescriptorSet, 명령 기록은 command list ↔ VkCommandBuffer(메모리는 command
+allocator ↔ VkCommandPool), 제출은 command queue ↔ VkQueue, hazard는 ResourceBarrier ↔
+pipeline barrier. 동기화만 (6절에서 본 대로) fence 하나 ↔ fence+semaphore로 살짝 갈리지만, timeline
+semaphore로 다시 수렴합니다.
+
+이게 우연이 아닌 이유는 1절에서 봤습니다. 둘은 **같은 문제**(드라이버 per-draw 오버헤드, CPU
+병목)에서 출발해 **같은 처방**(상태를 생성 시점에 컴파일, hazard·residency·동기화를 앱이 명시,
+기록을 코어로 펼침)에 도달했고, 그 출발점에는 같은 조상(Mantle)이 있습니다. 한 API를 제대로
+익히면 다른 하나는 거의 번역에 가깝습니다.
+
+### 한 줄로
+
+네 세대의 역사는 **통제와 책임을 드라이버에서 앱으로 옮긴** 역사입니다.
+
+- **DX9**: 거의 모든 변환을 draw 순간에, 드라이버가, 단일 스레드로.
+- **DX11**: state object와 deferred context로 일부를 생성 시점으로 당기고 나누되, hazard·residency·
+  디스크립터·renaming은 여전히 드라이버가 자동으로.
+- **DX12 / Vulkan**: PSO/VkPipeline·explicit barrier·앱 residency·descriptor heap/set·명시적 큐로
+  그 자동화들을 모두 걷어내 드라이버를 얇게. 더 빠른 대신, 틀리면 곧장 깨지는 책임도 앱이.
+
+## 더 나아가기
+
+- **이 위의 추상 — RHI.** 엔진은 DX11/DX12/Vulkan을 하나의 인터페이스로 감싸는 RHI(rendering
+  hardware interface)를 얹습니다. 7절의 1:1 대응이 바로 RHI가 가능한 이유입니다 — 개념이 같으니
+  하나로 추상화할 수 있죠. 언리얼의 사례는
+  [언리얼 GPU 프로파일링 & 크래시 디버깅](ue-gpu-crash-debugging)에서 볼 수 있습니다.
+- **명령이 GPU에 닿은 *뒤*.** 드라이버가 만든 command buffer가 GPU에 닿은 다음의 이야기 —
+  워프·락스텝·occupancy —는 [GPU 실행 모델](gpu-execution-model)에서 다룹니다. 이 시리즈는 그
+  명령이 *어떻게 거기까지 가는가*였습니다.
+- **GPU 스케줄링의 진화.** VidSch의 소프트웨어 스케줄링은 WDDM 2.7의 GPU hardware scheduling
+  (HAGS)으로 일부 하드웨어/펌웨어에 위임됩니다. 제출 지연과 컨텍스트 전환 비용에 영향을 줍니다.
+
+## 참고 자료
+
+이 챕터는 다음 1차 자료를 기준으로 작성·검증했습니다(앞 네 편의 출처를 포함·통합).
+
+- **Microsoft Learn** — *WDDM Architecture*, *Video Memory Management and GPU Scheduling*,
+  *GPU Virtual Memory in WDDM 2.0*, *Driver residency in WDDM 2.0*,
+  *Introduction to Deferred Contexts* / *Supporting command lists*, *Vertex buffer renaming*.
+- **DirectX-Specs** — *Resource Binding*(root signature·descriptor heap), *D3D12 Performance / Runtime
+  Bypass*.
+- **DirectX Developer Blog** — *Direct3D 11 on 12 Updates*(`DriverCommandLists`).
+- **Khronos — Vulkan Specification & Guide** — *Command Buffers*, *Queues / Queue Families*,
+  *Synchronization*(VkFence·VkSemaphore·`vkCmdPipelineBarrier`), *Vulkan Timeline Semaphores* 블로그.
+- **Mantle / 동기** — *Mantle (API)* 와 *Vulkan* 개요(AMD·DICE 출신, Khronos 기증), 3DMark API
+  Overhead Feature Test.
+- 분석: Riccardo Loggini(*D3D12 PSO / Root Signature*), Diligent Graphics(*D3D12 Performance*),
+  *The Missing Guide to Modern Graphics APIs*(PSO), *Comparing Vulkan and D3D12*.
+
+> 주의: 본문 **DrawCallCost** 위젯의 ns 수치는 특정 드라이버 측정값이 아니라 구성비·기울기를
+> 보이기 위한 도식용 대표 차수입니다.
