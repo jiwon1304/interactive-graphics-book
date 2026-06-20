@@ -1,0 +1,276 @@
+---
+layout: ../../layouts/ChapterLayout.astro
+title: "상태·셰이더·PSO — 드라이버가 하는 변환"
+description: 파이프라인 상태가 무엇이고 왜 하드웨어 변환이 비싼가 — DX9 draw-time validation에서 DX10/11 state object를 거쳐 DX12 PSO와 Vulkan VkPipeline으로. 셰이더가 HLSL/GLSL에서 DXBC/DXIL/SPIR-V를 거쳐 GPU ISA가 되는 2단 컴파일, 그리고 D3D11 슬롯·D3D12 descriptor heap+root signature·Vulkan descriptor set+pipeline layout의 대응.
+---
+
+import StateTranslationTiming from '../../components/demos/pipeline-state-shaders/StateTranslationTiming.tsx';
+import ShaderCompilePipeline from '../../components/demos/pipeline-state-shaders/ShaderCompilePipeline.tsx';
+import PsoBundle from '../../components/demos/pipeline-state-shaders/PsoBundle.tsx';
+import BindingModels from '../../components/demos/pipeline-state-shaders/BindingModels.tsx';
+
+# 상태·셰이더·PSO — 드라이버가 하는 변환
+
+처음 PSO(pipeline state object)를 만져 본 엔지니어가 반복해서 겪는 일이 있습니다. DX11 코드를
+DX12로 옮겼더니 같은 장면을 그리는 데 **draw 호출 비용은 분명히 줄었는데**, 새 머티리얼이 처음
+화면에 나오는 순간 프레임이 한 번 크게 튑니다(hitching). 그 튐의 정체를 추적하면 한 함수에
+닿습니다 — `CreatePipelineState`. 그 안에서 드라이버는 수 ms~수백 ms를 쓰고, 그동안 렌더
+스레드는 멈춰 있습니다.
+
+이상한 일입니다. DX11에서는 셰이더를 만들고 blend state를 바꾸는 데 그렇게 오래 걸린 적이
+없었습니다. 같은 셰이더, 같은 상태인데 왜 DX12에서는 한 번에 그렇게 무거운 비용이 몰릴까요?
+답은 [DirectX 드라이버 내부](directx-driver-internals) 챕터가 한 문장으로 던졌던 명제 안에
+있습니다 — **"비용이 사라진 게 아니라, hot loop(draw)에서 차가운 경로(생성)로 옮겨졌다."**
+이 챕터는 그 한 문장을 끝까지 풉니다. *무엇이* 옮겨졌고, *왜* 그 변환이 비싸며, DX9·DX11·
+DX12·Vulkan이 그것을 *언제* 하는지를.
+
+세 축을 차례로 봅니다. (1) 파이프라인 **상태**가 무엇이고 왜 하드웨어 변환이 비싼가 — 그리고
+그 변환 시점이 draw에서 생성으로 어떻게 이동했나. (2) **셰이더**가 소스에서 GPU ISA가 되기까지의
+2단 컴파일. (3) 리소스를 셰이더에 잇는 **바인딩/디스크립터** 모델의 진화. 1~3편([command
+buffer와 비동기 제출](command-queues), [WDDM 스택](directx-driver-internals),
+[draw 콜의 일생](directx-driver-internals))을 읽었다고 가정하고, 그 위에서 "드라이버가 하는
+변환"만 깊게 들여다봅니다.
+
+## 1. "상태"란 무엇이고, 왜 하드웨어 변환이 비싼가
+
+그래픽스 파이프라인을 한 번 그리려면 GPU의 fixed-function 블록들이 어떻게 동작할지를 전부
+정해 줘야 합니다. 이 설정값 묶음이 **파이프라인 상태(pipeline state)**입니다. 대표적인 것들:
+
+- **rasterizer state** — cull mode(front/back/none), fill mode(solid/wireframe), front-face
+  winding, depth bias, scissor enable.
+- **blend state** — render target별 blend 활성 여부, source/dest blend factor, blend op,
+  write mask. (예: `srcAlpha · src + (1−srcAlpha) · dst`의 factor·op.)
+- **depth-stencil state** — depth test 함수(`LESS`, `LEQUAL` …), depth write enable,
+  stencil 함수·연산·마스크.
+- **sampler state** — filter(point/linear/anisotropic), addressing mode(wrap/clamp/border),
+  LOD bias·clamp, comparison func.
+- 그리고 **입력 레이아웃**(vertex가 메모리에서 어떻게 셰이더로 들어오는지), **primitive
+  topology**, **render target / depth 포맷**, **MSAA 샘플 수**.
+
+문제는 이 값들이 **API가 노출하는 추상 enum**이라는 점입니다. `D3D11_CULL_BACK`이나
+`VK_BLEND_FACTOR_SRC_ALPHA`는 하드웨어가 직접 이해하는 비트가 아닙니다. GPU마다 rasterizer를
+제어하는 레지스터 레이아웃이 다르고, blend 하드웨어가 받는 명령 포맷이 다릅니다. 그래서 드라이버는
+이 추상 상태를 **그 GPU가 이해하는 명령·레지스터 값으로 변환(translate)**해야 합니다. 그리고
+이 변환은 단순한 룩업이 아닙니다 — 상태들이 서로 얽혀 있기 때문입니다.
+
+가장 무거운 얽힘은 **셰이더와 다른 상태의 결합**입니다. 픽셀 셰이더가 내는 출력은 곧바로 blend
+하드웨어로 가고, render target 포맷에 따라 출력 변환이 달라집니다. depth 출력 여부에 따라
+early-Z가 켜지거나 꺼집니다. MSAA 샘플 수가 rasterizer와 픽셀 셰이더 실행 방식을 바꿉니다.
+즉 **셰이더를 최종 GPU ISA로 컴파일하려면, 그 셰이더가 어떤 blend/depth/RT-format/MSAA와
+함께 쓰일지를 알아야** 최적의 코드가 나옵니다. 상태 하나만 보고 변환할 수 없고, **조합 전체가
+정해져야** 진짜 변환이 가능합니다.
+
+여기서 결정적인 질문이 나옵니다. 드라이버가 그 "조합 전체"를 **언제** 알게 되느냐. API 세대를
+가르는 가장 큰 축이 바로 이 시점입니다.
+
+<StateTranslationTiming client:visible />
+
+### 1.1 DX9 — draw 순간에 전부 변환 (draw-time validation)
+
+DX9는 상태를 잘게 흩어진 개별 setter로 받습니다 — `SetRenderState`, `SetSamplerState`,
+`SetTextureStageState`. 각 호출은 값을 **기록만** 합니다. 드라이버는 이 시점에 아직 조합
+전체를 모릅니다(다음 호출에서 무엇이 또 바뀔지 모르니까). 그래서 실제 검증과 하드웨어 명령
+변환은 **`Draw` 순간으로 미뤄집니다**. draw가 불리면 그제서야 드라이버가 dirty된 상태를 전부
+훑어 조합을 확정하고, 하드웨어 레지스터 명령으로 풀어냅니다. 이것이 **draw-time validation**
+입니다.
+
+대가는 명확합니다. **draw마다** 이 변환이 반복됩니다. 프레임에 draw가 1만 개면 1만 번. 위
+도식의 DX9 레인에서 회색 draw 막대가 높은 이유입니다 — 변환 비용이 hot loop 안에 그대로
+들어 있습니다.
+
+### 1.2 DX10/11 — immutable state object로 일부를 당기다
+
+DX10이 도입하고 DX11이 이어받은 해법은 **상태를 미리 묶어 불변 객체로 만드는 것**입니다.
+`CreateBlendState`, `CreateRasterizerState`, `CreateDepthStencilState`, `CreateSamplerState`로
+네 종류의 **state object**를 만들어 둡니다. 이 객체는 **생성 시 검증**되고, 한 번 만들면
+바꿀 수 없습니다(immutable — 바꾸려면 destroy 후 recreate). draw 시에는 만들어 둔 객체를
+**바인딩만** 하면 됩니다.
+
+이 설계의 핵심은 Microsoft 문서가 명시한 세 가지 이득입니다: **생성 시점 검증**, 하드웨어가
+state object를 **캐시**할 수 있게 함, 그리고 state 설정 API가 넘기는 데이터를 (전체 상태 대신)
+**핸들 하나로** 줄이는 것. 변환 비용의 상당 부분이 hot loop 밖, 생성 시점으로 당겨집니다.
+
+하지만 **전부**는 아닙니다. 셰이더는 여전히 따로 바인딩되고, 입력 레이아웃·RT 포맷도 state
+object 밖에 있습니다. 즉 드라이버는 draw 시점에도 **셰이더와 상태의 조합**을 최종 확정해야
+하고, 바인딩·hazard 검사도 매 draw 합니다. 위 도식의 DX11 레인에서 draw 막대가 DX9보다는
+낮지만 0은 아닌 이유입니다.
+
+### 1.3 DX12 PSO와 Vulkan VkPipeline — 끝까지 밀어붙이다
+
+Microsoft 문서가 DX11의 한계를 정확히 짚습니다. 파이프라인 stage를 따로따로 설정하므로
+"display driver는 **draw time이 되기 전에는** 파이프라인 상태 문제를 해결할 수 없다." DX12는
+이를 정면으로 공략합니다. 셰이더 전 단계, 입력 레이아웃, blend/rasterizer/depth-stencil,
+primitive topology, render target/depth 포맷, MSAA, 바인딩 레이아웃까지 — 파이프라인을
+정하는 **거의 모든 것을 하나의 불변 객체**로 묶습니다. 이것이 **PSO(pipeline state object)**
+입니다. 조합이 통째로 정해지므로, `CreateGraphicsPipelineState`는 그 자리에서 PSO를 "필요한
+하드웨어 native instruction과 state로 즉시 변환"할 수 있습니다.
+
+<PsoBundle client:visible />
+
+Vulkan의 **VkPipeline**은 이와 **동형(同形)**입니다. `vkCreateGraphicsPipelines`에 넘기는
+`VkGraphicsPipelineCreateInfo`가 shader stages, vertex input, input assembly, rasterization,
+multisample, depth-stencil, color blend, 그리고 pipeline layout과 render pass/attachment
+포맷을 한꺼번에 담습니다. 같은 문제(드라이버가 조합을 늦게 알아 draw마다 변환하던 것)에 대한
+같은 답입니다 — 위 위젯에서 API를 바꿔 두 용어의 1:1 대응을 확인해 보세요.
+
+대가는 도입부에서 본 그 hitching입니다. 변환 비용 전체가 **생성 시점**으로 몰리니, PSO/
+VkPipeline 생성이 무겁습니다(위 타이밍 도식의 앞쪽 큰 막대). 그래서 두 가지가 중요해집니다.
+첫째, **dynamic state** — 전부를 굳히면 viewport 하나 바꾸는 데도 PSO를 새로 만들어야 하므로,
+자주 바뀌는 일부 상태(`VkDynamicState`의 viewport·scissor 등)는 번들에서 빼서 draw 시점에
+명령으로 설정할 수 있게 합니다(위 위젯의 "dynamic state 분리" 토글). 둘째, **pipeline
+cache** — 다음 절에서 셰이더 컴파일을 본 뒤 다루겠습니다.
+
+> **이게 곧 비용 이동의 수학입니다.** 한 프레임의 상태 변환 총비용을 거칠게 쓰면
+> $$ C_{\text{frame}} \;=\; \underbrace{N_{\text{create}} \cdot c_{\text{create}}}_{\text{생성 경로(차가움)}} \;+\; \underbrace{N_{\text{draw}} \cdot c_{\text{draw}}}_{\text{hot loop(뜨거움)}} $$
+> 입니다. DX9는 $c_{\text{create}}\approx 0$ 대신 $c_{\text{draw}}$가 크고, $N_{\text{draw}}$가
+> 수만이라 둘째 항이 지배합니다. DX12/Vulkan은 $c_{\text{draw}}\to 0$으로 보내는 대신
+> $c_{\text{create}}$를 크게 키웁니다. 그런데 $N_{\text{create}}$(서로 다른 PSO 수)는 보통
+> $N_{\text{draw}}$보다 **훨씬 작고**(수십~수백), 더 결정적으로 — **프레임마다 반복되지
+> 않습니다**(한 번 만든 PSO는 재사용). 그래서 정상 상태에서 둘째 항이 거의 0이 되어 프레임이
+> 가벼워집니다. hitching은 첫째 항을 *프레임 안에서* 처음 치르는 순간일 뿐이고, pipeline
+> cache가 노리는 게 바로 그 $c_{\text{create}}$를 두 번째 실행부터 깎는 것입니다.
+
+## 2. 셰이더는 어떻게 GPU ISA가 되는가 — 2단 컴파일
+
+위에서 "PSO 생성이 셰이더를 컴파일한다"고 했는데, 정확히는 **두 번** 컴파일됩니다. 이 2단
+구조를 이해하면 왜 생성이 그토록 비싼지가 분명해집니다.
+
+<ShaderCompilePipeline client:visible />
+
+**1단계: offline (앱 빌드 시).** HLSL이나 GLSL 소스를 사람이 읽는 텍스트에서 **중간 IR
+(intermediate representation)**로 컴파일합니다. 이건 앱을 빌드할 때, 또는 셰이더를 처음
+로드할 때 한 번 일어납니다.
+
+- **D3D9~11**: `fxc`가 HLSL을 **DXBC**(legacy 바이트코드)로 컴파일합니다. Shader Model 5.1
+  까지를 지원합니다.
+- **D3D12**: `dxc`(DirectX Shader Compiler, LLVM/Clang 기반)가 HLSL을 **DXIL**로 컴파일합니다.
+  DXIL은 "LLVM IR에서 파생"되었고, "LLVM bitcode 포맷의 한 subset으로 인코딩"됩니다(현재
+  LLVM 3.7 bitcode에 고정). Shader Model 6.0+에 쓰입니다.
+- **Vulkan**: `glslang`(GLSL/HLSL)이나 `dxc`(`-spirv`)가 **SPIR-V**를 냅니다. SPIR-V는
+  "graphical-shader stage와 compute kernel을 위한 바이너리 중간 표현"입니다.
+
+여기서 중요한 점: DXIL도 SPIR-V도 **아직 어느 GPU의 명령이 아닙니다.** DXIL 문서가 그 성격을
+정확히 말합니다 — IR은 "IR producer(HLSL 컴파일러 등)와 IR consumer, 즉 **IHV 드라이버의
+JIT 컴파일러** 사이의 **계약**"입니다. IHV 중립적인, 하드웨어에 독립적인 표현일 뿐입니다.
+
+**2단계: online (드라이버, 생성 시).** 진짜 GPU 명령(ISA)으로의 변환은 **드라이버(UMD)의 JIT
+컴파일러**가 합니다. 그리고 이 JIT가 도는 시점이 바로 **PSO / VkPipeline 생성 시**입니다.
+DX11에서는 셰이더 생성/첫 사용 시점에 JIT가 돌았지만, DX12/Vulkan에서는 이 무거운 작업이
+파이프라인 생성으로 묶여 들어갑니다.
+
+왜 이 JIT가 느릴까요? 이게 단순 번역이 아니라 **본격적인 최적화 컴파일**이기 때문입니다.
+드라이버 백엔드는 IR을 받아 그 GPU의 ISA로 내리면서 register allocation, instruction
+scheduling, 상수 폴딩, 그리고 §1에서 본 **다른 상태와의 결합 최적화**(RT 포맷에 맞춘 출력
+변환, blend·MSAA에 따른 분기 제거 등)를 수행합니다. 실제 오픈소스 드라이버 RADV(Mesa)를 보면
+SPIR-V → NIR(자체 IR) → 최적화/lowering → ACO 백엔드 → GPU ISA의 여러 패스를 거칩니다. 한
+PSO에 셰이더가 여럿(VS·PS·…) 들어가니, 생성 한 번에 이 컴파일이 여러 번 일어납니다. 도입부의
+"수 ms~수백 ms"가 여기서 나옵니다.
+
+### 2.1 pipeline cache — 두 번째부터 깎기
+
+이 비용을 매 실행마다 다시 치를 이유는 없습니다. 같은 PSO는 같은 ISA를 냅니다. 그래서 두
+API 모두 **컴파일 결과를 캐시**합니다.
+
+- **D3D12**: `ID3D12PipelineLibrary`로 컴파일된 PSO를 디스크에 캐시해, 다음 실행에서 "비싼
+  셰이더 컴파일을 피하고" 로드 시간을 줄이며 "드라이버 셰이더 컴파일로 인한 렌더 글리치를
+  줄입니다."
+- **Vulkan**: `VkPipelineCache`를 만들어 `vkCreateGraphicsPipelines`에 넘기면 "이미 구운
+  상태를 재사용해 셰이더 컴파일 같은 비싼 작업의 반복을 피합니다." 이 캐시는 **파일로
+  직렬화**해 실행 간에 재사용할 수 있습니다. Khronos 공식 샘플의 측정에서 캐시 사용 시 24.4 ms,
+  미사용 시 50.4 ms로, 재생성 비용이 절반 가까이 줄었습니다.
+
+전략은 분명합니다 — **생성을 hot path 밖으로**. 로딩 화면에서 필요한 PSO/pipeline을 미리
+warming하고, 캐시를 디스크에 저장해 두 번째 실행부터는 컴파일을 건너뜁니다. 그래도 monolithic
+파이프라인(모든 상태를 한 번에)은 조합 폭발 문제가 있어, Vulkan은 `VK_EXT_graphics_pipeline_
+library`로 파이프라인을 vertex input / pre-rasterization shaders / fragment shader /
+fragment output 네 부분으로 **나눠 컴파일 후 링크**하는 길까지 열어 뒀습니다. 모두 같은 목표를
+향합니다: 생성 비용을, 가능한 한 hot loop 밖에서, 가능한 한 적게.
+
+## 3. 바인딩 — 리소스를 셰이더에 잇는 모델
+
+상태와 셰이더를 봤으니, 마지막 축은 **리소스(텍스처·버퍼)를 셰이더에 연결하는 방식**입니다.
+이것도 같은 방향으로 진화했습니다 — 드라이버가 매 draw 하던 일을 앱이 미리 배치하는 쪽으로.
+
+<BindingModels client:visible />
+
+**D3D11 — 슬롯 기반.** 리소스를 고정된 슬롯에 꽂습니다: `PSSetShaderResources(slot, …)`,
+`VSSetConstantBuffers(slot, …)`. 드라이버는 이 슬롯 테이블을 추적하다가, **매 draw마다** 그
+슬롯들을 그 GPU가 이해하는 하드웨어 디스크립터로 **패치**합니다. 편리하지만(앱은 슬롯 번호만
+신경 쓰면 됨) 이 per-draw 패치가 [DirectX 드라이버 내부](directx-driver-internals)에서 본
+draw당 CPU 비용의 한 축이었습니다. 게다가 드라이버는 같은 리소스를 SRV와 RTV로 동시에 바인딩
+하는 위험(hazard)도 추적해야 했습니다.
+
+**D3D12 — descriptor heap + root signature.** DX12는 이를 **레이아웃**과 **데이터**로
+분리합니다.
+
+- **root signature**(`ID3D12RootSignature`)는 *레이아웃*만 정합니다 — 셰이더가 어떤 바인딩
+  슬롯을 보는지의 명세입니다. 세 종류의 원소를 가집니다: **root constant**(32비트 값을 셰이더에
+  인라인으로, heap 우회), **root descriptor**(CBV나 buffer SRV/UAV를 root에 직접, heap 우회),
+  **descriptor table**(descriptor heap 안의 범위를 가리킴).
+- **descriptor heap**(`ID3D12DescriptorHeap`)은 *실제 디스크립터*를 담는 연속 메모리입니다.
+  앱이 여기에 디스크립터를 미리 깔아 둡니다(타입: `CBV_SRV_UAV`, `SAMPLER`).
+
+table은 heap 안 범위를 가리킬 뿐이므로, draw 시점에 드라이버가 패치할 게 없습니다. hazard
+추적도 앱의 `ResourceBarrier`로 넘어갑니다(이전 챕터 §4). draw당 비용이 또 한 겹 사라집니다.
+
+**Vulkan — descriptor set + pipeline layout.** 구조가 D3D12와 그대로 대응합니다.
+
+- **pipeline layout**(`VkPipelineLayout`) = descriptor **set layout**들 + **push constant**
+  range들. → D3D12의 **root signature**.
+- **descriptor set**(`VkDescriptorSet`, `VkDescriptorPool`에서 할당, `vkUpdateDescriptorSets`로
+  채우고 `vkCmdBindDescriptorSets`로 바인딩) → D3D12의 **descriptor table**.
+- **descriptor pool**(`VkDescriptorPool`) → D3D12의 **descriptor heap**(backing 할당).
+- **push constant**(`vkCmdPushConstants`) → D3D12의 **root constant**. 둘 다 heap 우회의
+  고속 인라인 상수 경로입니다.
+
+세 모델을 한 줄로 요약하면: **D3D11은 슬롯을 드라이버가 매 draw 패치하고, D3D12와 Vulkan은
+레이아웃(root signature / pipeline layout)과 디스크립터 저장소(heap / pool)를 분리해 앱이
+미리 배치한다.** 같은 문제에 대한 두 API의 거의 같은 답이고, 이름만 다릅니다.
+
+## 4. 정리 — 세 축, 하나의 방향
+
+세 축 모두 같은 방향으로 움직였습니다.
+
+| 축 | DX9 | DX11 | DX12 / Vulkan |
+| --- | --- | --- | --- |
+| 상태 변환 | draw-time 전체 | state object + draw | PSO / VkPipeline 생성 시 전부 |
+| 셰이더 ISA | 셰이더 생성/첫 사용 시 JIT | 같음 | 생성 시 JIT (생성에 묶임) |
+| 바인딩 | 슬롯·드라이버 패치 | 슬롯·드라이버 패치 | heap+root sig / pool+layout, 앱 배치 |
+
+한 단어로 줄이면 **선행(ahead-of-time)**입니다. 드라이버가 draw마다 *늦게* 알아 *반복*해서
+하던 변환을, 앱이 *미리* 조합을 확정해 줘 *생성 시 한 번*에 끝내게 한 것입니다. hot loop는
+가벼워지고, 비용은 차가운 생성 경로로 모이며, 그 생성 비용은 pipeline cache로 두 번째부터
+깎입니다. DX12와 Vulkan이 PSO·셰이더 IR·디스크립터 모델에서 거의 1:1로 닮은 것은 우연이
+아니라, 같은 문제(드라이버 per-draw 오버헤드)에 도달한 같은 결론이기 때문입니다.
+
+## 더 나아가기
+
+- **그 다음 — 명령이 GPU에 닿은 뒤.** PSO가 만든 ISA가 실제로 워프로 실행되는 이야기는
+  [GPU 실행 모델](gpu-execution-model)에서. 이 챕터는 *명령이 만들어지기까지*였습니다.
+- **제출과 동기화.** PSO를 꽂은 command buffer가 큐에 올라가고 fence로 동기화되는 모델은
+  [command queues](command-queues)와 [draw 콜의 일생](directx-driver-internals).
+- **조합 폭발과 그 완화.** monolithic PSO의 조합 폭발(같은 셰이더 × 여러 RT 포맷 × blend
+  설정…)은 실무에서 PSO 캐시 관리의 핵심 난제입니다. Vulkan의 graphics pipeline library,
+  D3D12의 PSO 라이브러리·백그라운드 컴파일이 그 대응입니다.
+- **상위 추상.** 엔진은 이 셋(DX11/DX12/Vulkan)을 자체 RHI로 한 인터페이스로 감쌉니다.
+  언리얼의 사례는 [언리얼 GPU 프로파일링 & 크래시 디버깅](ue-gpu-crash-debugging).
+
+## 참고 자료
+
+이 챕터는 다음 1차 자료를 기준으로 작성·검증했습니다.
+
+- **Microsoft Learn** — *Managing Graphics Pipeline State in Direct3D 12*,
+  *Important Changes from Direct3D 11 to Direct3D 12*, *State Objects (Direct3D 10)*,
+  *Root Signatures Overview*, *D3D12_GRAPHICS_PIPELINE_STATE_DESC*,
+  *Understand Direct3D 11.1 concepts*(D3D9 state setters), *Pipeline State Cache 샘플*.
+- **DirectX-Specs** — *Resource Binding*(root signature · descriptor heap).
+- **DirectX Shader Compiler** (GitHub) — *DXIL.rst*(DXIL = LLVM bitcode subset, IHV JIT 계약),
+  DXC/FXC porting wiki.
+- **Khronos** — Vulkan spec(*VkGraphicsPipelineCreateInfo*, *VkPipelineLayoutCreateInfo*,
+  *VkDynamicState*, *VkPipelineCache*), Vulkan-Guide(*What is SPIR-V*, *Pipeline Cache*,
+  *Push Constants*), Vulkan-Samples(*pipeline_cache*), *VK_EXT_graphics_pipeline_library* proposal,
+  SPIR-V 개요(khronos.org/spirv).
+
+> 주의: **StateTranslationTiming** 위젯의 막대 높이는 특정 드라이버 측정값이 아니라 변환 비용이
+> draw에서 생성으로 *이동*하는 구성비를 보이기 위한 도식용 상대값입니다. 셰이더 컴파일 시간
+> 수치(수 ms~수백 ms, 캐시 24.4/50.4 ms)는 출처(Khronos 샘플 등)에서 가져온 대표값입니다.
