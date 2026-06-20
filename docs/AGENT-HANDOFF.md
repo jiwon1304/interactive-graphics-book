@@ -57,6 +57,10 @@
   (`anisotropic`·`occupancy`·`divergence` 등, `이방성`·`점유율` 금지). **기존 문서에도 소급 적용.**
   자세한 정책은 AUTHORING-GUIDE §1.5. (이후 작성한 texture-filtering-mipmapping부터 이 스타일.)
 - **하드웨어 문서를 사용자가 특히 재밌어함** → "읽는 사람이 궁금해할 하드웨어 주제"를 계속 확장하라.
+- **(2026-06) 반드시 공식 문서/전문가 글 기반으로 집필·검수** → 기억에만 의존 금지. 각 챕터의 1차 출처를
+  `docs/sources/<slug>-sources.md`에 URL·검증사실로 남기고, 챕터 말미에 "참고 자료" 섹션. 검수도 그
+  출처와 교차확인. (실제로 directx-driver-internals 초안에서 WDDM 1.x↔2.0 주소-patch 혼동을 GPU
+  Virtual Memory in WDDM 2.0 문서로 잡아 수정함.)
 
 ## 6. 기술 규약 (집필 시 그대로 따를 것)
 **새 챕터 추가:**

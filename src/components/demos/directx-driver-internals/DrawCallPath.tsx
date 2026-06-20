@@ -66,7 +66,7 @@ export default function DrawCallPath() {
 
     const r2 = [
       { c: COLORS.kernel, t: '제출(KMT)' },
-      { c: COLORS.kernel, t: 'VidMM residency·VA' },
+      { c: COLORS.kernel, t: 'VidMM residency' },
       { c: COLORS.kernel, t: 'VidSch ring' },
       { c: COLORS.gpu, t: 'GPU 실행' },
     ];
@@ -91,9 +91,10 @@ export default function DrawCallPath() {
         command buffer</span>에 append합니다. <strong>여기엔 커널 진입이 없습니다.</strong> command
         buffer가 가득 차거나 <code>Flush</code>/<code>Present</code>가 호출될 때 비로소
         <span style={{ color: COLORS.submit }}> 커널로 제출</span>(<code>D3DKMTSubmitCommand</code>)되고,
-        Dxgkrnl의 VidMM이 참조 allocation을 resident로 만들고 GPU VA를 패치한 뒤 VidSch가 ring buffer에
-        넣습니다. 즉 <strong>per-draw 비용은 거의 전부 윗줄(user CPU)</strong>이고, 커널 전환은 제출
-        단위로 분할 상환됩니다. DX12가 줄인 것이 바로 이 윗줄의 draw당 비용입니다.
+        Dxgkrnl의 VidMM이 참조 allocation의 residency를 보장한 뒤 VidSch가 ring buffer에 넣습니다(WDDM
+        2.0 GPUVA에서는 UMD가 가상주소를 직접 기록하므로 주소 patch 단계가 없습니다). 즉
+        <strong> per-draw 비용은 거의 전부 윗줄(user CPU)</strong>이고, 커널 전환은 제출 단위로 분할
+        상환됩니다. DX12가 줄인 것이 바로 이 윗줄의 draw당 비용입니다.
       </figcaption>
     </figure>
   );

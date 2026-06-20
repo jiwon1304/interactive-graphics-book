@@ -67,7 +67,7 @@ export default function WddmStack() {
 
     box(ctx, bx, y, bh > 0 ? bw : bw, bh, COLORS.gpu, '', theme);
     label(ctx, bx + bw / 2, y + bh / 2 - 7, 'KMD + GPU', theme.text, 13, 'bold');
-    label(ctx, bx + bw / 2, y + bh / 2 + 10, 'GPU VA patch · ring buffer · engines', theme.muted, 10);
+    label(ctx, bx + bw / 2, y + bh / 2 + 10, 'ring buffer · GPU engines', theme.muted, 10);
   };
 
   const { ref } = useCanvas2d(draw, []);
@@ -82,9 +82,11 @@ export default function WddmStack() {
         IHV가 제공하는 user 공간 DLL로, 셰이더 바이트코드를 하드웨어 ISA로 JIT 컴파일하고 API 명령을
         하드웨어 <strong>command buffer</strong>로 변환합니다. 여기까지가 user 모드 — 프로세스 안에서
         커널 진입 없이 돕니다. command buffer를 제출할 때 비로소 <span style={{ color: COLORS.kernel }}>
-        Dxgkrnl</span>로 내려가는데, <strong>VidMM</strong>이 참조 allocation의 residency를 보장하고 GPU
-        가상주소를 패치하며 <strong>VidSch</strong>가 GPU 엔진의 ring buffer에 스케줄합니다. KMD는 실제
-        하드웨어 레지스터·도어벨을 건드립니다. <strong>이 레이어 구조는 DX9·11·12가 공유합니다.</strong>
+        Dxgkrnl</span>로 내려가는데, <strong>VidMM</strong>이 참조 allocation의 residency를 보장하고
+        <strong>VidSch</strong>가 GPU 엔진의 ring buffer에 스케줄합니다. KMD는 실제 하드웨어 레지스터·
+        doorbell을 건드립니다. (WDDM 2.0 이전에는 VidMM이 command buffer의 patch list로 물리주소를
+        메웠지만, WDDM 2.0의 per-process GPUVA 이후로는 UMD가 가상주소를 직접 기록합니다.)
+        <strong> 이 레이어 구조는 DX9·11·12가 공유합니다.</strong>
         세 API의 차이는 “어느 레이어가 무엇을, 언제 하느냐”의 분담에 있습니다.
       </figcaption>
     </figure>

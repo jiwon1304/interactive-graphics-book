@@ -3,6 +3,16 @@
 섹션: **GPU 명령 제출** (command-queues 다음). 작성: 2026-06.
 스타일: **비유 금지 + 전공자 대상**(사용자 명시). 용어는 영어/발음 유지(UMD/KMD/PSO/DDI/barrier 등).
 
+## 1차 출처 (사용자 지시: 공식 문서/전문가 글 기반 작성·검수)
+- **출처 노트: `docs/sources/directx-driver-internals-sources.md`** — 모든 핵심 주장의 근거(Microsoft
+  Learn WDDM/DDI 문서, DirectX-Specs, Loggini/agraphicsguynotes 등)와 URL이 정리돼 있다. 수정 전
+  반드시 읽을 것.
+- **검수 시 교차확인된 수정**: 초안은 "VidMM이 GPU VA를 패치"라며 WDDM 1.x(물리주소+patch list)와
+  WDDM 2.0(per-process GPUVA, patch 제거)을 혼동 → **세대 구분으로 수정**(§1·§2 본문, WddmStack·
+  DrawCallPath figcaption/라벨). 근거: *GPU Virtual Memory in WDDM 2.0* — "UMD ... no longer relies on
+  dynamic patching ... doesn't generate allocation or patch location lists".
+- **DrawCallCost ns 수치는 출처 미확정** → 본문·figcaption·chapters에 "도식용 대표 차수"로 명시.
+
 ## 목적과 범위
 
 "DX9·DX11·DX12 드라이버 뒤에서 일어나는 일"을 설명. 핵심 명제: 세 API는 **같은 WDDM 스택**을
