@@ -1,0 +1,247 @@
+---
+layout: ../../layouts/ChapterLayout.astro
+title: "Windows 그래픽스 스택 — WDDM: runtime·UMD·KMD"
+description: 한 번의 D3D/Vulkan 호출이 Windows 안에서 거치는 레이어 — D3D runtime → UMD → Dxgkrnl(VidMm/VidSch) → KMD → GPU. DDI 호출이 내려가는 길, VRAM↔system memory residency·paging, WDDM 1.x 물리주소+patch list vs 2.0 GPUVA, 그리고 같은 커널 위의 Vulkan loader+ICD
+---
+
+import WddmStack from '../../components/demos/wddm-graphics-stack/WddmStack.tsx';
+import DdiCallFlow from '../../components/demos/wddm-graphics-stack/DdiCallFlow.tsx';
+import ResidencyPaging from '../../components/demos/wddm-graphics-stack/ResidencyPaging.tsx';
+import GpuVaEras from '../../components/demos/wddm-graphics-stack/GpuVaEras.tsx';
+import IcdVsUmd from '../../components/demos/wddm-graphics-stack/IcdVsUmd.tsx';
+
+# Windows 그래픽스 스택 — WDDM: runtime·UMD·KMD
+
+당신이 `context->Draw(...)` 한 줄을 호출하면, 그 호출은 GPU에 곧장 닿지 않습니다. 먼저
+`d3d11.dll`로 들어가고, 거기서 그래픽 카드 회사가 만든 별도의 DLL로 넘어가고, 그 DLL이 GPU
+명령을 메모리에 쌓다가, 어느 순간 커널로 한 번 내려가고, 커널 안의 메모리 관리자가 "이 명령이
+건드릴 텍스처가 지금 VRAM에 있는지"를 확인한 뒤에야, 스케줄러가 GPU 엔진의 큐에 그 명령을
+꽂습니다. 한 번의 `Draw`가 통과하는 레이어가 최소 다섯 겹입니다.
+
+이 레이어 구조는 그래픽스 API가 "빠르다/느리다"를 가르는 곳이고, 드라이버 크래시가 user 모드
+앱을 안 죽이고 화면만 잠깐 깜빡이게 만드는 이유이며, 같은 GPU에서 D3D와 Vulkan이 평화롭게
+공존하는 이유이기도 합니다. 이 구조의 이름이 **WDDM**(Windows Display Driver Model)입니다.
+
+이번 글은 "그래픽스 드라이버" 5부작의 2편입니다. 1편이 *DX9·11·12가 같은 스택 위에서 책임을
+어떻게 다르게 나누는가*였다면, 이번 편은 그 **스택 자체를 한 겹씩 분해**합니다. 무엇이 user
+모드이고 무엇이 커널인지, 호출이 레이어 사이를 어떻게 넘어가는지(**DDI**), 메모리가 VRAM과
+system memory 사이를 어떻게 오가는지(**residency·paging**), 그리고 주소를 다루는 방식이
+**WDDM 1.x와 2.0 사이에서 근본적으로 달라진** 이야기를 합니다.
+
+## 1. 다섯 겹의 스택 — 무엇이 user 모드이고 무엇이 커널인가
+
+먼저 전체 지형부터 봅시다. 스택을 위에서 아래로 내려가며 각 레이어가 무슨 일을 하는지
+짚어 두면, 이후의 모든 이야기가 "이 레이어에서 일어나는 일"로 정리됩니다.
+
+<WddmStack client:visible />
+
+핵심은 **점선** 하나입니다. 그 위(애플리케이션, D3D runtime, UMD)는 전부 **당신의 프로세스
+주소공간 안 user 모드**에서 돕니다. 점선 아래(Dxgkrnl, KMD)는 커널입니다.
+
+- **D3D Runtime** (`d3d9.dll`/`d3d11.dll`/`d3d12.dll`) — Microsoft가 제공하는 user-mode
+  컴포넌트입니다. 애플리케이션에 API를 노출하고, 넘어온 인자·상태를 검증한 뒤
+  **DDI**(device driver interface)를 통해 드라이버를 호출합니다.
+- **UMD** (user-mode display driver) — 그래픽 카드 회사(IHV: NVIDIA·AMD·Intel)가 제공하는
+  **DLL**입니다(예: NVIDIA `nvwgf2um.dll`, AMD `amdxc64.dll`). runtime이 이 DLL을 로드해
+  같은 프로세스 안에서 실행합니다. UMD가 하는 일이 둘인데, 둘 다 무겁습니다. ① 셰이더
+  바이트코드(DXBC/DXIL)를 **그 GPU의 ISA로 JIT 컴파일**하고, ② 바인딩된 상태·리소스를 그
+  하드웨어가 이해하는 **command buffer**(GPU 명령 스트림)로 변환해 프로세스 메모리에 쌓습니다.
+- **Dxgkrnl** (DirectX Graphics Kernel, `dxgkrnl.sys`) — OS의 그래픽스 커널입니다. OS와
+  UMD와 KMD 사이를 중재하며, 두 개의 핵심 서브컴포넌트를 품습니다. **VidMm**(video memory
+  manager)은 GPU 메모리의 할당·해제·residency·paging을 책임지고, **VidSch**(video scheduler)는
+  제출된 work를 GPU 엔진의 ring buffer에 큐잉합니다.
+- **KMD** (kernel-mode display miniport driver, 예: `nvlddmkm.sys`) — IHV가 제공하는 커널
+  드라이버입니다. Dxgkrnl과 통신하며 실제 하드웨어 레지스터와 doorbell을 건드려 GPU를 깨웁니다.
+
+왜 굳이 드라이버를 **user/kernel 둘로 쪼갰을까요?** WDDM 이전(Windows XP의 XPDM)에서는
+드라이버가 통째로 커널에 있어서, 드라이버 버그 하나가 곧 블루스크린이었습니다. WDDM은 무거운
+변환 작업(셰이더 컴파일·command buffer 생성)을 user 모드 DLL로 빼내, 그게 죽어도 앱만 영향을
+받거나 드라이버를 재시작(TDR)하면 되도록 만들었습니다. 동시에 한 번 만든 command buffer를
+**여러 draw에 걸쳐 쌓아 두고 한꺼번에 커널로 제출**할 수 있어, 비싼 user→kernel 전환 횟수를
+줄입니다.
+
+<details>
+<summary>command buffer를 user 모드에서 만든다 — 그런데 GPU가 어떻게 그걸 읽나요?</summary>
+
+GPU는 자기 주소공간에서 메모리를 DMA로 읽습니다. UMD가 쌓는 command buffer도 결국 GPU가
+접근할 수 있는 메모리(또는 곧 그렇게 만들 메모리)에 놓입니다. 그래서 두 가지가 필요합니다.
+① 그 메모리가 GPU 입장에서 **resident**(지금 GPU가 접근 가능한 곳에 있음)여야 하고,
+② command buffer 안에서 다른 리소스를 가리키는 **주소가 올바른 GPU 주소**여야 합니다.
+
+이 둘이 정확히 이 챕터의 §3(residency)과 §4(주소)의 주제입니다. WDDM의 거의 모든 복잡함이
+"user 모드가 만든 명령을 GPU가 안전하게·올바른 주소로 읽게 하는 법"에서 나옵니다.
+
+</details>
+
+## 2. DDI — 호출이 레이어 사이를 넘는 법
+
+레이어들이 어떻게 *대화*할까요? 위에서 아래로 내려갈 때 쓰는 인터페이스가 **DDI**(device
+driver interface)입니다. runtime이 UMD를 부를 때, 그리고 Dxgkrnl이 KMD를 부를 때 모두 DDI를
+씁니다 — 구체적으로는 **함수 포인터 테이블**입니다. runtime은 UMD가 노출한 `pfnXxx` 함수
+포인터들을 통해 UMD로 진입하고, UMD는 runtime이 준 콜백(`pfnXxxCb`, `Cb`=callback)을 통해
+다시 위/커널로 요청을 올립니다.
+
+말로만 들으면 추상적이니, 리소스 하나를 만드는 호출이 실제로 어떻게 내려가는지 따라가 봅시다.
+
+<DdiCallFlow client:visible />
+
+여기서 두 가지를 눈여겨보세요. 첫째, **DDI는 양방향**입니다. runtime→UMD는 `pfn*`로 내려가고,
+UMD→커널은 `pfn*Cb` 콜백 또는 `D3DKMT*` 시스템 콜로 올라갑니다. UMD가 GPU 메모리를 새로
+잡아야 하면 자기가 직접 커널에 들어가지 않고 runtime이 제공한 `pfnAllocateCb`를 부릅니다.
+둘째, **user→kernel 경계는 정확히 `D3DKMT*` 호출에서** 넘어갑니다. `D3DKMT`는 "DirectX Kernel
+Mode Thunk"로, user 모드에서 Dxgkrnl로 들어가는 시스템 콜 표면입니다. 그 안에서 VidMm이
+메모리를 확보하고, 다시 KMD의 `DxgkDdiCreateAllocation` 콜백을 불러 그 하드웨어 관점의
+allocation을 만들게 합니다.
+
+정리하면 한 줄의 API 호출은 **`pfn`(runtime→UMD) → `pfn*Cb`(UMD→runtime) → `D3DKMT*`
+(user→kernel) → `DxgkDdi*`(Dxgkrnl→KMD)** 식으로, 레이어를 차례로 타고 내려가며 점점 더
+하드웨어에 가까운 표현으로 번역됩니다.
+
+## 3. 메모리 — VRAM, system memory, 그리고 residency
+
+이제 드라이버가 다루는 메모리를 봅시다. GPU 명령이 건드리는 모든 것 — 텍스처, 정점 버퍼,
+상수 버퍼, 렌더 타깃 — 은 어딘가의 메모리에 사는 **allocation**입니다. 그리고 그 allocation은
+두 곳 중 하나에 있을 수 있습니다.
+
+- **VRAM** (video memory, device-local) — GPU가 가장 빠르게 읽는 GPU 전용 메모리. 용량이
+  한정됩니다(예: 8GB).
+- **System memory** (host memory) — CPU의 RAM. GPU도 PCIe를 통해 접근할 수 있지만 훨씬 느립니다.
+
+GPU가 어떤 명령을 실행하려면, 그 명령이 참조하는 allocation이 **그 시점에 GPU가 접근 가능한
+곳에 있어야** 합니다 — 이 상태를 **resident**라고 부릅니다. 그런데 모든 앱의 모든 리소스를
+합치면 VRAM 용량을 쉽게 넘깁니다. 그래서 VidMm은 필요에 따라 allocation을 VRAM으로
+**page-in**하고, 안 쓰는 것을 system memory로 **page-out(evict)** 합니다 — OS의 가상메모리
+페이징과 같은 발상이되, 대상이 GPU 메모리입니다.
+
+직접 만져 봅시다. 아래에서 이번 프레임에 어떤 allocation을 "참조"할지 토글하고, VRAM 예산을
+조절한 뒤 **프레임 제출**을 누르세요. VidMm이 제출 *전에* 무엇을 하는지 보입니다.
+
+<ResidencyPaging client:visible />
+
+여기서 가장 중요한 사실: **VidMm은 참조된 allocation이 전부 resident가 되기 전에는 그 work를
+GPU에 스케줄하지 않습니다.** WDDM 2.0에서 이 보장은 **per-device residency list** 기준으로
+이뤄집니다 — UMD가 "이 device가 이번에 쓸 allocation들"을 device의 명시적 목록에 올리면,
+VidMm이 *그 device의 어떤 context가 실행되기 전에* 목록의 모든 allocation을 resident로
+만듭니다.
+
+여기서 자연스러운 질문: 참조하는 allocation의 총량이 VRAM 예산을 넘으면? 그러면 한 프레임 안에
+다 올릴 수 없어, 어떤 것을 올리면 다른 것을 내려야 하고, 다음 프레임에 그게 또 필요해
+다시 올리는 — **paging thrash**가 일어납니다. 대형 씬에서 끊김(hitch)이 생기는 흔한 원인이
+이것입니다. 위젯에서 예산을 참조 수보다 작게 만들어 이 상태를 직접 만들어 보세요.
+
+<details>
+<summary>그럼 residency를 누가 책임지나요? (WDDM 2.0에서 미묘하게 바뀐 부분)</summary>
+
+VidMm이 "resident로 *만드는*" 실행을 하지만, "무엇을 resident로 *해야 하는지*"를 거는 것은
+**UMD**입니다. WDDM 2.0에서 command buffer마다 따라붙던 allocation list가 사라지면서, VidMm은
+특정 command buffer가 어떤 allocation을 참조하는지에 대한 가시성을 잃었습니다. 그래서 "이
+device가 이 allocation들을 쓴다"고 device residency list에 등록하고, allocation에 대한 직접
+CPU 접근 동기화까지 챙기는 책임이 UMD로 넘어왔습니다.
+
+DX12는 이 통제를 한 단계 더 앱에게 엽니다. `MakeResident`/`Evict`와 DXGI의 메모리 예산
+질의(`QueryVideoMemoryInfo`)로, 어떤 리소스를 언제 VRAM에 둘지를 **앱이 직접** 결정할 수
+있습니다 — 페이징 hitch를 앱이 제어하기 위해서입니다. (1편의 DX11↔DX12 책임 이동의 한 갈래가
+바로 이 residency입니다.)
+
+</details>
+
+## 4. 주소 — WDDM 1.x의 patch, 그리고 2.0의 GPUVA
+
+residency가 "*어디에* 있나"의 문제였다면, 이제 "그 위치를 명령 안에 *어떻게 적나*"의 문제가
+남습니다. command buffer 안의 한 명령이 "alloc #3을 텍스처로 바인딩"한다고 할 때, GPU는
+결국 **구체적인 주소**를 알아야 합니다. 그런데 그 주소를 정하는 방식이 WDDM 세대 사이에서
+근본적으로 갈렸습니다. 이 차이는 드라이버 동작을 이해할 때 가장 헷갈리기 쉬운 지점이라,
+나란히 놓고 봅시다.
+
+<GpuVaEras client:visible />
+
+**WDDM 1.x** (Vista~Windows 8.1)에서 GPU 엔진은 메모리를 **segment의 물리주소**로
+참조했습니다. 그런데 segment는 여러 앱이 공유하고 과할당되므로, 리소스가 수명 동안 재배치되며
+물리주소가 바뀝니다. 그러면 이미 쌓아 둔 command buffer 안에 적힌 주소가 틀려집니다. 해법은
+무식하지만 직접적이었습니다 — UMD가 command buffer마다 **allocation list**(이 buffer가 참조하는
+allocation들)와 **patch location list**(buffer 안에서 주소를 적어 넣어야 할 위치들)를 같이
+만들어 두고, 제출 직전에 VidMm이 *모든 packet을 훑어* 실제 현재 주소로 빈칸을 메웠습니다
+(**patch**). 이 검사·patch는 비쌌습니다. VidMm이 모든 패킷을 제출 전에 들여다봐야 했으니까요.
+
+**WDDM 2.0** (Windows 10+)이 이 구조를 통째로 갈아엎습니다. 이제 **process마다 고유한 GPU
+virtual address(GPUVA) 공간**이 주어집니다. allocation이 만들어질 때(또는 열릴 때) 그 process의
+GPUVA 공간 안에서 고유한 가상주소 하나를 받고, **그 GPUVA는 allocation의 수명 내내 고정·불변**
+입니다. 물리적으로 VRAM↔system memory를 오가도(=residency가 바뀌어도) 가상주소는 안 변합니다 —
+가상↔물리 매핑은 GPU의 페이지 테이블이 처리합니다. 주소가 안 변하니, UMD는 command buffer에
+**가상주소를 직접 적으면 되고, patch list를 더 이상 만들지 않습니다.** VidMm은 주소 patch에서
+해방되어 residency 보장에만 집중합니다.
+
+이 세대 차이는 **제출 API 이름에까지** 새겨져 있습니다. legacy patch 모드는 `D3DKMTRender`로
+제출하고, GPUVA 모드는 `D3DKMTSubmitCommand`로 제출합니다 — 후자는 문서에 "GPU virtual
+addressing을 지원하는 context에서 쓰며, **allocation/patch location list를 쓰지 않는다**"고
+명시돼 있습니다. DX12는 WDDM 2.0(=GPUVA)을 *요구*하고, 최신 Windows에서는 DX9/11 앱도 이
+GPUVA 경로로 돕니다.
+
+> 주의(흔한 혼동): "VidMm이 GPU 가상주소를 patch한다"는 설명을 종종 보게 되는데, 이는 두 세대를
+> 섞은 것입니다. **patch는 WDDM 1.x(물리주소) 시절의 것**이고, **GPUVA(2.0)에는 patch가
+> 없습니다.** (이 책의 1편 초안도 한 번 이 둘을 혼동했다가, *GPU Virtual Memory in WDDM 2.0*
+> 문서로 바로잡았습니다.)
+
+## 5. 같은 커널 위의 Vulkan — loader와 ICD
+
+지금까지 D3D를 따라왔지만, Windows에서 **Vulkan도 정확히 같은 커널 스택** 위에서 돕니다.
+달라지는 것은 점선 *위쪽*뿐입니다.
+
+<IcdVsUmd client:visible />
+
+Vulkan에서 앱은 별도의 드라이버 DLL이 아니라 **Vulkan loader**(`vulkan-1.dll`)에 링크합니다.
+loader는 D3D runtime 자리에 해당하는데, 모든 Vulkan 함수 호출을 **trampoline**으로 받아
+적절한 드라이버의 dispatch table 엔트리로 점프시킵니다. 이렇게 한 단계를 둔 이유는 여러
+드라이버와 여러 layer(검증 레이어 등)를 같은 인터페이스 뒤에서 끼워 넣기 위해서입니다.
+
+실제 드라이버는 **ICD**(installable client driver)라고 부르며, **이것이 사실상 UMD에
+상당**합니다 — 셰이더를 컴파일하고 command buffer를 만듭니다. loader는 Windows 레지스트리
+(`HKLM\SOFTWARE\Khronos\Vulkan\Drivers`)를 스캔해 ICD의 JSON manifest를 찾고, 거기 적힌 ICD
+DLL을 로드합니다. 그 ICD 아래로는 — **똑같습니다.** 같은 `D3DKMT*` 제출 경로, 같은 Dxgkrnl,
+같은 VidMm/VidSch, 같은 GPUVA, 같은 per-device residency.
+
+그러면 D3D와 Vulkan의 진짜 차이는 어디에 있을까요? **메모리 관리의 위치**입니다. D3D11에서는
+어떤 메모리를 어디에 둘지를 runtime/드라이버가 상당 부분 대신 결정합니다. Vulkan에서는 앱이
+**`VkDeviceMemory`** 핸들로 메모리를 직접 할당하고, `VkBuffer`/`VkImage`를 그 메모리에
+**bind**합니다. 어떤 heap(`DEVICE_LOCAL` 등)에서 얼마나 큰 덩어리를 잡아 어떻게 잘라 쓸지를
+앱이 정합니다(보통 큰 덩어리를 한 번 잡아 sub-allocator로 나눠 씀 — `maxMemoryAllocationCount`
+한계 때문). residency 보장 자체는 여전히 그 아래 VidMm이 수행하지만, *예산과 배치 결정*을 앱이
+쥔다는 점이 DX11의 자동 residency와 대비됩니다. 1편에서 본 "통제를 앱으로 넘긴다"는 흐름이
+Vulkan에서는 메모리에까지 일관되게 적용된 셈입니다.
+
+## 6. 정리, 그리고 다음 편
+
+한 번의 그래픽스 호출이 Windows에서 거치는 길을 한 문장으로 압축하면 이렇습니다 — **runtime이
+검증하고, UMD가 셰이더를 컴파일하며 command buffer를 쌓고, `D3DKMT*`로 커널에 내려가면,
+VidMm이 참조 allocation의 residency를 보장하고, VidSch가 GPU 엔진에 스케줄한다.** 그 위에
+주소는 WDDM 2.0의 GPUVA로 고정·불변이라 patch가 사라졌고, Vulkan은 loader+ICD로 같은 커널을
+공유합니다.
+
+이어지는 길들:
+
+- **드로우 콜의 일생 (3편).** 이번 편은 "어느 레이어가 무엇을 하나"라는 *정적 구조*였습니다.
+  다음 편은 그 구조 위에서 한 번의 `Draw`가 시간선을 따라 어떻게 흘러가는지 — DDI 호출,
+  command buffer append, 제출, residency 검사, 스케줄, GPU 실행 — 를 *시간순*으로 따라갑니다.
+- **세대별 책임 분담 (1편).** 같은 이 스택 위에서 DX9·11·12가 draw-time 변환·hazard
+  tracking·residency·디스크립터를 어떻게 다르게 나누는지는 [DirectX 드라이버 내부](directx-driver-internals)
+  에서 다뤘습니다.
+- **GPU 스케줄링의 진화.** VidSch의 소프트웨어 스케줄링은 WDDM 2.7의 **GPU hardware
+  scheduling(HAGS)** 으로 일부를 하드웨어/펌웨어에 위임합니다 — 제출 지연과 컨텍스트 전환
+  비용에 영향을 줍니다.
+- **명령이 GPU에 닿은 뒤.** command buffer가 GPU 엔진에서 실제로 실행되는 이야기(워프·락스텝·
+  occupancy)는 [GPU 실행 모델](gpu-execution-model)에서 이어집니다.
+
+## 참고 자료
+
+이 챕터는 다음 1차 자료를 기준으로 작성·검증했습니다.
+
+- Microsoft Learn — *WDDM Architecture*, *Video Memory Management and GPU Scheduling*
+  (VidMm/VidSch), *GPU Virtual Memory in WDDM 2.0*, *Driver residency in WDDM 2.0*,
+  *Residency overview*.
+- Microsoft Learn (DDI) — *D3DKMTSubmitCommand*(GPUVA 모드) / *D3DKMTRender*(legacy patch 모드),
+  *DXGKDDI_SUBMITCOMMAND*.
+- Khronos — *Architecture of the Vulkan Loader Interfaces*(loader·ICD·trampoline/dispatch).
+- Vulkan 사양 — *Memory Allocation*(`VkDeviceMemory`), *vkAllocateMemory*.
+
+> 주의: 위젯의 allocation 이름·VRAM 슬롯 수·주소값(`0x7F2A_0000`)은 메커니즘을 보이기 위한
+> 도식용 예시이며 특정 하드웨어/드라이버의 실제 수치가 아닙니다.
