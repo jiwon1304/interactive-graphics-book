@@ -154,7 +154,7 @@ export default function OccupancyLimiters() {
       <canvas
         ref={ref}
         className="demo-canvas"
-        style={{ height: CANVAS_H, touchAction: 'none', display: 'block' }}
+        style={{ height: CANVAS_H, display: 'block' }}
       />
       <figcaption>
         점유율이 <em>왜</em> 그 값으로 정해지는지를 보여줍니다. SM에 동시에 걸 수 있는 워프 수는 네

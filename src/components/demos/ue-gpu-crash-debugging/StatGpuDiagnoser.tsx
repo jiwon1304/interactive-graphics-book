@@ -199,7 +199,7 @@ export default function StatGpuDiagnoser() {
       <canvas
         ref={ref}
         className="demo-canvas"
-        style={{ height: CANVAS_H, touchAction: 'none', display: 'block' }}
+        style={{ height: CANVAS_H, display: 'block' }}
       />
       <figcaption>
         <strong>Stat GPU</strong>는 각 큐의 시간을 <strong>Busy / Wait / Idle</strong>로 쪼개

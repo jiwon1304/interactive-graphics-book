@@ -144,7 +144,7 @@ export default function PipelineFlow() {
       <canvas
         ref={ref}
         className="demo-canvas"
-        style={{ height: CANVAS_H, touchAction: 'none', display: 'block' }}
+        style={{ height: CANVAS_H, display: 'block' }}
       />
       <figcaption>
         삼각형 하나가 <strong>정점 버퍼</strong>에서 출발해 <strong>프레임버퍼</strong>의 픽셀로

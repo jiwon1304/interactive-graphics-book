@@ -180,7 +180,7 @@ export default function SchedulerScoreboard() {
       <canvas
         ref={ref}
         className="demo-canvas"
-        style={{ height: CANVAS_H, touchAction: 'none', display: 'block' }}
+        style={{ height: CANVAS_H, display: 'block' }}
       />
       <figcaption>
         한 파티션의 <strong>워프 스케줄러</strong>가 사이클마다(가로 C0, C1, …) 무엇을 하는지를 본

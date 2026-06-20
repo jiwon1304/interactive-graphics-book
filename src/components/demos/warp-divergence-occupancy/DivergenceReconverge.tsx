@@ -175,7 +175,7 @@ export default function DivergenceReconverge() {
       <canvas
         ref={ref}
         className="demo-canvas"
-        style={{ height: CANVAS_H, touchAction: 'none', display: 'block' }}
+        style={{ height: CANVAS_H, display: 'block' }}
       />
       <figcaption>
         한 워프 안에서 <code>if/else</code>가 갈리면 무슨 일이 일어나는지를 시간순(왼→오)으로

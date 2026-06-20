@@ -103,7 +103,7 @@ export default function WarpLockstep() {
       <canvas
         ref={ref}
         className="demo-canvas"
-        style={{ height: CANVAS_H, touchAction: 'none', display: 'block' }}
+        style={{ height: CANVAS_H, display: 'block' }}
       />
       <figcaption>
         <strong>워프(warp)</strong>는 GPU 실행의 진짜 단위입니다. 스케줄러가 명령을 하나 꺼내면, 그

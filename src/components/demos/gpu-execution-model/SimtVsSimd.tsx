@@ -152,7 +152,7 @@ export default function SimtVsSimd() {
       <canvas
         ref={ref}
         className="demo-canvas"
-        style={{ height: CANVAS_H, touchAction: 'none', display: 'block' }}
+        style={{ height: CANVAS_H, display: 'block' }}
       />
       <figcaption>
         분기(<code>if</code>)를 만나면 락스텝의 약점이 드러납니다. 한 워프 안에서 일부 레인은 조건이

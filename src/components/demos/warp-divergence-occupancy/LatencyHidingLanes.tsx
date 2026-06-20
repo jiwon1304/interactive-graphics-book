@@ -212,7 +212,7 @@ export default function LatencyHidingLanes() {
       <canvas
         ref={ref}
         className="demo-canvas"
-        style={{ height: CANVAS_H, touchAction: 'none', display: 'block' }}
+        style={{ height: CANVAS_H, display: 'block' }}
       />
       <figcaption>
         같은 워크로드를 점유율만 바꿔 돌린 두 타임라인입니다(가로=시간). 각 워프는 짧게{' '}

@@ -214,7 +214,7 @@ export default function SmFloorplan() {
       <canvas
         ref={ref}
         className="demo-canvas"
-        style={{ height: CANVAS_H, touchAction: 'none', display: 'block' }}
+        style={{ height: CANVAS_H, display: 'block' }}
       />
       <figcaption>
         한 <strong>SM</strong>(Streaming Multiprocessor, AMD에선 CU)의 평면도입니다. 흔한 오해는

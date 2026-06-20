@@ -125,7 +125,7 @@ export default function CoreCountBuilder() {
       <canvas
         ref={ref}
         className="demo-canvas"
-        style={{ height: CANVAS_H, touchAction: 'none', display: 'block' }}
+        style={{ height: CANVAS_H, display: 'block' }}
       />
       <figcaption>
         스펙시트의 거대한 “코어 수”는 마법의 숫자가 아니라 <strong>곱셈 한 줄</strong>입니다. 파티션

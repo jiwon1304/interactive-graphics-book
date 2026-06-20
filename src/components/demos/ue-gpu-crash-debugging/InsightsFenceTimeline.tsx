@@ -305,7 +305,7 @@ export default function InsightsFenceTimeline() {
       <canvas
         ref={ref}
         className="demo-canvas"
-        style={{ height: CANVAS_H, touchAction: 'none', display: 'block' }}
+        style={{ height: CANVAS_H, display: 'block' }}
       />
       <figcaption>
         Unreal Insights는 CPU와 GPU 작업을 <strong>하나의 타임라인</strong>에 올리고, GPU의{' '}

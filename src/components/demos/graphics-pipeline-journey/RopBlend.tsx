@@ -140,7 +140,7 @@ export default function RopBlend() {
       <canvas
         ref={ref}
         className="demo-canvas"
-        style={{ height: CANVAS_H, touchAction: 'none', display: 'block' }}
+        style={{ height: CANVAS_H, display: 'block' }}
       />
       <figcaption>
         픽셀 셰이더가 색을 다 계산해도, 그 색이 화면에 박힌다는 보장은 없습니다. 마지막 관문{' '}

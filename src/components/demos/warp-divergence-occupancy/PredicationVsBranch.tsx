@@ -154,7 +154,7 @@ export default function PredicationVsBranch() {
       <canvas
         ref={ref}
         className="demo-canvas"
-        style={{ height: CANVAS_H, touchAction: 'none', display: 'block' }}
+        style={{ height: CANVAS_H, display: 'block' }}
       />
       <figcaption>
         같은 짧은 <code>if/else</code>를 컴파일하는 두 방식입니다. <strong>왼쪽(분기)</strong>은

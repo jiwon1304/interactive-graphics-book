@@ -183,7 +183,7 @@ export default function TdrCountdown() {
       <canvas
         ref={ref}
         className="demo-canvas"
-        style={{ height: CANVAS_H, touchAction: 'none', display: 'block' }}
+        style={{ height: CANVAS_H, display: 'block' }}
       />
       <figcaption>
         GPU가 작업을 마치지 못하고 멈추면, OS의 <strong>TDR</strong>(Timeout Detection and

@@ -209,7 +209,7 @@ export default function CrashReportPipeline() {
       <canvas
         ref={ref}
         className="demo-canvas"
-        style={{ height: CANVAS_H, touchAction: 'none', display: 'block' }}
+        style={{ height: CANVAS_H, display: 'block' }}
       />
       <figcaption>
         크래시가 쏟아지면 전부 사람이 볼 수 없습니다. 발표가 소개한 자동화는 세 단계입니다(위 흐름):

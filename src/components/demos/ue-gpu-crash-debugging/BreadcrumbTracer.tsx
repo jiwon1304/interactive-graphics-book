@@ -221,7 +221,7 @@ export default function BreadcrumbTracer() {
       <canvas
         ref={ref}
         className="demo-canvas"
-        style={{ height: CANVAS_H, touchAction: 'none', display: 'block' }}
+        style={{ height: CANVAS_H, display: 'block' }}
       />
       <figcaption>
         RHI <strong>Breadcrumbs</strong>: 렌더링이 진행되는 동안 각 렌더 패스가{' '}
