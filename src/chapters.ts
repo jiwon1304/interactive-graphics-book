@@ -86,6 +86,12 @@ export const chapters: Chapter[] = [
     description: '명령 제출 생명주기·펜스·세마포어·배리어·async 오버랩',
     section: 'GPU 명령 제출',
   },
+  {
+    slug: 'directx-driver-internals',
+    title: 'DirectX 드라이버 내부 — DX9·DX11·DX12 Under the Hood',
+    description: 'WDDM 스택·UMD/KMD·command buffer 제출·상태 변환 타이밍·hazard tracking·residency·draw call 비용',
+    section: 'GPU 명령 제출',
+  },
   // ── GPU 실행 모델 ──
   {
     slug: 'gpu-execution-model',

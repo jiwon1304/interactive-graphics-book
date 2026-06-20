@@ -38,7 +38,7 @@ export default function BandwidthBudget() {
   const frac = need / GPU_BUDGET;
 
   const draw = (d: DrawCtx) => {
-    const { ctx, w, h, theme } = d;
+    const { ctx, w, theme } = d;
 
     const padL = 14;
     const padR = 14;
