@@ -100,13 +100,18 @@
 ## 9. 현재 챕터 (라이브) 섹션 순서
 기초(transformations, quaternions) · 지오메트리(bezier-de-casteljau) · 셰이딩(lighting[draft], microfacet-brdf) ·
 레이트레이싱(monte-carlo-integration) · 절차적 생성(raymarching-sdf, noise-functions) · 렌더링(rasterization[draft]) ·
-GPU 명령 제출(command-queues) · **GPU 실행 모델(gpu-execution-model, warp-divergence-occupancy)** ·
-**GPU ↔ 렌더링**(rendering-execution-model + 집필 중) · Unreal RHI(ue-gpu-crash-debugging)
+GPU 명령 제출(command-queues) · **그래픽스 드라이버**(gpu-cpu-conversation → wddm-graphics-stack → draw-call-journey →
+pipeline-state-shaders → dx-evolution-vulkan; DirectX+Vulkan 병행, 초보-드라이버 독자, 공식문서 기반 — 기존
+directx-driver-internals를 흡수·대체함) · **GPU 실행 모델**(gpu-execution-model, warp-divergence-occupancy) ·
+**GPU ↔ 렌더링**(graphics-pipeline-journey, rendering-execution-model, texture-filtering-mipmapping, texture-compression,
+tile-based-rendering, memory-bandwidth-roofline) · Unreal RHI(ue-gpu-crash-debugging)
 
 ## 10. 지금 진행 중 / 남은 일 (TODO)
-- **집필 중(이 대화 끝 시점):** `graphics-pipeline-journey`("삼각형의 여정") + `texture-compression` 2개 — 끝나면 `rendering-execution-model`과 함께 **섹션 "GPU ↔ 렌더링"에 일괄 등록 → build → 커밋·push**.
-- **다음 hw↔렌더링 챕터(카탈로그 순서):** 필터링·밉매핑(§B) → 대역폭·프레임버퍼 압축(§D) → 타일·모바일 GPU(§E). gpu-execution-model 문체로.
-- **카툰/NPR 영역**(`topic-catalog-toon.md`) 미집필 — 사용자가 원했던 영역. 아트 에셋은 CC0 또는 절차적 생성.
+- **모바일 도식 규약(2026-06 적용):** 정적 2D 도식 캔버스엔 touch-action 설정 금지(전역 CSS가 페이지 스크롤 허용),
+  드래그 위젯만 usePointerDrag가 touch-action:none 설정. 2D figure는 min-width 440 + 가로스크롤(캡션/컨트롤 sticky),
+  `:has`로 3D 제외. 새 도식은 wrapText로 좁은 폭(~360–440px) 글자 겹침 방지.
+- **펜딩 시각 검증:** 드라이버 5부작 + texture-filtering/tile-based/memory-bandwidth 위젯을 브라우저(클린 프로필)
+  라이트/다크·모바일(~360px)로 확인(표 겹침·라벨 잘림·드래그). 빌드/타입 통과 ≠ 올바른 렌더.
 - **펜딩 시각 검증:** 브라우저(Chrome for Claude 클린 프로필)로 새 도식 전부 확인 — GPU 실행모델 9개 + rendering-execution 5개 + 곧 나올 것들. 라이트/다크/모바일(~360px) 글자 겹침·잘림. (확장이 자주 끊김 → 재연결 필요.)
 - **그래픽스/GPU 카탈로그 나머지**도 백로그.
 
