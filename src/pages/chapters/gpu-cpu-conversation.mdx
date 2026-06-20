@@ -1,0 +1,282 @@
+---
+layout: ../../layouts/ChapterLayout.astro
+title: "CPU와 GPU의 대화 — 명령 버퍼와 비동기"
+description: GPU는 자기 메모리를 가진 별도의 프로세서이고 CPU와 비동기로 돈다. 그래서 당신은 GPU에 직접 명령하지 않는다 — command buffer에 기록하면 GPU가 나중에 소비한다. producer/consumer ring, frames in flight, fence 동기화, 그리고 왜 user-mode/kernel-mode 드라이버로 나뉘는가.
+---
+
+import DrawToBytes from '../../components/demos/gpu-cpu-conversation/DrawToBytes.tsx';
+import CommandBufferRing from '../../components/demos/gpu-cpu-conversation/CommandBufferRing.tsx';
+import AsyncTimeline from '../../components/demos/gpu-cpu-conversation/AsyncTimeline.tsx';
+import UserKernelDriver from '../../components/demos/gpu-cpu-conversation/UserKernelDriver.tsx';
+
+# CPU와 GPU의 대화 — 명령 버퍼와 비동기
+
+`Draw()`를 한 줄 부르면 삼각형이 그려집니다. 당신은 셰이더를 쓰고, 드로우 콜을 날리고,
+렌더 타깃을 묶는 일에 익숙합니다. 그런데 그 `Draw()`가 리턴할 때, **GPU는 아직 아무것도 그리지
+않았습니다.** 함수는 이미 돌아왔는데 화면의 픽셀은 한 개도 바뀌지 않았습니다. 심지어 그 다음
+줄에서 `Draw()`를 다시 불러도, GPU는 여전히 첫 번째 삼각형조차 시작하지 않았을 수 있습니다.
+
+이게 버그가 아니라 **정상**이라는 게 이 챕터의 출발점입니다. CPU에서 그래픽스 API를 부르는
+것과 GPU가 실제로 그 일을 하는 것 사이에는 시간차가 있습니다 — 보통 한두 프레임, 즉 수
+밀리초입니다. 60fps에서 프레임당 16.6ms인데 그 한두 프레임이 통째로 지연이라면 결코 작지
+않습니다. 왜 이런 구조이고, 그 사이에서 무슨 일이 벌어지며, 왜 그래서 **fence** 같은
+동기화가 필요한지 — CPU와 GPU가 실제로 어떻게 "대화"하는지를 끝까지 따라가 보겠습니다.
+
+렌더링(셰이더·드로우 콜·렌더 타깃)은 이미 안다고 가정합니다. 여기서 새로 까보는 건 그
+아래층 — 명령이 GPU에 *닿기까지*의 경로, 그리고 드라이버와 OS가 그 사이에서 하는 일입니다.
+
+## 1. GPU는 별도의 프로세서다
+
+가장 먼저 받아들일 사실: GPU는 CPU의 일부가 아니라 **독립된 프로세서**입니다. 자기 클럭으로
+돌고, 보통 자기 메모리(VRAM)를 갖고, CPU와 PCIe 버스로 연결돼 있습니다. CPU 코드에서 GPU의
+레지스터를 직접 write해 "지금 이 삼각형을 그려"라고 시키는 방식은 — 가능은 하지만 — 아무도
+그렇게 하지 않습니다. 그렇게 하면 매 명령마다 버스를 건너 GPU와 손을 맞춰야 하고, CPU는 GPU가
+그 명령을 끝낼 때까지 멈춰 서 있어야 합니다. 두 프로세서가 번갈아 한 명령씩 처리하면 둘 다
+대부분의 시간을 노는 데 씁니다.
+
+그래서 실제 방식은 다릅니다. CPU는 GPU가 할 일을 **메모리에 적어 둡니다.** 명령들을 한
+버퍼에 차곡차곡 쌓아 두면, GPU는 자기 페이스로 그 버퍼를 읽어 소비합니다. CPU는 적는
+역할(producer), GPU는 읽는 역할(consumer)입니다. 두 프로세서가 서로를 기다리지 않고
+동시에 일할 수 있게 하는 것 — 이것이 이 모든 구조의 목적입니다.
+
+이 버퍼를 **command buffer**라고 부릅니다. `Draw()`가 하는 일은 GPU를 움직이는 게 아니라,
+*이 command buffer에 명령을 한 줄 기록하는 것*입니다.
+
+<DrawToBytes client:visible />
+
+위 그림처럼 당신이 부르는 API 호출은 그 하드웨어가 이해하는 명령(opcode + payload)으로
+변환돼 command buffer에 쌓입니다. 이 변환을 하는 것이 **드라이버**입니다(드라이버가 무엇이고
+어디에 사는지는 §5에서). 핵심 단어는 **record**(기록)와 **consume**(소비)입니다. 당신은
+기록하고, GPU는 나중에 소비합니다.
+
+API마다 부르는 이름만 다릅니다. 명령을 담는 객체가 — D3D11에서는 immediate context에 쌓이거나
+deferred context의 command list로 기록되고, D3D12에서는 `ID3D12GraphicsCommandList`,
+Vulkan에서는 `VkCommandBuffer`입니다. Vulkan은 기록의 시작·끝을 `vkBeginCommandBuffer` /
+`vkEndCommandBuffer`로 명시하고, D3D12는 `Reset` / `Close`로 합니다. 이름이 무엇이든 모델은
+하나입니다: **버퍼에 명령을 적고, 나중에 제출한다.**
+
+## 2. producer와 consumer — ring buffer
+
+기록과 소비가 분리되면 곧장 문제가 하나 생깁니다. CPU는 계속 적고 GPU는 계속 읽는데, **둘이
+공유하는 메모리는 유한**합니다. 무한히 적을 수는 없습니다. 해법은 producer/consumer 시스템의
+고전적 자료구조인 **ring buffer**(원형 버퍼)입니다.
+
+ring buffer는 끝이 처음과 이어진 한 줄의 슬롯입니다. 두 개의 포인터가 그 위를 같은 방향으로
+돕니다:
+
+- **write pointer** — CPU가 다음 명령을 적을 자리. CPU가 명령을 적을 때마다 앞으로 전진.
+- **read pointer** — GPU가 다음에 읽을 자리. GPU가 명령을 소비할 때마다 앞으로 전진.
+
+<CommandBufferRing client:visible />
+
+이 그림은 fgiesen의 *A trip through the graphics pipeline*이 설명하는 GPU의 command
+processor 모델 그대로입니다. GPU 안에는 이 ring에서 명령을 꺼내 디코드하고 적절한 유닛(2D,
+3D front-end, shader)으로 보내는 **command processor**가 있습니다.
+
+두 포인터의 위치 관계가 전부를 말해 줍니다. write가 read보다 얼마나 앞서 있는가 — 그 간격이
+**GPU가 CPU보다 얼마나 뒤처져 있는가**입니다. 두 극단을 봅시다:
+
+- read가 write를 **따라잡으면**($\text{read} = \text{write}$) ring이 비었습니다. GPU가 읽을
+  명령이 없어 **굶습니다**(starve). GPU가 노는 것이고, 이때 병목은 CPU입니다 — 명령을 충분히
+  빨리 못 적고 있는 것.
+- write가 한 바퀴 돌아 read를 **따라잡으면** ring이 가득 찼습니다. CPU가 적을 자리가 없어
+  GPU가 한 칸 비워 줄 때까지 **기다려야** 합니다(back-pressure). 이때 병목은 GPU입니다.
+
+그래서 두 포인터는 **서로를 추월하면 안 됩니다.** read가 write를 넘으면 아직 안 적은
+쓰레기를 실행하는 것이고, write가 read를 넘으면 아직 GPU가 안 읽은 명령을 덮어쓰는 것입니다.
+둘 다 재앙입니다. 이 "추월 금지"를 어떻게 강제하느냐가 §4의 동기화로 이어집니다 — 강제하려면
+한쪽이 다른 쪽의 진행 상황을 *알아야* 하니까요.
+
+실무에서 GPU의 메인 ring은 보통 작고, 거기엔 주로 더 큰 3D command buffer를 *호출*하는
+명령이 들어갑니다. 즉 ring은 "다음에 이 command buffer를 실행해"라는 점프 목록에 가깝고,
+무거운 드로우 명령들은 별도 buffer에 있습니다. 모델은 같습니다 — 한쪽이 적고 한쪽이 읽으며,
+간격이 비동기의 폭입니다.
+
+## 3. CPU는 앞서고 GPU는 뒤따른다 — frames in flight
+
+§2에서 본 간격은 우연이 아니라 *일부러 만드는* 것입니다. CPU가 GPU보다 한두 프레임 앞서
+달리게 두면, 두 프로세서가 동시에 바빠집니다 — GPU가 프레임 $N$을 그리는 동안 CPU는 프레임
+$N{+}1$을 기록합니다. 동시에 "비행 중"인 프레임의 수를 **frames in flight**라고 부릅니다.
+
+왜 이게 처리량에 중요한지 간단한 모델로 보겠습니다. CPU가 한 프레임을 기록하는 데 $t_c$,
+GPU가 한 프레임을 실행하는 데 $t_g$가 걸린다고 합시다. 만약 CPU가 매 프레임 제출한 뒤 GPU가
+끝날 때까지 **기다린 다음** 다음 프레임을 시작한다면(frames in flight = 1), 한 프레임의
+벽시계 시간은
+
+$$
+T_{1} = t_c + t_g
+$$
+
+입니다. CPU가 적는 동안 GPU는 놀고, GPU가 그리는 동안 CPU는 놉니다. 둘 다 절반만 일합니다.
+
+이제 CPU가 GPU를 기다리지 않고 곧장 다음 프레임을 적게 하면(frames in flight ≥ 2), 두 단계가
+**겹칩니다**(overlap). 정상 상태(steady state)에서 한 프레임의 벽시계 시간은 둘의 합이 아니라
+**더 느린 쪽**이 됩니다:
+
+$$
+T_{\infty} = \max(t_c,\, t_g)
+$$
+
+이것이 파이프라이닝의 본질입니다. 두 단계를 겹치면 throughput은 더 느린 단계가 결정합니다.
+예를 들어 $t_c = 6\text{ms}$, $t_g = 10\text{ms}$이면, 기다리는 방식은 프레임당 $16\text{ms}$
+(≈60fps 턱걸이)이지만, 겹치는 방식은 $\max(6, 10) = 10\text{ms}$ (100fps)입니다. 일을 더
+빨리 한 게 아니라 **놀던 시간을 없앤** 것입니다.
+
+아래 슬라이더로 frames in flight를 1에서 3까지 바꿔 보세요.
+
+<AsyncTimeline client:visible />
+
+frames in flight = 1이면 CPU 레인에 `wait` 구간이 보입니다 — 제출 후 GPU가 끝나야 다음을
+시작하니까요. 2~3으로 늘리면 그 구간이 사라지고 두 레인이 빽빽이 겹칩니다.
+
+겹침이 공짜는 아닙니다. 트레이드오프가 둘 있습니다.
+
+- **Latency.** CPU가 프레임 $N{+}2$를 적는 지금, 화면에 보이는 건 프레임 $N$입니다. 사용자의
+  입력이 기록된 프레임이 화면에 뜨기까지 frames in flight만큼 더 걸립니다. throughput을 위해
+  latency를 내준 것이고, 그래서 무작정 늘리지 않습니다 — 보통 **2~3**이 균형점입니다.
+- **자원 중복.** 프레임 $N$의 GPU 작업이 도는 동안 CPU가 프레임 $N{+}1$의 command buffer와
+  상수 버퍼를 건드리면, GPU가 아직 읽는 중인 데이터를 덮어쓸 수 있습니다. 그래서 frames in
+  flight 동안 동시에 살아 있어야 하는 것들 — command buffer, 동적 상수/업로드 버퍼, 그리고
+  동기화 객체 — 을 **프레임 수만큼 복제**합니다. (double/triple buffering이 정확히 이것입니다.)
+
+이 두 번째 문제가 다음 절의 직접적 동기입니다. CPU가 프레임 $N{+}2$를 기록하려고 buffer를
+재사용하려는 순간, *프레임 $N{-}1$의 GPU 작업이 그 buffer 사용을 끝냈는지* 어떻게 알까요?
+CPU는 GPU의 진행을 들여다볼 방법이 필요합니다.
+
+## 4. 동기화 — fence
+
+CPU와 GPU는 서로 다른 클럭으로 도는 독립 프로세서입니다. CPU 입장에서 GPU가 지금 어느 명령을
+실행 중인지는 보이지 않습니다 — `Draw()`가 리턴했다는 건 *기록*이 끝났다는 뜻일 뿐, *실행*에
+대해선 아무것도 말해 주지 않습니다. 그래서 GPU의 진행을 CPU가 관측할 수 있는 장치가
+필요합니다. 그것이 **fence**입니다.
+
+fence는 단순합니다. GPU가 제출된 작업을 끝까지 실행하면 fence가 **signal**되고, CPU는 그
+fence가 signal될 때까지 **wait**할 수 있습니다. 즉 fence는 *"여기까지의 GPU 작업이 끝났다"*는
+한 비트(또는 카운터 값)의 신호입니다 — device(GPU)에서 host(CPU)로 가는.
+
+API로 보면:
+
+- **Vulkan.** `vkQueueSubmit`에 `VkFence`를 넘기면, 그 제출의 모든 작업이 끝났을 때 fence가
+  signal됩니다. CPU는 `vkWaitForFences`로 기다리고(타임아웃은 나노초 단위), `vkResetFences`로
+  되돌려 재사용합니다.
+- **D3D12.** `ID3D12Fence`는 64-bit 값으로 제어됩니다. `ID3D12CommandQueue::Signal(fence, v)`는
+  큐의 그 시점까지 작업이 끝나면 fence를 값 $v$로 올립니다(GPU측 signal). CPU는
+  `GetCompletedValue()`로 현재 값을 읽거나 `SetEventOnCompletion(v, event)`로 값 $v$ 도달 시
+  깨어납니다.
+
+§3의 buffer 재사용 문제로 돌아가 봅시다. frames in flight = 2라면, 프레임마다 fence를 하나씩
+두고 제출 시 그 프레임 번호로 signal하게 합니다. 프레임 $N$을 기록하기 전에 CPU는 *두 프레임
+전*인 $N{-}2$의 fence를 기다립니다 — 그게 signal됐다면 $N{-}2$의 GPU 작업이 끝나 그 buffer를
+안전하게 재사용할 수 있습니다. 이 한 번의 wait이 §2의 "write가 read를 추월하지 않기"를
+강제합니다. CPU가 GPU보다 정확히 frames in flight개 넘게 앞서지 못하게 묶어 두는 것이죠.
+
+여기서 fence와 헷갈리기 쉬운 두 가지를 구분해 둡니다. 셋 다 "동기화"지만 누가 누구를
+기다리느냐가 다릅니다.
+
+- **Fence** — device → **host**. GPU 작업 완료를 **CPU**가 기다립니다(위에서 본 것). 프레임
+  페이싱·자원 재사용에 씁니다.
+- **Semaphore** — device → **device**. 한 큐의 작업이 다른 큐의 작업보다 먼저 끝나도록
+  **GPU끼리** 순서를 매깁니다(예: 렌더 큐가 끝나야 present). CPU는 (binary semaphore의 경우)
+  기다리지 않습니다. Vulkan의 timeline semaphore는 64-bit 카운터라 CPU도 wait/signal할 수
+  있어 fence와 semaphore의 역할을 합치기도 합니다.
+- **Barrier** — 같은 큐 *안*에서의 순서·메모리 가시성. 한 draw의 write를 다음 draw가 읽기
+  전에 끝내고 캐시를 flush하는 등. (리소스 상태 전이와 함께 별도 챕터 주제입니다.)
+
+queue 자체의 순서 규칙도 알아 둘 가치가 있습니다. Vulkan spec에 따르면 *같은* 큐에 제출한
+command buffer들은 **시작은 순서대로**지만 그 뒤로는 독립적으로 진행해 **완료는 순서가 아닐 수
+있습니다.** *다른* 큐들 사이에는 명시적으로 semaphore로 묶지 않는 한 순서가 없습니다. D3D12도
+같은 큐 연속 제출에 대해 앞 작업이 뒤 작업보다 먼저 끝남을 보장합니다.
+
+큐는 종류도 나뉩니다. Vulkan은 queue family를 graphics / compute / transfer 비트로 나누고,
+D3D12는 command queue를 **Direct(그래픽스), Compute, Copy**로 나눕니다. 비동기 compute나 DMA
+복사를 별도 엔진으로 보내 겹쳐 돌리기 위해서이고, 그 사이의 순서는 semaphore/fence로 맞춥니다.
+
+## 5. 그 사이의 드라이버 — user-mode와 kernel-mode
+
+지금까지 "드라이버가 API 호출을 command buffer로 변환한다"고 했습니다. 그런데 *드라이버는
+어디서 도는가*가 비동기 모델만큼 중요합니다. 현대 OS에서 드라이버는 한 덩어리가 아니라 **user
+모드**와 **kernel 모드**로 쪼개져 있기 때문입니다.
+
+먼저 두 모드가 무엇인지부터. CPU는 두 가지 권한 수준으로 코드를 실행합니다. **user 모드**는
+일반 프로세스가 도는 곳으로, 자기 프로세스 메모리만 건드릴 수 있고 하드웨어에 직접 접근하지
+못합니다. **kernel 모드**는 OS 커널이 도는 곳으로, 모든 메모리와 하드웨어에 접근할 수
+있습니다. user 모드 코드가 하드웨어를 건드리려면 **syscall**로 kernel 모드에 요청해야 하고,
+이 모드 전환은 비용이 듭니다 — 대표적으로 한 번에 수십~수백 ns 수준입니다(완화책·하드웨어에
+따라 다릅니다).
+
+이 숫자가 작아 보여도, 프레임당 드로우 콜이 수천 개라면 매 콜마다 kernel로 내려가는 건
+감당이 안 됩니다. 그래서 드라이버를 둘로 나눕니다.
+
+<UserKernelDriver client:visible />
+
+- **UMD (user-mode driver).** 앱과 **같은 프로세스 주소공간**에서 도는 라이브러리(Windows에선
+  IHV가 제공하는 DLL)입니다. API 호출을 받아 command buffer를 프로세스 메모리에 기록하고,
+  셰이더 바이트코드를 그 GPU의 ISA로 컴파일합니다. **여기까지는 커널 진입이 한 번도
+  없습니다.** 그래서 `Draw()` 수천 번이 싸게 기록됩니다 — §1~2에서 본 "기록은 싸다"가
+  여기서 옵니다.
+- **user/kernel 경계.** command buffer를 GPU에 **제출**할 때만 이 경계를 넘습니다. 한 번의
+  제출이 수백~수천 개의 명령을 담으므로, 비싼 모드 전환 비용이 그 많은 명령에 **분할
+  상환**됩니다. 이것이 §1에서 "한 명령씩 GPU를 직접 건드리지 않는" 또 하나의 이유입니다 —
+  명령마다 경계를 넘으면 syscall 비용이 폭발하니까요.
+- **KMD (kernel-mode driver) + OS scheduler.** 커널 쪽은 제출된 command buffer를 검증하고,
+  참조하는 메모리가 VRAM에 올라와 있는지(residency) 보장하고, GPU 엔진의 ring에 큐잉합니다.
+
+왜 굳이 이렇게 나눌까요. kernel 쪽이 작고 비싼 데는 이유가 있습니다. **GPU는 여러 프로세스가
+공유하는 자원**입니다. 여러 앱이 동시에 GPU를 쓰려 할 때 누가 언제 쓸지 중재하고, 한 프로세스가
+다른 프로세스의 GPU 메모리를 읽거나 망가뜨리지 못하게 막는 일은 — 신뢰된 커널 코드만 해야
+합니다. 그래서 중재·보호 같은 *반드시 안전해야 하는* 최소한의 일만 kernel(KMD + OS scheduler)에
+두고, 무겁고 자주 도는 변환·기록은 전부 user(UMD)로 내립니다. 덤으로 안정성도 얻습니다 —
+UMD가 크래시해도 그 앱 프로세스만 죽고 시스템은 살아 있습니다.
+
+Windows에서 이 분담은 **WDDM**(Windows Display Driver Model)이라는 모델로 굳어 있습니다. 흐름은
+앱/runtime → UMD → 커널의 `Dxgkrnl`(그 안의 VidMm = memory manager, VidSch = scheduler) → KMD →
+GPU입니다. UMD는 command buffer가 차거나 flush될 때만 runtime 콜백으로 제출하고, Dxgkrnl이
+KMD를 호출해 하드웨어 포맷으로 검증·변환한 뒤 GPU에 큐잉합니다. 이 스택의 각 레이어가 무슨
+일을 어떻게 하는지 — 그리고 WDDM 2.0의 GPU 가상주소가 무엇을 바꿨는지 — 는 다음 편의 주제입니다.
+
+## 6. 정리
+
+처음의 수수께끼로 돌아갑시다. `Draw()`가 리턴해도 아무것도 안 그려진 이유 —
+
+1. **GPU는 별도 프로세서**라, 당신은 GPU에 직접 명령하지 않고 **command buffer에 기록**합니다.
+   `Draw()`는 "그려라"가 아니라 "그릴 명령을 적어 둬라"입니다(§1).
+2. CPU(producer)와 GPU(consumer)는 **ring buffer**를 공유합니다. write/read 포인터의 간격이
+   비동기의 폭입니다(§2).
+3. 그 간격을 일부러 두 칸쯤 벌려, CPU가 프레임 $N{+}1$을 적는 동안 GPU가 $N$을 그리게 합니다 —
+   **frames in flight**. throughput은 $\max(t_c, t_g)$가 되고, 대가는 latency와 자원 복제입니다(§3).
+4. 두 프로세서가 서로를 추월하지 않게, GPU 완료를 CPU가 관측하는 **fence**로 동기화합니다(§4).
+5. 이 모든 변환과 기록은 **UMD(user 모드)**가 싸게 하고, 비싼 **user/kernel 경계는 제출 때 한
+   번만** 넘습니다. kernel 쪽(KMD + OS scheduler)은 공유 GPU의 중재·보호라는 최소한만
+   맡습니다(§5).
+
+이 챕터는 명령이 GPU에 *닿기까지*의 골격이었습니다. 이어지는 길들:
+
+- **WDDM 스택 (다음 편).** runtime → UMD → Dxgkrnl(VidMm/VidSch) → KMD → GPU의 각 레이어가
+  무엇을 하는지, residency와 GPU 가상주소, 스케줄링. 이 챕터의 user/kernel 분담을 한 단계 더
+  깊게 들어갑니다.
+- **드로우 콜의 일생.** 한 번의 `Draw()`가 command buffer 안의 바이트가 됐다가 GPU front-end에서
+  다시 작업으로 풀리기까지 — per-draw로 반복되는 비용과 제출 단위로 분할 상환되는 비용의 구분.
+- **상태와 PSO.** command buffer에 기록되는 "상태"가 무엇이고, 그 변환을 draw-time에서
+  creation-time(PSO)으로 옮기는 일이 왜 비동기 throughput에 결정적인지.
+- **API 세대 비교(DX9~12 · Vulkan).** 같은 command buffer/queue/fence 모델 위에서 세대마다
+  드라이버의 일을 어떻게 다르게 나눴는지. ([DirectX 드라이버 내부](directx-driver-internals)가
+  그 비교를 다룹니다.)
+
+## 참고 자료
+
+이 챕터는 다음 1차 자료를 기준으로 작성·검증했습니다(상세 대응은 저장소의
+`docs/sources/gpu-cpu-conversation-sources.md`).
+
+- **Vulkan** — Specification *Command Buffers* / *Synchronization*, *Vulkan Guide: Queues*,
+  *Vulkan Tutorial: Frames in flight*, `vkWaitForFences` 레퍼런스, Khronos blog
+  *Vulkan Timeline Semaphores* (registry.khronos.org · docs.vulkan.org).
+- **Microsoft Learn** — *Executing and Synchronizing Command Lists*, `ExecuteCommandLists`,
+  *Multi-engine synchronization*(`ID3D12Fence` · Direct/Compute/Copy 큐), *Immediate and Deferred
+  Rendering*(D3D11), *WDDM Architecture / Operation Flow / Submitting a Command Buffer*,
+  *GPU Virtual Memory in WDDM 2.0*.
+- **fgiesen (Fabian Giesen)** — *A trip through the Graphics Pipeline 2011, part 2*(command
+  processor와 ring buffer).
+- syscall 비용(대표값): gms.tf *On the Costs of Syscalls*.
+
+> 주의: **AsyncTimeline**의 $t_c$/$t_g$ 칸과 frames-in-flight 수치, 그리고 §5의 syscall 비용은
+> 특정 측정값이 아니라 구조·기울기를 보이기 위한 도식용 대표값입니다.
