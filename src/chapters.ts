@@ -182,6 +182,13 @@ export const chapters: Chapter[] = [
       '연속 diffuse를 step·quantize·편집 가능한 1D ramp로 끊고 half-Lambert·warm–cool·fwidth로 다듬기',
     section: '카툰 · NPR 렌더링',
   },
+  {
+    slug: 'toon-outline',
+    title: '윤곽선과 외곽선 — inverted-hull과 에지 검출',
+    description:
+      '실루엣을 그리는 두 방법 — 부푼 백페이스(inverted-hull)와 깊이·노멀 불연속 후처리. 화면공간 일정 두께 보정까지',
+    section: '카툰 · NPR 렌더링',
+  },
 ];
 
 /**
@@ -246,6 +253,8 @@ const RELATED: Record<string, string[]> = {
   'bezier-de-casteljau': ['transformations'],
   'microfacet-brdf': ['monte-carlo-integration', 'texture-filtering-mipmapping', 'cel-shading-ramp'],
   'monte-carlo-integration': ['microfacet-brdf'],
+  'cel-shading-ramp': ['toon-outline', 'microfacet-brdf'],
+  'toon-outline': ['cel-shading-ramp', 'rendering-execution-model', 'graphics-pipeline-journey'],
   'raymarching-sdf': ['noise-functions'],
   'noise-functions': ['raymarching-sdf'],
   'command-queues': ['gpu-cpu-conversation', 'dx-evolution-vulkan'],
@@ -312,6 +321,67 @@ export function getRelated(slug: string): Chapter[] {
   }
   return out;
 }
+
+/**
+ * 추천 읽기 경로(reading track). 지도 페이지에서 버튼으로 선택하면 순서대로 강조됩니다.
+ * slugs는 읽는 순서이며, draft·미존재 슬러그는 지도에서 자동으로 걸러집니다.
+ */
+export interface ReadingPath {
+  id: string;
+  title: string;
+  description: string;
+  slugs: string[];
+}
+
+export const READING_PATHS: ReadingPath[] = [
+  {
+    id: 'math',
+    title: '기초 수학',
+    description: '회전·곡선 — 그래픽스의 토대가 되는 변환과 보간.',
+    slugs: ['transformations', 'quaternions', 'bezier-de-casteljau'],
+  },
+  {
+    id: 'shading',
+    title: '셰이딩 → NPR',
+    description: '물리 기반 BRDF에서 출발해 셀 셰이딩·윤곽선까지, 음영을 만드는 길.',
+    slugs: ['microfacet-brdf', 'monte-carlo-integration', 'cel-shading-ramp', 'toon-outline'],
+  },
+  {
+    id: 'driver',
+    title: '드라이버 깊이 읽기',
+    description: 'CPU가 GPU에게 일을 시키는 전 과정 — 명령 버퍼·드라이버 스택·드로우 콜·PSO·세대 진화.',
+    slugs: [
+      'gpu-cpu-conversation',
+      'wddm-graphics-stack',
+      'draw-call-journey',
+      'pipeline-state-shaders',
+      'dx-evolution-vulkan',
+    ],
+  },
+  {
+    id: 'gpu-pipeline',
+    title: 'GPU 파이프라인 종주',
+    description: '워프 실행 모델에서 삼각형 래스터화·픽셀 셰이딩·텍스처 샘플링까지.',
+    slugs: [
+      'gpu-execution-model',
+      'warp-divergence-occupancy',
+      'graphics-pipeline-journey',
+      'rendering-execution-model',
+      'texture-filtering-mipmapping',
+    ],
+  },
+  {
+    id: 'perf',
+    title: '성능과 대역폭',
+    description: '현대 GPU의 진짜 병목 — 픽셀 쿼드·타일 렌더링·텍스처 압축·roofline.',
+    slugs: [
+      'rendering-execution-model',
+      'tile-based-rendering',
+      'texture-compression',
+      'memory-bandwidth-roofline',
+    ],
+  },
+];
 
 /** 지도(map) 페이지용: 라이브 챕터 사이의 무방향 간선 목록(중복 제거). */
 export function getRelationEdges(): { a: string; b: string }[] {

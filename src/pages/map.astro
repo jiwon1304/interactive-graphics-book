@@ -1,6 +1,6 @@
 ---
 import ChapterLayout from '../layouts/ChapterLayout.astro';
-import { chaptersBySection, getRelationEdges, chapterHref } from '../chapters';
+import { chaptersBySection, getRelationEdges, chapterHref, READING_PATHS } from '../chapters';
 
 // 라이브 챕터만, section별 컬럼으로 배치
 const groups = chaptersBySection()
@@ -95,6 +95,28 @@ const edges = getRelationEdges()
     }
     return { a: na.slug, b: nb.slug, path };
   });
+
+// 추천 읽기 경로: 라이브로 존재하는 노드만 추려 폴리라인(중심 연결)과 순번 배지 좌표를 만든다.
+const paths = READING_PATHS.map((p) => {
+  const pts = p.slugs
+    .map((s) => pos.get(s))
+    .filter((n): n is MapNode => !!n);
+  return {
+    id: p.id,
+    title: p.title,
+    description: p.description,
+    slugs: pts.map((n) => n.slug),
+    polyline: pts.map((n) => `${n.cx},${n.cy}`).join(' '),
+    badges: pts.map((n, i) => ({ x: n.x, y: n.y, num: i + 1 })),
+  };
+}).filter((p) => p.badges.length >= 2);
+
+// 클라이언트 스크립트로 넘길 최소 데이터(경로별 slug 목록·설명)
+const pathData = Object.fromEntries(
+  paths.map((p) => [p.id, { slugs: p.slugs, desc: p.description }]),
+);
+const defaultDesc =
+  '노드에 마우스를 올리면(또는 포커스하면) 연결된 문서가 강조됩니다. 추천 경로 버튼을 누르면 읽는 순서를 따라 표시됩니다.';
 ---
 
 <ChapterLayout
@@ -104,9 +126,19 @@ const edges = getRelationEdges()
   <h1>지도</h1>
   <p>
     챕터를 section별 열로 묶고, 개념적으로 이어지는 문서끼리 선으로 연결했습니다. 같은 열의 위→아래는
-    대체로 읽는 순서입니다. 노드에 마우스를 올리면(또는 포커스하면) 연결된 문서가 강조됩니다. 노드를
-    누르면 해당 챕터로 이동합니다. <em>(좁은 화면에서는 좌우로 스크롤하세요.)</em>
+    대체로 읽는 순서입니다. 노드를 누르면 해당 챕터로 이동합니다.
+    <em>(좁은 화면에서는 좌우로 스크롤하세요.)</em>
   </p>
+
+  <div class="path-picker" role="group" aria-label="추천 읽기 경로">
+    <button class="path-btn is-on" data-path="">자유 탐색</button>
+    {paths.map((p) => (
+      <button class="path-btn" data-path={p.id} title={p.description}>
+        {p.title}
+      </button>
+    ))}
+  </div>
+  <p class="path-desc" id="path-desc">{defaultDesc}</p>
 
   <div class="map-scroll">
     <svg
@@ -150,52 +182,126 @@ const edges = getRelationEdges()
           </a>
         ))}
       </g>
+      <g class="map-paths">
+        {paths.map((p) => (
+          <g class="map-path-group" data-path={p.id}>
+            <polyline class="map-path-line" points={p.polyline} fill="none" />
+            {p.badges.map((b) => (
+              <g class="map-badge" transform={`translate(${b.x}, ${b.y})`}>
+                <circle r="11" />
+                <text text-anchor="middle" dy="0.34em">{b.num}</text>
+              </g>
+            ))}
+          </g>
+        ))}
+      </g>
     </svg>
   </div>
 
-  <script>
-    const svg = document.querySelector<SVGSVGElement>('.map-svg');
+  <script define:vars={{ pathData, defaultDesc }}>
+    const svg = document.querySelector('.map-svg');
     if (svg) {
-      const edges = Array.from(svg.querySelectorAll<SVGPathElement>('.map-edge'));
-      const nodes = Array.from(svg.querySelectorAll<SVGAElement>('.map-node'));
+      const edges = Array.from(svg.querySelectorAll('.map-edge'));
+      const nodes = Array.from(svg.querySelectorAll('.map-node'));
+      const groups = Array.from(svg.querySelectorAll('.map-path-group'));
+      const buttons = Array.from(document.querySelectorAll('.path-btn'));
+      const descEl = document.getElementById('path-desc');
 
-      // slug → 이웃 slug 집합
-      const neighbors = new Map<string, Set<string>>();
+      // slug → 이웃 slug 집합 (호버 강조용)
+      const neighbors = new Map();
       for (const e of edges) {
-        const a = e.dataset.a!;
-        const b = e.dataset.b!;
-        (neighbors.get(a) ?? neighbors.set(a, new Set()).get(a)!).add(b);
-        (neighbors.get(b) ?? neighbors.set(b, new Set()).get(b)!).add(a);
+        const a = e.dataset.a;
+        const b = e.dataset.b;
+        if (!neighbors.has(a)) neighbors.set(a, new Set());
+        if (!neighbors.has(b)) neighbors.set(b, new Set());
+        neighbors.get(a).add(b);
+        neighbors.get(b).add(a);
       }
 
-      function activate(slug: string) {
-        const near = neighbors.get(slug) ?? new Set<string>();
-        svg!.classList.add('has-active');
+      function activate(slug) {
+        if (svg.classList.contains('path-mode')) return; // 경로 모드에선 호버 강조 끔
+        const near = neighbors.get(slug) ?? new Set();
+        svg.classList.add('has-active');
         for (const n of nodes) {
-          const s = n.dataset.slug!;
+          const s = n.dataset.slug;
           n.classList.toggle('hot', s === slug || near.has(s));
         }
         for (const e of edges) {
           e.classList.toggle('hot', e.dataset.a === slug || e.dataset.b === slug);
         }
       }
-      function clear() {
-        svg!.classList.remove('has-active');
+      function clearHover() {
+        svg.classList.remove('has-active');
         for (const n of nodes) n.classList.remove('hot');
         for (const e of edges) e.classList.remove('hot');
       }
 
       for (const n of nodes) {
-        const slug = n.dataset.slug!;
+        const slug = n.dataset.slug;
         n.addEventListener('mouseenter', () => activate(slug));
-        n.addEventListener('mouseleave', clear);
+        n.addEventListener('mouseleave', clearHover);
         n.addEventListener('focus', () => activate(slug));
-        n.addEventListener('blur', clear);
+        n.addEventListener('blur', clearHover);
+      }
+
+      function setPath(id) {
+        for (const b of buttons) b.classList.toggle('is-on', b.dataset.path === id);
+        if (!id) {
+          svg.classList.remove('path-mode');
+          for (const g of groups) g.classList.remove('active');
+          for (const n of nodes) n.classList.remove('onpath');
+          if (descEl) descEl.textContent = defaultDesc;
+          return;
+        }
+        clearHover();
+        svg.classList.add('path-mode');
+        for (const g of groups) g.classList.toggle('active', g.dataset.path === id);
+        const info = pathData[id] ?? { slugs: [], desc: '' };
+        const set = new Set(info.slugs);
+        for (const n of nodes) n.classList.toggle('onpath', set.has(n.dataset.slug));
+        if (descEl) descEl.textContent = info.desc;
+      }
+
+      for (const b of buttons) {
+        b.addEventListener('click', () => setPath(b.dataset.path || ''));
       }
     }
   </script>
 
   <style>
+    .path-picker {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.4rem;
+      margin: 1.25rem 0 0.5rem;
+    }
+    .path-btn {
+      font: inherit;
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: var(--muted);
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 0.3rem 0.8rem;
+      cursor: pointer;
+      transition: color 0.12s, border-color 0.12s, background 0.12s;
+    }
+    .path-btn:hover {
+      color: var(--text);
+      border-color: var(--accent);
+    }
+    .path-btn.is-on {
+      color: var(--bg);
+      background: var(--accent);
+      border-color: var(--accent);
+    }
+    .path-desc {
+      color: var(--muted);
+      font-size: 0.9rem;
+      margin: 0 0 0.25rem;
+      min-height: 1.4em;
+    }
     .map-scroll {
       overflow-x: auto;
       -webkit-overflow-scrolling: touch;
@@ -256,6 +362,41 @@ const edges = getRelationEdges()
     }
     .map-svg.has-active .map-node.hot rect {
       stroke: var(--accent);
+    }
+
+    /* ── 추천 읽기 경로 오버레이 ── */
+    .map-path-group {
+      display: none;
+    }
+    .map-svg.path-mode .map-path-group.active {
+      display: block;
+    }
+    .map-path-line {
+      stroke: var(--accent);
+      stroke-width: 2.6;
+      stroke-linejoin: round;
+      stroke-linecap: round;
+      opacity: 0.85;
+    }
+    .map-badge circle {
+      fill: var(--accent);
+    }
+    .map-badge text {
+      fill: var(--bg);
+      font-size: 11px;
+      font-weight: 700;
+    }
+    /* 경로 모드: 경로 밖 노드/엣지는 흐리게, 경로 노드는 강조 */
+    .map-svg.path-mode .map-edge {
+      opacity: 0.08;
+    }
+    .map-svg.path-mode .map-node:not(.onpath) rect,
+    .map-svg.path-mode .map-node:not(.onpath) .map-node-label {
+      opacity: 0.28;
+    }
+    .map-svg.path-mode .map-node.onpath rect {
+      stroke: var(--accent);
+      stroke-width: 1.8;
     }
   </style>
 </ChapterLayout>
