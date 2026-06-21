@@ -1,0 +1,115 @@
+---
+layout: ../../layouts/ChapterLayout.astro
+title: "GPU 스케줄링과 프리엠션 — 컨텍스트 전환과 TDR"
+description: 하나의 GPU를 여러 앱이 나눠 쓰는 법 — OS/하드웨어 스케줄러, 컨텍스트 전환 비용, 프리엠션 granularity, 그리고 TDR 타임아웃
+---
+
+import PreemptionTimeline from '../../components/demos/gpu-scheduling-preemption/PreemptionTimeline.tsx';
+import TDRTimeline from '../../components/demos/gpu-scheduling-preemption/TDRTimeline.tsx';
+
+# GPU 스케줄링과 프리엠션 — 컨텍스트 전환과 TDR
+
+게임, 브라우저, 데스크톱 컴포지터가 **동시에** GPU를 씁니다. GPU는 하나뿐인데 말이죠. 이 챕터는
+OS와 하드웨어가 한 GPU를 여러 컨텍스트에 나눠 주는 법 — 스케줄링, **컨텍스트 전환**, **프리엠션**,
+그리고 그게 실패할 때의 **TDR** — 을 봅니다.
+
+## 한 GPU, 여러 컨텍스트 — 스케줄러의 시분할
+
+각 애플리케이션은 자기 명령을 큐에 제출하고([명령 큐](./command-queues) 참고), **GPU 스케줄러**가
+이들을 우선순위화·시분할합니다. Windows에서 이 스케줄러는 그래픽스 커널(`Dxgkrnl`)의 일부입니다.
+
+전통적으로 스케줄링은 **CPU에서** 돌았습니다 — 높은 우선순위의 CPU 스레드가 각 앱의 작업을 조율해
+GPU에 밀어 넣었습니다. 이 방식은 제출 오버헤드·지연에 한계가 있어, 보통 **프레임 버퍼링**으로
+숨깁니다(CPU가 프레임 N+1을 준비하는 동안 GPU가 N을 그림 → 입력 지연 증가). **Hardware-Accelerated
+GPU Scheduling(HAGS)**(WDDM 2.7, 2020)은 스케줄링의 상당 부분을 **GPU 내장 스케줄링 프로세서**로
+옮겨 CPU 오버헤드를 줄이려는 시도입니다(체감 성능 영향은 워크로드 의존적).
+
+## 컨텍스트 전환은 왜 비싼가
+
+CPU는 레지스터 수십 개만 저장하면 컨텍스트를 바꿉니다. GPU는 **수만 스레드의 레지스터와 공유
+메모리**를 동시에 들고 있어, 전체 상태가 거대합니다. 컨텍스트를 바꾸려면 이 큰 상태를 **GPU
+DRAM으로 저장(swap-out)**하고 다른 컨텍스트를 불러와야 합니다. 그래서 GPU 컨텍스트 전환은 비싸고,
+**아무 지점에서나 즉시 멈출 수 없습니다** — 정의된 **경계(boundary)**에 도달해야 안전하게 상태를
+저장할 수 있습니다.
+
+## 프리엠션 granularity — 어디서 멈출 수 있나
+
+이 "경계"의 촘촘함이 **프리엠션 granularity**입니다. Windows(WDDM)는 그래픽스·컴퓨트 각각에 대해
+거친 것부터 세밀한 것까지 단계를 정의합니다.
+
+- **그래픽스**: DMA 버퍼 → 프리미티브 → 삼각형 → **픽셀** → 셰이더(명령) 경계.
+- **컴퓨트**: DMA 버퍼 → 디스패치 → 스레드 그룹 → 스레드 → 셰이더(명령) 경계.
+
+거친 granularity(예: DMA 버퍼 경계)면 GPU는 그 거대한 작업이 **끝날 때까지** 못 멈춥니다. 세밀할수록
+빨리 끼어들 수 있지만, 그만큼 컨텍스트 전환이 잦아 오버헤드가 늡니다. 세대별로도 발전했습니다 —
+NVIDIA Maxwell은 **draw call 경계**에서만 멈출 수 있었지만(긴 draw가 프리엠션을 막음), Pascal은
+그래픽스 **픽셀 단위**, CUDA 컴퓨트 **명령 단위** 프리엠션을 도입했습니다.
+
+아래에서 고우선 컨텍스트 B가 도착했을 때, granularity에 따라 B가 끼어들기까지 얼마나 기다리는지 보세요.
+
+<PreemptionTimeline client:visible />
+
+이 트레이드오프가 실제로 중요한 곳이 **VR**입니다. async timewarp은 디스플레이 스캔아웃 직전에
+최신 head tracking으로 화면을 보정하는데, 이를 위해 GPU를 현재 렌더에서 **즉시** 인터럽트해야
+합니다. 픽셀 단위 프리엠션이면 현재 픽셀만 끝내고 멈출 수 있어 지연이 작습니다 — 그래서 NVIDIA의
+VRWorks Context Priority 같은 API가 이를 활용합니다.
+
+## TDR — GPU가 멈추면
+
+긴 작업이 거친 granularity와 만나면 최악의 경우가 옵니다: GPU가 너무 오래 한 작업을 붙들어 다른
+컨텍스트(데스크톱 포함)가 갱신되지 않습니다. OS는 이를 감지해 GPU를 강제로 되살립니다 — **TDR
+(Timeout Detection and Recovery)**입니다.
+
+핵심 수치: Windows 기본 타임아웃 **`TdrDelay` = 2초**. 스케줄러가 작업을 프리엠션하려다 이 시간
+안에 성공하지 못하면 OS는 GPU가 "frozen"이라 판단하고 **GPU를 리셋**합니다(버그체크
+`VIDEO_TDR_FAILURE` 0x116). 그 결과:
+
+1. **감지** — 비디오 스케줄러가 프리엠션을 시도, 2초 내 실패 시 frozen 판정.
+2. **준비** — 드라이버에 통지, 하드웨어/메모리 접근 중단, 진단 정보 수집.
+3. **복구** — 그래픽스 스택 리셋, 비디오 메모리 할당 purge, GPU 하드웨어 리셋, 데스크톱 복원.
+
+앱 입장에선 D3D 디바이스가 사라집니다 — `DXGI_ERROR_DEVICE_HUNG`(앱이 보낸 잘못된 작업) /
+`DEVICE_RESET` / `DEVICE_REMOVED`. 그 디바이스의 모든 리소스가 무효가 되어, 디바이스와 리소스를
+재생성해야 합니다. **회피법은 단순합니다 — 긴 작업을 작은 청크로 쪼개는 것.** 그러면 매 경계에서
+프리엠션이 가능해 2초를 넘기지 않습니다.
+
+<TDRTimeline client:visible />
+
+이것이 [언리얼 GPU 크래시 디버깅](./ue-gpu-crash-debugging)에서 본 device-removed의 흔한 원인입니다.
+반복되는 `DEVICE_HUNG`은 대개 너무 무거운 단일 디스패치가 범인입니다.
+
+## 큐 우선순위 — 지연 민감 작업
+
+저지연 작업을 위해 API는 큐 우선순위를 제공합니다. D3D12의 `D3D12_COMMAND_QUEUE_PRIORITY`는
+`NORMAL`/`HIGH`(프로세스 내) 외에 `GLOBAL_REALTIME`(전역, 권한 필요 — 어댑터가 충분한 프리엠션을
+제공 못 하면 생성 실패)을 둡니다. **async compute**는 별도 큐로 컴퓨트를 그래픽스와 병행시키고,
+우선순위와 프리엠션으로 지연 민감 작업(예: VR 타임워프)을 먼저 처리합니다.
+
+## 정리
+
+- 한 GPU를 여러 컨텍스트가 공유 — **스케줄러**가 시분할(CPU 기반 → HAGS의 GPU 스케줄러).
+- GPU 컨텍스트 전환은 **큰 상태(레지스터·공유 메모리)를 DRAM에 스왑**해야 해서 비싸고, 정의된
+  **경계에서만** 가능.
+- **프리엠션 granularity**(DMA 버퍼 → … → 픽셀/명령)가 끼어들기 지연을 정한다. 거칠수록 지연↑,
+  세밀할수록 전환 오버헤드↑.
+- **TDR**: 단일 작업이 **2초(`TdrDelay`)**를 넘겨 프리엠션 실패 시 OS가 GPU 리셋 → 디바이스 제거.
+  **작업을 청크로 쪼개** 회피.
+- 큐 우선순위/async compute로 지연 민감 작업을 우선 처리.
+
+## 참고 자료
+
+- Microsoft, *Timeout Detection and Recovery (TDR)* / *TDR Registry Keys* (TdrDelay 2초, 3단계):
+  https://learn.microsoft.com/en-us/windows-hardware/drivers/display/timeout-detection-and-recovery ·
+  https://learn.microsoft.com/en-us/windows-hardware/drivers/display/tdr-registry-keys
+- Microsoft, *GPU Preemption* / 그래픽스·컴퓨트 granularity 열거형:
+  https://learn.microsoft.com/en-us/windows-hardware/drivers/display/gpu-preemption ·
+  https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/d3dkmdt/ne-d3dkmdt-_d3dkmdt_graphics_preemption_granularity
+- Microsoft, *Hardware-Accelerated GPU Scheduling*: https://devblogs.microsoft.com/directx/hardware-accelerated-gpu-scheduling/
+- NVIDIA Pascal(GP100) 백서 / Tuning Guide (compute preemption, instruction-level, 상태 DRAM 스왑):
+  https://images.nvidia.com/content/pdf/tesla/whitepaper/pascal-architecture-whitepaper.pdf ·
+  https://docs.nvidia.com/cuda/pascal-tuning-guide/index.html
+- NVIDIA VRWorks Context Priority (ATW, pixel-level 이점): https://developer.nvidia.com/vrworks/headset/contextpriority
+- Microsoft, *D3D12_COMMAND_QUEUE_PRIORITY* (NORMAL/HIGH/GLOBAL_REALTIME):
+  https://learn.microsoft.com/en-us/windows/win32/api/d3d12/ne-d3d12-d3d12_command_queue_priority
+- Microsoft, *Handling device removed* (GetDeviceRemovedReason, DXGI 에러): https://learn.microsoft.com/en-us/windows/uwp/gaming/handling-device-lost-scenarios
+- Epic, *Dealing with a GPU Crash* (청크 분할로 TDR 회피): https://dev.epicgames.com/documentation/en-us/unreal-engine/dealing-with-a-gpu-crash-when-using-unreal-engine

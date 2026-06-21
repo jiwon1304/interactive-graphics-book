@@ -227,6 +227,21 @@ export const chapters: Chapter[] = [
       '광선-장면 비용을 줄이는 BVH 가속 구조와 순회, ray-AABB·ray-triangle 교차, RT 코어가 실제로 가속하는 것',
     section: '레이트레이싱 HW',
   },
+  // ── GPU 명령 제출 (전송·스케줄링) ──
+  {
+    slug: 'cpu-gpu-transfer',
+    title: 'CPU↔GPU 데이터 전송 — PCIe·DMA·Resizable BAR',
+    description:
+      '호스트↔디바이스 버스 — PCIe 대역폭·DMA·pinned/pageable·BAR/Resizable BAR·메모리 힙(DEFAULT/UPLOAD/GPU_UPLOAD)·통합 메모리',
+    section: 'GPU 명령 제출',
+  },
+  {
+    slug: 'gpu-scheduling-preemption',
+    title: 'GPU 스케줄링과 프리엠션 — 컨텍스트 전환과 TDR',
+    description:
+      '한 GPU를 여러 앱이 나눠 쓰는 법 — OS/하드웨어 스케줄러·컨텍스트 전환 비용·프리엠션 granularity·TDR 타임아웃',
+    section: 'GPU 명령 제출',
+  },
 ];
 
 /**
@@ -298,7 +313,9 @@ const RELATED: Record<string, string[]> = {
   'anime-toon-face': ['cel-shading-ramp', 'toon-outline', 'rim-light-matcap'],
   'raymarching-sdf': ['noise-functions'],
   'noise-functions': ['raymarching-sdf'],
-  'command-queues': ['gpu-cpu-conversation', 'dx-evolution-vulkan'],
+  'command-queues': ['gpu-cpu-conversation', 'dx-evolution-vulkan', 'gpu-scheduling-preemption'],
+  'cpu-gpu-transfer': ['gpu-cpu-conversation', 'wddm-graphics-stack', 'gpu-memory-hierarchy', 'command-queues'],
+  'gpu-scheduling-preemption': ['command-queues', 'ue-gpu-crash-debugging', 'wddm-graphics-stack', 'warp-divergence-occupancy'],
   'gpu-cpu-conversation': ['command-queues', 'wddm-graphics-stack', 'draw-call-journey'],
   'wddm-graphics-stack': ['gpu-cpu-conversation', 'draw-call-journey'],
   'draw-call-journey': [
