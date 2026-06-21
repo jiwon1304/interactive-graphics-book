@@ -40,10 +40,11 @@ import RayAABBSlab from '../../components/demos/raytracing-hardware/RayAABBSlab.
 "자식 박스의 표면적이 광선이 그 자식을 맞힐 확률에 비례한다"는 가정 아래, 분할 비용
 
 $$
-C \;\propto\; SA(L)\cdot N_L \;+\; SA(R)\cdot N_R
+C = C_{\text{trav}} + \frac{SA(L)}{SA(P)}\,N_L\,C_{\text{isect}} + \frac{SA(R)}{SA(P)}\,N_R\,C_{\text{isect}}
 $$
 
-(좌·우 자식의 표면적 × 담긴 프리미티브 수)을 최소화하는 분할을 고릅니다. 단순히 개수를 반으로
+부모 박스 면적 $SA(P)$로 정규화한 자식 도달 확률 × 그 자식의 프리미티브 수 × 교차 비용에,
+순회 비용 $C_{\text{trav}}$을 더한 값입니다. 이를 최소화하는 분할을 고릅니다. 단순히 개수를 반으로
 가르는 median 분할보다 대체로 더 빠른 트리를 만듭니다. 교과서 BVH는 자식이 둘인 **이진 트리**지만,
 하드웨어/고성능 구현은 노드당 4~8 자식을 SIMD로 한 번에 검사하는 **wide BVH(BVH4/BVH8)**를 씁니다.
 
