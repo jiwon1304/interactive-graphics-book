@@ -1,0 +1,154 @@
+---
+layout: ../../layouts/ChapterLayout.astro
+title: "디스플레이 출력 — 스캔아웃부터 VRR까지"
+description: 프레임버퍼가 모니터에 닿는 길 — 스캔아웃·VBlank·테어링·VSync·더블/트리플 버퍼링·present 모델·G-Sync/FreeSync(VRR)·프레임 페이싱
+---
+
+import ScanoutTearing from '../../components/demos/display-pipeline/ScanoutTearing.tsx';
+import FrameDeliveryTimeline from '../../components/demos/display-pipeline/FrameDeliveryTimeline.tsx';
+
+# 디스플레이 출력 — 스캔아웃부터 VRR까지
+
+GPU가 프레임을 다 그렸습니다. 그런데 그 프레임버퍼가 **모니터에 실제로 닿기까지**는 또 하나의
+파이프라인이 있습니다. 이 마지막 구간이 테어링, 입력 지연, 저더(judder), 그리고 G-Sync/FreeSync
+같은 가변 주사율의 무대입니다. 픽셀 셰이더가 끝나는 곳에서 시작합니다.
+
+## 스캔아웃 — 디스플레이는 화면을 한 줄씩 읽는다
+
+모니터는 프레임버퍼를 한 번에 "찰칵" 띄우지 않습니다. 디스플레이 컨트롤러(CRTC)가 프런트버퍼를
+**위에서 아래로 한 줄씩 순차적으로 읽어** 케이블로 내보냅니다. 이것이 **스캔아웃**입니다. 한 줄을
+보낸 뒤 다음 줄까지의 짧은 틈이 **HBlank**, 마지막 줄을 보낸 뒤 다시 첫 줄로 돌아가기까지의 틈이
+**VBlank(수직 블랭킹)**입니다.
+
+이 타이밍은 CRT 시절 전자빔이 화면을 훑고 우상단으로 복귀하던 시간에서 유래했습니다. 현대
+LCD/OLED엔 물리적 빔이 없지만 **타이밍 규격은 그대로** 남았습니다. 픽셀 클럭은
+
+$$
+\text{Pixel Clock} = H_{\text{total}} \times V_{\text{total}} \times \text{RefreshRate}
+$$
+
+로, $H_{\text{total}}/V_{\text{total}}$은 가시 영역 + 블랭킹을 포함한 총량입니다. 핵심 결과: 60Hz에서
+한 프레임은 **16.67 ms**(=1/60)이고, **화면 맨 위 픽셀과 맨 아래 픽셀은 거의 한 프레임만큼 출력
+시점이 다릅니다**(위가 먼저, 아래가 나중). 고속 카메라로 찍으면 화면이 위→아래로 갱신되는 띠가
+실제로 보입니다 — "빔"이라는 멘탈 모델은 지금도 유효합니다.
+
+## 테어링 — 스캔아웃 도중에 갈아끼우면
+
+여기서 테어링이 나옵니다. 디스플레이가 프레임버퍼를 **읽는 도중에** 그 내용이 새 프레임으로
+교체되면, 빔이 이미 지나간 위쪽은 옛 프레임, 아직 안 지난 아래쪽은 새 프레임이 됩니다. 두 프레임의
+경계에서 화면이 가로로 **찢어져** 보입니다. 움직이는 물체일수록 어긋남이 큽니다.
+
+가장 단순한 **싱글 버퍼링**(디스플레이가 읽는 바로 그 버퍼에 GPU가 직접 그림)은 구조적으로 이
+문제를 안고 있습니다. 아래에서 VSync를 끈 채로 두면 막대가 가로로 끊겨 어긋나는 것을, 빨간 선이
+스캔아웃 도중 프레임이 바뀐 **테어 라인**임을 직접 보세요.
+
+<ScanoutTearing client:visible />
+
+## VSync와 버퍼링 — 테어 vs 지연·저더의 맞바꿈
+
+테어링을 없애는 고전적 방법이 **VSync**입니다. 버퍼 **교체(swap)를 VBlank에서만** 하는 것 —
+디스플레이가 한 프레임을 다 읽은 뒤에야 갈아끼우니, 한 화면은 항상 한 프레임으로만 채워집니다.
+대신 새 비용이 생깁니다. 버퍼 수에 따라 트레이드오프가 달라집니다.
+
+- **더블 버퍼 + VSync** (front + back): GPU는 back에 그리고 VBlank에 swap합니다. 문제는 (1) GPU가
+  다음 작업을 시작하려면 back이 비어야 하는데 swap까지 막혀 **파이프라인이 정지**하고, (2) 프레임을
+  새로고침 마감 전에 못 끝내면 **이전 프레임을 한 주기 더** 표시해 유효 fps가 정수로 뚝 떨어집니다
+  (60Hz에서 살짝 못 맞추면 60→30). 이 반복이 **저더**입니다.
+- **(진짜) 트리플 버퍼링** (front + back 2개): GPU는 VSync를 안 기다리고 계속 그리며, VBlank마다
+  **가장 최근 완성된 프레임**을 표시하고 그 사이 만든 중간 프레임은 **버립니다**. fps 반토막이
+  없고 표시 지연도 낮습니다.
+- **렌더-어헤드 큐**(흔히 게임에서 "triple buffering"이라 잘못 부르는 것): 버퍼 3개를 **FIFO 큐**로
+  운영합니다. fps 반토막은 막지만 프레임을 **버리지 않고 줄세우므로** 표시되는 프레임이 1~2프레임
+  오래된 것이 되어 **입력 지연이 늘어납니다.** "최신 프레임을 버리고 표시"하는 진짜 트리플 버퍼링과
+  정반대 성격임을 구분하세요.
+
+아래에서 렌더 fps를 새로고침보다 낮춰(예: 45fps / 60Hz) 모드별 차이를 보세요. 반복(↻)=저더,
+드롭=버려진 프레임, 테어=스캔아웃 중 교체입니다.
+
+<FrameDeliveryTimeline client:visible />
+
+## present 모델 — OS는 프레임을 어떻게 화면에 올리나
+
+애플리케이션이 "이 프레임을 띄워라"라고 하는 것이 **present**입니다. 그 구현이 플랫폼마다 있습니다.
+
+**Windows(DXGI).** 옛 **bitblt 모델**은 present마다 백버퍼를 윈도 표면으로 **복사**했습니다. 현대의
+**flip 모델**(`DXGI_SWAP_EFFECT_FLIP_DISCARD` 등)은 백버퍼들을 데스크톱 컴포지터(DWM)와 **공유**해
+복사 없이 직접 합성합니다 — 대역폭이 절약되고 지연이 줄어듭니다. 더 나아가 **Independent Flip**은
+컴포지션을 우회해 앱 프레임을 화면에 직접 보냅니다(전체화면 독점처럼). 지연을 더 줄이려면 **waitable
+swapchain**으로 프레임 지연을 낮추고, 가변 주사율/테어를 허용하려면 생성 시
+`DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING` + present 시 sync interval 0이 필요합니다.
+
+**Vulkan(present mode).** 같은 개념이 더 직설적으로 노출됩니다:
+
+- **IMMEDIATE** — VBlank를 안 기다리고 즉시 교체. **테어 가능**(= VSync OFF).
+- **FIFO** — 스왑체인이 큐. 새로고침마다 큐 앞에서 한 장 꺼내고 앱은 뒤에 넣음. 큐가 차면 앱이
+  대기. **테어 없음, 항상 지원**(= 전통적 VSync).
+- **FIFO_RELAXED** — 보통은 VBlank를 기다리지만 **이미 늦었으면**(지난 VBlank를 놓쳤으면) 기다리지
+  않고 즉시 교체 → 그때만 테어. 가끔 늦는 앱의 저더 완화(= adaptive VSync).
+- **MAILBOX** — VBlank에 교체해 **테어는 없지만**, 큐가 차면 대기 대신 **큐의 옛 이미지를 새 것으로
+  교체(버림)** → 최신 프레임을 낮은 지연으로 표시(≈ 진짜 트리플 버퍼링).
+
+## VRR — 디스플레이가 GPU에 맞춰 기다린다
+
+지금까지는 새로고침이 **고정**(60Hz)이라는 전제였습니다. 그래서 렌더 속도와 새로고침이 어긋나면
+테어(VSync off)나 저더(VSync on) 중 하나를 골라야 했습니다. **가변 주사율(VRR)**은 이 전제를
+뒤집습니다.
+
+원리는 의외로 단순합니다. 픽셀을 그리는 속도(픽셀 클럭)는 그대로 두고, **VBlank의 길이를
+늘였다 줄였다** 합니다. 즉 다음 새로고침을 "프레임이 준비될 때까지" 미룹니다. 이제 **GPU가 타이밍
+마스터**가 되어, 프레임을 완성하는 순간 디스플레이에 새로고침을 지시합니다. 렌더가 47fps면
+디스플레이도 47Hz로 새로고침하니, 테어도 저더도 없습니다.
+
+- **VESA Adaptive-Sync**: 2014년 DisplayPort 표준에 추가됐습니다(노트북 패널의 self-refresh
+  기술에서 파생). 업계 공통 기반입니다.
+- **AMD FreeSync** / Premium / Premium Pro: DisplayPort·HDMI 모두 지원. 상위 티어는 LFC(아래)와
+  저지연·HDR을 요구합니다.
+- **NVIDIA G-SYNC**: 전용 하드웨어 모듈을 쓰는 **네이티브 G-SYNC**(주사율에 따라 오버드라이브를
+  재튜닝하는 "가변 오버드라이브" 등)와, 모듈 없이 VESA Adaptive-Sync를 쓰고 NVIDIA가 테스트만 한
+  **G-SYNC Compatible**로 나뉩니다.
+- **LFC(저프레임 보상)**: fps가 VRR **하한** 아래로 떨어지면, 같은 프레임을 **정수배로 반복** 표시해
+  패널을 범위 안에 유지합니다(예: 48–144Hz 패널에서 46fps → 138Hz로 ×3 표시). 동작하려면 보통
+  **상한 ≥ 하한의 2배**여야 합니다. LFC가 없으면 하한 아래에서 저더나 테어가 다시 나타납니다.
+
+위 데모의 **VRR 모드**에서 렌더 fps를 바꾸면 새로고침 간격이 렌더에 맞춰 변하고, 하한 아래로
+내리면 LFC가 프레임을 복제하는 것을 볼 수 있습니다.
+
+> **두 독자를 위한 메모.** G-SYNC의 "1Hz까지" 같은 광고 하한은 패널이 실제로 1Hz로 스캔한다는
+> 뜻이 아니라 LFC식 **프레임 더블링**으로 만든 실효 하한입니다. G-SYNC Compatible/Adaptive-Sync의
+> 실제 VRR 하한(흔히 40 또는 48Hz)은 패널마다 다릅니다.
+
+## 프레임 페이싱 — fps 숫자보다 "간격의 균일함"
+
+마지막으로, 매끄러움은 평균 fps가 아니라 **프레임이 화면에 도달하는 간격의 균일함**입니다. 60fps면
+각 프레임이 16.67 ms마다 와야 합니다. 평균 fps가 높아도 프레임 타임 분산이 크면(예: 4 ms ~ 20 ms로
+출렁이면) **마이크로 스터터**로 보입니다.
+
+대표적인 예가 영화의 **24fps를 60Hz에 표시할 때의 3:2 풀다운 저더**입니다. 24는 60의 약수가 아니라,
+프레임을 3주기·2주기 교대로 표시(약 50 ms / 33 ms)하게 되어 팬 장면에서 끊겨 보입니다. 120Hz(24×5)나
+VRR이면 이 정수 분주 강제가 사라져 깔끔해집니다. VRR의 진짜 가치가 바로 이 **정수 분주에서의
+해방**입니다.
+
+## 정리
+
+- 디스플레이는 프레임버퍼를 **위→아래로 한 줄씩 스캔아웃**합니다. 그 도중 교체하면 **테어**.
+- **VSync**는 VBlank에서만 교체해 테어를 없애지만, 버퍼링 방식에 따라 **지연·저더**를 맞바꿉니다.
+  진짜 트리플 버퍼링(최신 표시·중간 버림)과 렌더-어헤드 큐(줄세움·지연 증가)는 정반대입니다.
+- **present 모델**(DXGI flip / Vulkan FIFO·MAILBOX·IMMEDIATE)이 이 정책을 노출합니다.
+- **VRR**은 VBlank를 가변시켜 디스플레이를 렌더에 맞춰, 테어·저더·정수 분주를 함께 없앱니다(범위
+  안에서, 하한 아래는 LFC로 보상).
+- 매끄러움의 척도는 fps 숫자가 아니라 **프레임 페이싱(간격의 균일함)**.
+
+## 참고 자료
+
+- VESA, *Adaptive-Sync Whitepaper* (2014): https://www.vesa.org/wp-content/uploads/2014/07/VESA-Adaptive-Sync-Whitepaper-140620.pdf
+- VESA, AdaptiveSync/MediaSync 로고 프로그램: https://vesa.org/featured-articles/vesa-launches-industrys-first-open-standard-and-logo-program-for-pc-monitor-and-laptop-display-variable-refresh-rate-performance-for-gaming-and-media-playback/
+- AMD FreeSync FAQ (LFC, 티어): https://www.amd.com/en/technologies/free-sync-faq
+- NVIDIA G-SYNC(위키, 모듈/가변 오버드라이브), TFTCentral VRR: https://en.wikipedia.org/wiki/Nvidia_G-Sync · https://tftcentral.co.uk/articles/variable_refresh
+- Microsoft, *DXGI flip model* / *variable refresh rate displays*(ALLOW_TEARING):
+  https://learn.microsoft.com/en-us/windows/win32/direct3ddxgi/dxgi-flip-model ·
+  https://learn.microsoft.com/en-us/windows/win32/direct3ddxgi/variable-refresh-rate-displays
+- Khronos, *VkPresentModeKHR* (FIFO/MAILBOX/IMMEDIATE/RELAXED):
+  https://registry.khronos.org/vulkan/specs/latest/man/html/VkPresentModeKHR.html
+- AnandTech, *Triple Buffering: Why We Love It* (진짜 트리플 버퍼링 vs 렌더-어헤드): https://anandtech.com/Show/Index/2794
+- Blur Busters, *Display Scanout Lag (고속 영상)*: https://blurbusters.com/understanding-display-scanout-lag-with-high-speed-video/
+- inputlag.app, *프레임 페이싱*: https://inputlag.app/guides/what-causes-frame-pacing-issues

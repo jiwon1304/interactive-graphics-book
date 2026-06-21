@@ -203,6 +203,22 @@ export const chapters: Chapter[] = [
       '평면적 램프·머티리얼 존·아웃라인으로 만드는 아니메 룩과, 얼굴 SDF 그림자 맵·구면 법선·머리카락 하이라이트 등 얼굴 전용 트릭',
     section: '카툰 · NPR 렌더링',
   },
+  // ── GPU ↔ 렌더링 (메모리 심화) ──
+  {
+    slug: 'gpu-memory-hierarchy',
+    title: 'GPU 메모리 계층과 합치기(coalescing)',
+    description:
+      '레지스터·공유 메모리(LDS)·L1/L2·VRAM 계층과, 워프 접근을 트랜잭션으로 묶는 메모리 합치기·뱅크 충돌',
+    section: 'GPU ↔ 렌더링',
+  },
+  // ── 디스플레이 출력 ──
+  {
+    slug: 'display-pipeline',
+    title: '디스플레이 출력 — 스캔아웃부터 VRR까지',
+    description:
+      '프레임버퍼가 모니터에 닿는 길 — 스캔아웃·VBlank·테어링·VSync·더블/트리플 버퍼링·present 모델·G-Sync/FreeSync(VRR)·프레임 페이싱',
+    section: '디스플레이 출력',
+  },
 ];
 
 /**
@@ -306,7 +322,9 @@ const RELATED: Record<string, string[]> = {
   ],
   'texture-compression': ['texture-filtering-mipmapping', 'memory-bandwidth-roofline'],
   'tile-based-rendering': ['graphics-pipeline-journey', 'memory-bandwidth-roofline', 'rendering-execution-model'],
-  'memory-bandwidth-roofline': ['tile-based-rendering', 'texture-compression', 'gpu-execution-model'],
+  'memory-bandwidth-roofline': ['tile-based-rendering', 'texture-compression', 'gpu-execution-model', 'gpu-memory-hierarchy'],
+  'gpu-memory-hierarchy': ['memory-bandwidth-roofline', 'warp-divergence-occupancy', 'texture-filtering-mipmapping'],
+  'display-pipeline': ['command-queues', 'gpu-cpu-conversation', 'rendering-execution-model'],
   'ue-gpu-crash-debugging': ['dx-evolution-vulkan', 'command-queues', 'draw-call-journey'],
 };
 
