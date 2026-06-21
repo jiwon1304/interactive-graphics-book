@@ -219,6 +219,14 @@ export const chapters: Chapter[] = [
       '프레임버퍼가 모니터에 닿는 길 — 스캔아웃·VBlank·테어링·VSync·더블/트리플 버퍼링·present 모델·G-Sync/FreeSync(VRR)·프레임 페이싱',
     section: '디스플레이 출력',
   },
+  // ── 레이트레이싱 HW ──
+  {
+    slug: 'raytracing-hardware',
+    title: '레이트레이싱 하드웨어 — RT 코어와 BVH',
+    description:
+      '광선-장면 비용을 줄이는 BVH 가속 구조와 순회, ray-AABB·ray-triangle 교차, RT 코어가 실제로 가속하는 것',
+    section: '레이트레이싱 HW',
+  },
 ];
 
 /**
@@ -282,7 +290,8 @@ const RELATED: Record<string, string[]> = {
   quaternions: ['transformations'],
   'bezier-de-casteljau': ['transformations'],
   'microfacet-brdf': ['monte-carlo-integration', 'texture-filtering-mipmapping', 'cel-shading-ramp'],
-  'monte-carlo-integration': ['microfacet-brdf'],
+  'monte-carlo-integration': ['microfacet-brdf', 'raytracing-hardware'],
+  'raytracing-hardware': ['monte-carlo-integration', 'graphics-pipeline-journey', 'warp-divergence-occupancy'],
   'cel-shading-ramp': ['toon-outline', 'microfacet-brdf', 'rim-light-matcap'],
   'toon-outline': ['cel-shading-ramp', 'rendering-execution-model', 'graphics-pipeline-journey', 'anime-toon-face'],
   'rim-light-matcap': ['cel-shading-ramp', 'microfacet-brdf', 'anime-toon-face'],
