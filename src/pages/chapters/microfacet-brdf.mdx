@@ -203,3 +203,12 @@ $\text{color}^{1/2.2}$을 적용합니다.
   위의 $k_d$ 처리와 멀티스캐터 보정이 모두 이 원칙을 지키기 위한 장치입니다.
 
 이 세 가지를 더하면 게임 엔진·오프라인 렌더러가 쓰는 현대적 PBR에 가까워집니다.
+
+## 참고 자료
+
+- Cook & Torrance, ["A Reflectance Model for Computer Graphics", ACM TOG 1982](https://dl.acm.org/doi/10.1145/357290.357293) — 마이크로패싯 BRDF와 $D{\cdot}F{\cdot}G/4(n{\cdot}l)(n{\cdot}v)$
+- Walter et al., ["Microfacet Models for Refraction through Rough Surfaces", EGSR 2007](https://www.graphics.cornell.edu/~bjw/microfacetbsdf.pdf) — GGX(Trowbridge–Reitz) 분포
+- Brian Karis, ["Real Shading in Unreal Engine 4", SIGGRAPH 2013](https://cdn2.unrealengine.com/Resources/files/2013SiggraphPresentationsNotes-26915738.pdf) — Schlick–GGX, 직접광 $k=(\text{roughness}+1)^2/8$
+- Brent Burley, ["Physically-Based Shading at Disney", SIGGRAPH 2012](https://media.disneyanimation.com/uploads/production/publication_asset/48/asset/s2012_pbs_disney_brdf_notes_v3.pdf) — $\alpha=\text{roughness}^2$ 지각적 재매핑
+- Christophe Schlick, ["An Inexpensive BRDF Model", Eurographics 1994](https://onlinelibrary.wiley.com/doi/10.1111/1467-8659.1330233) — 프레넬 근사 $F_0+(1-F_0)(1-v{\cdot}h)^5$
+- [LearnOpenGL — PBR Theory](https://learnopengl.com/PBR/Theory) — 조립·금속성 워크플로우 정리

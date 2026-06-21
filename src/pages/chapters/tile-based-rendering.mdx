@@ -242,3 +242,11 @@ DRAM 한 바이트를 옮기는 데 약 60~150 pJ가 듭니다. 온칩 접근은
 
 모바일이 화면을 타일로 그리는 이유는 처음부터 하나였습니다 — **DRAM 대역폭과 전력.** 타일은
 그 둘을 동시에 줄이는, 모바일 GPU의 가장 근본적인 설계 결정입니다.
+
+## 참고 자료
+
+- ARM, *The Mali GPU: An Abstract Machine, Part 2 — Tile-based Rendering* — [developer.arm.com](https://developer.arm.com/community/arm-community-blogs/b/mobile-graphics-and-gaming-blog/posts/the-mali-gpu-an-abstract-machine-part-2---tile-based-rendering) (binning, parameter buffer, GMEM)
+- Imagination, *A look at the PowerVR architecture: Tile-Based Deferred Rendering* — [blog.imaginationtech.com](https://blog.imaginationtech.com/a-look-at-the-powervr-graphics-architecture-tile-based-rendering/) (TBDR·HSR)
+- ARM, *Immortalis-G925: the Fragment Prepass* — [developer.arm.com](https://developer.arm.com/community/arm-community-blogs/b/mobile-graphics-and-gaming-blog/posts/immortalis-g925-the-fragment-prepass) (모바일에서 z-prepass가 역효과인 이유)
+- Antochi et al., *Memory Bandwidth Requirements of Tile-Based Rendering*, SAMOS 2004 — [Springer](https://link.springer.com/chapter/10.1007/978-3-540-27776-7_34) (외부 대역폭 약 1.96× 절감)
+- Mark Horowitz, *Computing's Energy Problem*, ISSCC 2014 — [PDF](https://gwern.net/doc/cs/hardware/2014-horowitz-2.pdf) (DRAM vs 연산 에너지 비대칭)

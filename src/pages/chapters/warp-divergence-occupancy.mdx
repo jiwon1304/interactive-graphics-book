@@ -322,7 +322,8 @@ $$
 \text{occupancy} = \frac{\text{활성 워프 수}}{\text{SM당 최대 워프 수}}
 $$
 
-분모(최대 워프 슬롯)는 하드웨어가 고정한 값입니다(세대에 따라 SM당 48~64 워프 등). 문제는
+분모(최대 워프 슬롯)는 하드웨어가 고정한 값입니다(세대에 따라 SM당 32~64 워프 — Maxwell·
+Pascal·Volta·Ampere GA100·Hopper는 64, Ampere GA10x·Ada는 48, Turing은 32). 문제는
 **분자** — 실제로 몇 개를 걸 수 있느냐 — 이고, 이건 *여러 자원 중 가장 먼저 바닥나는 것*이
 정합니다. 그 "가장 먼저 바닥나는" 자원을 **구속 제약(binding constraint)** 이라 부릅니다.
 
@@ -382,9 +383,11 @@ SM 상한이 64 워프라면, 레지스터 때문에 occupancy는 $25/64 \approx
 레지스터를 스레드당 $R = 32$로 잘 짠 커널이 있다고 합시다. $T_{\text{max}} = 65536/32 =
 2048$ 스레드 $= 64$ 워프 — SM 상한을 꽉 채우니 occupancy 100%입니다. 그런데 코드를 살짝 고쳐
 임시 변수 몇 개가 늘어 $R = 33$이 됐다면? $65536/33 = 1986$ 스레드 $= 62$ 워프... 까진
-부드러운데, 레지스터는 흔히 **8개 단위로 반올림**되어 할당됩니다. $33 \to 40$으로 올림되면
+부드러운데, 레지스터는 낱개가 아니라 **워프 단위(256개 = 32레인 × 8)로 반올림**되어
+할당됩니다 — 스레드당으로 환산하면 사실상 **8개 단위 올림**입니다. $33 \to 40$으로 올림되면
 $65536/40 = 1638$ 스레드 $= 51$ 워프. 단 한 개의 레지스터 때문에 occupancy가 **계단처럼**
 뚝 떨어집니다. occupancy 그래프가 매끄럽지 않고 *층계 모양*인 이유가 이 양자화입니다.
+(정확한 단위는 세대마다 다릅니다 — 여기서는 도식용 대표값으로 8을 씁니다.)
 
 ## 6. 조립 — 두 동역학이 만나는 곳
 
@@ -432,3 +435,21 @@ GPU는 설계 의도대로 *처리량 괴물*이 됩니다.
 명령을 *어떻게 건네는지*는 [명령 큐 챕터](command-queues)에서, *어떻게 실행하는지*는
 [GPU 실행 모델](gpu-execution-model)에서 봤으니, 이제 그 실행이 *왜 빠르거나 느린지*까지
 손에 쥐었습니다.
+
+## 참고 자료
+
+- NVIDIA, *CUDA C++ Best Practices Guide* — Branching and Divergence(다이버전스 직렬화,
+  워프 경계 정렬, latency hiding으로 다른 워프 전환):
+  https://docs.nvidia.com/cuda/cuda-c-best-practices-guide/index.html
+- NVIDIA, *CUDA C++ Programming Guide* — SIMT / Independent Thread Scheduling(Volta ITS는
+  안전성만, 처리량 비용은 그대로): https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html
+- NVIDIA, *Nsight Compute Profiling Guide*(scoreboard producer/consumer, "long scoreboard"
+  stall, eligible warps, achieved vs theoretical occupancy):
+  https://docs.nvidia.com/nsight-compute/ProfilingGuide/index.html
+- NVIDIA, *Turing* / *Ampere Tuning Guide*(SM당 최대 워프: Turing 32, Ampere GA10x 48 등;
+  레지스터 파일 64K): https://docs.nvidia.com/cuda/turing-tuning-guide/index.html ·
+  https://docs.nvidia.com/cuda/ampere-tuning-guide/index.html
+- Vasily Volkov, *Better Performance at Lower Occupancy*(GTC 2010 — 낮은 occupancy로 더 빠른
+  커널, ILP로 지연 은닉): https://www.nvidia.com/content/gtc-2010/pdfs/2238_gtc2010.pdf
+- HLSL `[branch]`/`[flatten]`(predication 손잡이):
+  https://learn.microsoft.com/en-us/windows/win32/direct3dhlsl/dx-graphics-hlsl-if

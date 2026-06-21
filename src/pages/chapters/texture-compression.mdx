@@ -305,3 +305,12 @@ GPU-친화적으로 압축된 데이터를 *한 번 더* 일반 압축(LZ류)으
 그 워프들이 *읽는 데이터*를 어떻게 작게 가두는지였습니다. 블록 안에 갇힌 8바이트가, 한
 번의 곱셈으로 주소를 찾고, 한 번의 즉석 디코드로 16색을 풀어 줍니다 — 무작위 접근이라는
 가혹한 제약이, 거꾸로 가장 우아한 설계를 강제한 셈입니다.
+
+## 참고 자료
+
+- *Block Compression (Direct3D 11)* — [Microsoft Learn](https://learn.microsoft.com/en-us/windows/win32/direct3d11/texture-block-compression-in-direct3d-11) (BC1~BC7 비트레이아웃·모드)
+- *BC7 Format Mode Reference* — [Microsoft Learn](https://learn.microsoft.com/en-us/windows/win32/direct3d11/bc7-format-mode-reference) (8 모드·파티션)
+- Nathan Reed, *Understanding BCn Texture Compression Formats* — [reedbeta.com](https://www.reedbeta.com/blog/understanding-bcn-texture-compression-formats/)
+- fgiesen, *GPU BCn decoding* — [fgiesen.wordpress.com](https://fgiesen.wordpress.com/2021/10/04/gpu-bcn-decoding/) (하드웨어 즉석 디코드)
+- Khronos, *ASTC next-generation texture compression* — [khronos.org](https://www.khronos.org/news/press/khronos-releases-atsc-next-generation-texture-compression-specification) (128-bit 블록, 8.0~0.89 bpp)
+- *Basis Universal / KTX2* — [github.com/BinomialLLC/basis_universal](https://github.com/BinomialLLC/basis_universal) · three.js [`KTX2Loader`](https://threejs.org/docs/#examples/en/loaders/KTX2Loader)

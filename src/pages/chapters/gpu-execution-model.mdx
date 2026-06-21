@@ -81,11 +81,14 @@ $$
 \frac{\text{코어}}{\text{SM}} = 32 \times 4 = 128
 $$
 
-이제 SM 개수만 곱하면 됩니다. RTX 4090(풀칩에 가까운 AD102)은 $N_{\text{SM}} = 144$이므로,
+이제 SM 개수만 곱하면 됩니다. RTX 4090은 $N_{\text{SM}} = 128$이므로,
 
 $$
-\text{코어 수} = 128 \times 144 = 18{,}432
+\text{코어 수} = 128 \times 128 = 16{,}384
 $$
+
+(풀 AD102 다이는 144 SM이지만, RTX 4090에는 16개 SM이 비활성화되어 128 SM만 탑재됩니다 —
+그래서 18,432가 아니라 16,384입니다.)
 
 직접 만든 숫자입니다. 아래 그림이 이 곱셈을 한 줄로 보여줍니다.
 
@@ -97,9 +100,9 @@ $$
 예측기도, 비순차 실행도 없습니다. 대신 그런 제어 회로 하나를 **32개 레인이 공유**합니다 —
 명령을 한 번 가져와 32명에게 나눠 주니, 제어 회로의 비용이 32분의 1로 줄어듭니다.
 
-> **여기서 가장 헷갈리는 지점.** "코어가 18,432개면 18,432개의 다른 일을 동시에 할 수
+> **여기서 가장 헷갈리는 지점.** "코어가 16,384개면 16,384개의 다른 일을 동시에 할 수
 > 있겠네?" — *아니요.* 32개 레인이 제어 회로를 공유한다는 말은, 그 32개가 **같은 명령에
-> 묶여** 있다는 뜻입니다. 18,432개의 자유로운 코어가 아니라, $18{,}432 / 32 = 576$개의
+> 묶여** 있다는 뜻입니다. 16,384개의 자유로운 코어가 아니라, $16{,}384 / 32 = 512$개의
 > "분대"가 각자 *하나의* 명령 스트림을 따라 행진하는 것에 가깝습니다. 그 분대가 바로
 > 워프입니다.
 
@@ -319,3 +322,20 @@ Volta(2017) 세대부터 NVIDIA는 **독립 스레드 스케줄링(Independent T
 [명령 큐 챕터](command-queues)가 "CPU가 GPU에 일을 *어떻게 건네는가*"였다면, 이 챕터는
 "건네받은 일을 GPU가 *어떻게 실행하는가*"였습니다. 다음은 이 워프들이 실제 픽셀을
 만들어 내는 과정 — 래스터화와 셰이딩 — 위에 이 실행 모델을 올리는 일입니다.
+
+## 참고 자료
+
+- NVIDIA, *CUDA C++ Programming Guide* — SIMT Architecture(워프=32, "executes one common
+  instruction at a time", 다이버전스, Independent Thread Scheduling):
+  https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html
+- NVIDIA, *Ampere GA102 GPU Architecture Whitepaper*(SM당 128 CUDA 코어 = 4 파티션 × 32 FP32,
+  Turing 64 → Ampere 128 FP32 데이터패스 변경):
+  https://www.nvidia.com/content/PDF/nvidia-ampere-ga-102-gpu-architecture-whitepaper-v2.1.pdf
+- NVIDIA, *Ada GPU Architecture Whitepaper*(풀 AD102 = 144 SM; RTX 4090은 128 SM 활성):
+  https://images.nvidia.com/aem-dam/Solutions/geforce/ada/nvidia-ada-gpu-architecture.pdf
+- AMD, *RDNA Architecture Whitepaper*(wave32/wave64 웨이브프론트):
+  https://gpuopen.com/download/RDNA_Architecture_public.pdf
+- Lindholm et al., *NVIDIA Tesla: A Unified Graphics and Computing Architecture*(IEEE Micro
+  2008 — SIMT 개념 정의).
+- Khronos, *Vulkan Subgroup Tutorial*(warp ↔ wavefront ↔ subgroup ↔ SIMD-group ↔ wave):
+  https://www.khronos.org/assets/uploads/developers/library/2018-vulkan-devday/06-subgroups.pdf

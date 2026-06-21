@@ -341,3 +341,11 @@ early-Z·Hi-Z·프리패스로 — 모두 *셰이딩하기 전에 거르는* 같
 워프·락스텝이라는 작은 실행 단위가, 픽셀 쿼드를 거쳐 텍스처의 선명함부터 깊이 컬링의
 전략까지 — 렌더러의 거의 모든 결정에 그림자를 드리웁니다. "32"와 "2×2", 이 두 숫자를
 손에 쥐면 실시간 렌더링의 성능 모델 대부분이 읽힙니다.
+
+## 참고 자료
+
+- fgiesen, *A trip through the Graphics Pipeline 2011, Part 8 — Pixel processing* — [fgiesen.wordpress.com](https://fgiesen.wordpress.com/2011/07/10/a-trip-through-the-graphics-pipeline-2011-part-8/) (2×2 quad, helper invocation, 화면공간 미분)
+- Matt Pettineau (MJP), *To Early-Z, or Not To Early-Z* — [therealmjp.github.io](https://therealmjp.github.io/posts/to-earlyz-or-not-to-earlyz/) (early-Z·Hi-Z, discard/`SV_Depth`가 끄는 이유)
+- RasterGrid, *Hierarchical-Z map based occlusion culling* — [rastergrid.com](https://www.rastergrid.com/blog/2010/10/hierarchical-z-map-based-occlusion-culling/)
+- OpenGL 4.6 Core Profile Spec, §8.14 *Texture Minification* — [registry.khronos.org](https://registry.khronos.org/OpenGL/specs/gl/glspec46.core.pdf) (LOD $\lambda = \log_2 \rho$)
+- HLSL `ddx`/`ddx_coarse`/`ddx_fine` — [Microsoft Learn](https://learn.microsoft.com/en-us/windows/win32/direct3dhlsl/ddx)

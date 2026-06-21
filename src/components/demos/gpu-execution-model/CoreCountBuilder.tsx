@@ -5,7 +5,7 @@ import { COLORS, roundRect, withAlpha, monoFont, centerText } from './gem2d';
 // 정적 도식: 마케팅 "코어 수"가 어디서 나오는가.
 //
 //   레인/파티션 × 파티션/SM × SM/카드 = 카드의 FP32 코어 수
-//   32 × 4 × 144 = 18,432   (RTX 4090 급 대표값)
+//   32 × 4 × 128 = 16,384   (RTX 4090)
 //
 // 캔버스엔 세 인자 박스와 결과만. 곱셈 기호와 등호로 잇는다.
 // 설명/유도는 figcaption + 본문 KaTeX.
@@ -13,11 +13,11 @@ import { COLORS, roundRect, withAlpha, monoFont, centerText } from './gem2d';
 
 const CANVAS_H = 230;
 
-// 대표값(RTX 4090 / AD102 풀칩에 가까운 라운드 값)
+// RTX 4090 실측값(AD102 풀칩은 144 SM이나 4090은 16 SM 비활성 → 128 SM)
 const LANES_PER_PART = 32; // FP32 레인 / 파티션
 const PARTS_PER_SM = 4; // 파티션 / SM  → SM당 128 FP32
-const SMS = 144; // SM / 카드
-const TOTAL = LANES_PER_PART * PARTS_PER_SM * SMS; // 18,432
+const SMS = 128; // SM / 카드
+const TOTAL = LANES_PER_PART * PARTS_PER_SM * SMS; // 16,384
 
 export default function CoreCountBuilder() {
   const draw = (d: DrawCtx): void => {
@@ -83,7 +83,7 @@ export default function CoreCountBuilder() {
     drawFactor(x, factors[2].big, factors[2].small, factors[2].color);
     x += boxW;
 
-    // 결과 줄: =  18,432  CUDA 코어
+    // 결과 줄: =  16,384  CUDA 코어
     const resY = cy + boxH + 34;
     const resText = TOTAL.toLocaleString('en-US');
     ctx.font = monoFont(34);
@@ -130,10 +130,10 @@ export default function CoreCountBuilder() {
       <figcaption>
         스펙시트의 거대한 “코어 수”는 마법의 숫자가 아니라 <strong>곱셈 한 줄</strong>입니다. 파티션
         하나에 FP32 레인 <strong>32</strong>개, SM 하나에 파티션 <strong>4</strong>개(= SM당 128
-        코어), 카드 하나에 SM <strong>144</strong>개 — 셋을 곱하면{' '}
-        <strong>{TOTAL.toLocaleString('en-US')}</strong>개의 FP32 코어가 됩니다(RTX 4090 급 대표값).
-        “1만 8천 코어”라는 말에 압도되지 마세요. 그건 동시에 <em>독립적으로</em> 다른 일을 하는 1만
-        8천 개의 똑똑한 코어가 아니라, <em>32개씩 묶여 똑같은 명령을 강제로 함께 실행하는</em> 산술
+        코어), 카드 하나에 SM <strong>128</strong>개 — 셋을 곱하면{' '}
+        <strong>{TOTAL.toLocaleString('en-US')}</strong>개의 FP32 코어가 됩니다(RTX 4090).
+        “1만 6천 코어”라는 말에 압도되지 마세요. 그건 동시에 <em>독립적으로</em> 다른 일을 하는 1만
+        6천 개의 똑똑한 코어가 아니라, <em>32개씩 묶여 똑같은 명령을 강제로 함께 실행하는</em> 산술
         레인의 총합입니다. 왜 하필 32개씩 묶이는지 — 그게 다음 그림의 <strong>워프</strong>입니다.
       </figcaption>
     </figure>
