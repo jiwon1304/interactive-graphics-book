@@ -1,0 +1,139 @@
+---
+layout: ../../layouts/ChapterLayout.astro
+title: "림 라이트와 매트캡"
+description: 프레넬 림으로 윤곽을 빛으로 분리하고, 조명 계산 없는 matcap으로 재질을 한 번에 — NPR의 base와 accent 레이어링을 직접 만지며
+---
+
+import RimLight from '../../components/demos/rim-light-matcap/RimLight.tsx';
+import Matcap from '../../components/demos/rim-light-matcap/Matcap.tsx';
+import MatcapRimToon from '../../components/demos/rim-light-matcap/MatcapRimToon.tsx';
+
+# 림 라이트와 매트캡
+
+앞의 셀 셰이딩·윤곽선 챕터가 "면을 어떻게 끊고, 가장자리에 어떻게 선을 긋는가"였다면, 이 챕터는
+캐릭터 셰이딩에서 거의 항상 함께 쓰이는 두 가지 도구를 다룹니다. 하나는 윤곽을 **선이 아니라
+빛으로** 분리하는 **림 라이트(rim light)**, 다른 하나는 조명 계산 없이 재질의 전체 인상을 한 번에
+주는 **매트캡(matcap)**입니다. 둘 다 물리적으로 엄밀하지 않은 NPR 트릭이지만, "base 레이어 +
+accent 레이어"라는 같은 사고방식 위에 있습니다.
+
+## 1. 림 라이트 — 프레넬로 윤곽을 빛내기
+
+캐릭터가 배경에 묻히지 않게 하는 고전 기법이 **백라이트(역광)**입니다. 피사체 뒤에서 빛을 비추면
+실루엣을 따라 가느다란 빛 테두리가 생기죠. 실시간에서 이 테두리를 광원 없이 흉내 내는 표준
+방법이 **프레넬 항**입니다.
+
+프레넬(Fresnel) 효과는 원래 "표면을 스치는 각도로 볼수록 반사가 강해진다"는 물리 현상입니다.
+정면으로 보는 면은 덜 반사하고, 거의 옆에서 스치듯 보는 면(=시선과 표면이 평행에 가까운 곳)은
+강하게 반사합니다. 곡면에서 "거의 옆에서 스치듯 보이는 곳"은 정확히 **실루엣 가장자리**입니다.
+그래서 프레넬 항은 자연스럽게 윤곽을 강조합니다.
+
+물리 기반 프레넬은 Schlick 근사 $F = F_0 + (1-F_0)(1 - n\cdot v)^5$로 쓰지만, NPR에서는 핵심인
+$(1 - n\cdot v)$만 떼어 지수를 자유 손잡이로 둡니다.
+
+$$
+\text{rim} = \big(1 - \max(0,\,\mathbf{n}\cdot\mathbf{v})\big)^{p}
+$$
+
+$\mathbf{n}$은 표면 법선, $\mathbf{v}$는 표면에서 카메라로 향하는 단위 벡터입니다. $\mathbf{n}\cdot\mathbf{v}$는
+면이 카메라를 정면으로 향하면 $1$, 실루엣에서 $0$이 됩니다. 따라서 $1 - \mathbf{n}\cdot\mathbf{v}$는
+정면에서 $0$, 가장자리에서 $1$ — 가장자리일수록 밝은 마스크입니다. 지수 $p$는 그 띠를 얼마나
+가장자리로 몰지를 정합니다. $p$가 크면 아주 얇은 테두리만, 작으면 넓게 번진 광채가 됩니다.
+
+이대로 두면 림이 실루엣 **전체**를 두릅니다. 하지만 진짜 역광은 빛을 등진 쪽에만 생기죠. 그래서
+보통 **광원 방향에 따라 림을 가립니다** — 빛을 정면으로 받는 면의 림은 죽이고, 등진 면의 림만
+남깁니다. 간단히는 $\mathbf{n}\cdot\mathbf{l}$이 작을수록(빛을 등질수록) 림을 살리는 마스크를 곱합니다.
+
+$$
+\text{rim}_{\text{lit}} = \text{rim}\cdot\operatorname{smoothstep}(0.6,\,0,\,\max(0,\mathbf{n}\cdot\mathbf{l}))
+$$
+
+아래에서 지수 $p$와 세기를 조절하고, **"프레넬 마스크 보기"**로 끊기 전의 $1 - \mathbf{n}\cdot\mathbf{v}$를
+직접 확인하세요. **"광원 의존"**을 켜고 방위각을 돌리면, 림이 빛 반대쪽에만 남아 역광처럼 보입니다.
+
+<RimLight client:visible />
+
+여기서 셀 셰이딩 챕터와의 연결이 보입니다. 림은 결국 $1 - \mathbf{n}\cdot\mathbf{v}$라는 한 스칼라를
+입력으로 받아 강조하는 함수입니다. diffuse 챕터가 $\mathbf{n}\cdot\mathbf{l}$을 ramp로 끊었듯, 림도
+$\operatorname{smoothstep}$이나 step으로 **또렷한 띠**로 굳히면 더 만화 같은 림이 됩니다.
+
+## 2. 매트캡 — 조명을 텍스처로 굽기
+
+림이 "조명 의존 accent"라면, 매트캡은 정반대 극단입니다 — **조명 계산을 아예 하지 않습니다.**
+
+matcap(material capture, 또는 lit sphere)의 아이디어는 단순합니다. 어떤 재질로 칠한 **구를 정면에서
+찍은 사진** 한 장을 준비해 둡니다. 이 사진에는 그 재질이 빛을 받는 방식 — 하이라이트, 음영,
+가장자리 반사 — 이 전부 담겨 있습니다. 렌더링할 때는 픽셀마다 표면 법선을 보고, **그 법선과 같은
+방향을 향하는 구 위의 점**을 사진에서 찾아 색을 그대로 가져옵니다.
+
+"같은 방향을 향하는 점"을 찾는 매핑이 놀랍도록 간단합니다. 구를 정면에서 보면, 카메라(뷰) 공간에서
+구 표면의 한 점의 법선은 그 점의 화면 위치와 정확히 대응합니다. 정면 중앙은 법선 $(0,0,1)$이고
+사진의 한가운데, 오른쪽 가장자리는 법선 $(1,0,0)$이고 사진의 오른쪽 끝입니다. 그래서 매핑은
+**뷰공간 법선의 $xy$를 그대로 텍스처 좌표로** 쓰는 것입니다.
+
+$$
+\mathbf{n}_{\text{view}} = \operatorname{normalize}(\mathbf{N}_{\text{view}}), \qquad
+\text{uv} = \tfrac{1}{2}\,\mathbf{n}_{\text{view}}.xy + \tfrac{1}{2}
+$$
+
+이게 전부입니다. 라이트도, BRDF도, $\mathbf{n}\cdot\mathbf{l}$도 없습니다. 법선 하나로 텍스처를 한 번
+읽으면 끝입니다. 그래서 매트캡은 **극도로 싸고**, ZBrush 뷰포트나 모바일·웹 데모, 그리고 스타일이
+명확히 정해진 NPR 캐릭터에서 즐겨 쓰입니다. 아티스트가 매트캡 한 장만 그려 주면 라이팅 모델
+전체가 정해지는 셈입니다.
+
+아래 매트캡들은 외부 이미지가 아니라 **코드로 구운 것**입니다(각 픽셀을 구 법선으로 보고 간단한
+라이팅을 칠함). 종류를 바꿔 같은 도형이 무광·금속·toon으로 변하는 것을 보고, **"법선 → UV 매핑
+보기"**로 화면을 향한 법선의 $xy$가 그대로 좌표가 됨을 확인하세요.
+
+<Matcap client:visible />
+
+매트캡의 결정적 한계도 데모에서 드러납니다: 매핑이 **뷰공간** 법선 기준이라, 카메라를 돌리면
+하이라이트가 물체에 "박혀서" 같이 돕니다. 즉 **빛이 카메라에 묶여** 있습니다. 월드의 광원이
+고정돼야 하는 장면(캐릭터가 움직이며 그림자가 도는 장면)에는 그대로 쓰기 어렵고, 그래서 보통
+매트캡은 "재질의 base 인상"으로 깔고, 광원에 반응하는 항(diffuse 밴드, 림)을 따로 얹습니다.
+
+> **두 독자를 위한 메모.** 매트캡은 정보를 잃습니다 — 같은 법선이면 위치가 어디든 같은 색이라,
+> 셀프 섀도나 위치에 따른 변화를 표현 못 합니다. 또 사진이 정면 구 한 장이라 **뒤를 향한
+> 법선**($z<0$)의 정보가 없어, 실루엣 너머 정보는 가장자리 값으로 뭉갭니다. 고급 변형으로는
+> 매트캡을 여러 장 두고 섞거나(거칠기·재질별), diffuse는 ramp로 따로 계산하고 스페큘러·반사만
+> 매트캡에서 가져오는 식의 분리가 있습니다.
+
+## 3. 레이어링 — base + accent
+
+NPR 캐릭터 셰이딩의 실전은 대개 **여러 항의 합**입니다. 이 챕터의 두 도구를 합치면 그 골격이
+보입니다: 조명과 무관한 **base**(매트캡) 위에, 조명에 반응하는 **accent**(림)를 더하는 것입니다.
+
+$$
+\mathbf{c} = \underbrace{\text{matcap}(\text{uv})\cdot\text{tint}}_{\text{base (뷰공간, 조명 무관)}}
+\;+\;
+\underbrace{\mathbf{c}_{\text{rim}}\cdot\text{rim}_{\text{lit}}}_{\text{accent (월드, 조명 의존)}}
+$$
+
+아래에서 matcap base를 고르고 그 위에 역광 림을 얹어 보세요. 방위각을 돌리면 **재질감(base)은
+고정된 채 가장자리 빛(accent)만 이동**합니다 — base와 accent의 좌표계가 다르기 때문입니다.
+
+<MatcapRimToon client:visible />
+
+실제 프로덕션 셰이더는 여기에 셀 셰이딩 챕터의 **ramp diffuse**, 윤곽선 챕터의 **아웃라인**,
+다음 챕터의 **얼굴 전용 그림자**까지 층층이 쌓습니다. 각 층은 이 챕터들에서 본 단순한 항 하나씩이고,
+캐릭터의 룩은 그 합으로 만들어집니다.
+
+## 더 나아가기
+
+- **프레넬 색 분리**: 림 색을 단색 대신 광원색(따뜻)과 환경색(차가움)으로 나눠, 보는 각도에 따라
+  색이 변하는 iridescence 느낌을 줄 수 있습니다.
+- **깊이 인식 림**: 화면공간에서 깊이 차가 큰 곳(실루엣)에만 림을 그리면, 프레넬만으로는 새는
+  얇은 면·평면에서도 깔끔한 테두리를 얻습니다(윤곽선 챕터의 깊이 에지와 같은 발상).
+- **매트캡 + 노멀맵**: 매트캡은 법선만 입력이므로, 노멀맵으로 법선을 흔들면 디테일이 그대로
+  반영됩니다 — 싼 비용으로 풍부한 표면.
+- **반구 매트캡 / 듀얼 매트캡**: 뒤를 향한 법선 정보를 담으려는 변형들.
+
+## 참고 자료
+
+- Christophe Schlick, "An Inexpensive BRDF Model for Physically-based Rendering"
+  (Eurographics 1994) — 프레넬의 $(1-\cos\theta)^5$ 근사(림 항의 뿌리).
+- "Spherical Environment Mapping" / lit-sphere(matcap) — Sloan, Martin, Gooch, Gooch,
+  "The Lit Sphere: A Model for Capturing NPR Shading from Art" (Graphics Interface 2001).
+- three.js [`MeshMatcapMaterial`](https://threejs.org/docs/#api/en/materials/MeshMatcapMaterial)
+  문서 — 뷰공간 법선 $xy$로 매트캡을 인덱싱하는 표준 구현.
+- Khronos GLSL 레퍼런스: [`reflect`](https://registry.khronos.org/OpenGL-Refpages/gl4/html/reflect.xhtml),
+  [`pow`](https://registry.khronos.org/OpenGL-Refpages/gl4/html/pow.xhtml)

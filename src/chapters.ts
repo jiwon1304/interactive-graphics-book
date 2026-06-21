@@ -189,6 +189,20 @@ export const chapters: Chapter[] = [
       '실루엣을 그리는 두 방법 — 부푼 백페이스(inverted-hull)와 깊이·노멀 불연속 후처리. 화면공간 일정 두께 보정까지',
     section: '카툰 · NPR 렌더링',
   },
+  {
+    slug: 'rim-light-matcap',
+    title: '림 라이트와 매트캡',
+    description:
+      '프레넬 림으로 윤곽을 빛으로 분리하고, 조명 계산 없는 matcap으로 재질을 한 번에 — NPR의 base와 accent 레이어링',
+    section: '카툰 · NPR 렌더링',
+  },
+  {
+    slug: 'anime-toon-face',
+    title: '아니메 툰 셰이딩과 얼굴',
+    description:
+      '평면적 램프·머티리얼 존·아웃라인으로 만드는 아니메 룩과, 얼굴 SDF 그림자 맵·구면 법선·머리카락 하이라이트 등 얼굴 전용 트릭(내 모델 불러오기 포함)',
+    section: '카툰 · NPR 렌더링',
+  },
 ];
 
 /**
@@ -253,8 +267,10 @@ const RELATED: Record<string, string[]> = {
   'bezier-de-casteljau': ['transformations'],
   'microfacet-brdf': ['monte-carlo-integration', 'texture-filtering-mipmapping', 'cel-shading-ramp'],
   'monte-carlo-integration': ['microfacet-brdf'],
-  'cel-shading-ramp': ['toon-outline', 'microfacet-brdf'],
-  'toon-outline': ['cel-shading-ramp', 'rendering-execution-model', 'graphics-pipeline-journey'],
+  'cel-shading-ramp': ['toon-outline', 'microfacet-brdf', 'rim-light-matcap'],
+  'toon-outline': ['cel-shading-ramp', 'rendering-execution-model', 'graphics-pipeline-journey', 'anime-toon-face'],
+  'rim-light-matcap': ['cel-shading-ramp', 'microfacet-brdf', 'anime-toon-face'],
+  'anime-toon-face': ['cel-shading-ramp', 'toon-outline', 'rim-light-matcap'],
   'raymarching-sdf': ['noise-functions'],
   'noise-functions': ['raymarching-sdf'],
   'command-queues': ['gpu-cpu-conversation', 'dx-evolution-vulkan'],
@@ -343,8 +359,15 @@ export const READING_PATHS: ReadingPath[] = [
   {
     id: 'shading',
     title: '셰이딩 → NPR',
-    description: '물리 기반 BRDF에서 출발해 셀 셰이딩·윤곽선까지, 음영을 만드는 길.',
-    slugs: ['microfacet-brdf', 'monte-carlo-integration', 'cel-shading-ramp', 'toon-outline'],
+    description: '물리 기반 BRDF에서 출발해 셀 셰이딩·윤곽선·림/매트캡, 아니메 얼굴 셰이딩까지.',
+    slugs: [
+      'microfacet-brdf',
+      'monte-carlo-integration',
+      'cel-shading-ramp',
+      'toon-outline',
+      'rim-light-matcap',
+      'anime-toon-face',
+    ],
   },
   {
     id: 'driver',
