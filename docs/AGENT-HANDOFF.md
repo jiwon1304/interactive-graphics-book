@@ -94,7 +94,7 @@
 ## 8. 토픽 카탈로그 (집필 백로그, `docs/`)
 - `topic-catalog.md` — 그래픽스 알고리즘 133토픽
 - `topic-catalog-gpu.md` — GPU 하드웨어·저수준 113토픽 (영역 A~H)
-- `topic-catalog-toon.md` — 카툰/NPR 렌더링 82토픽 (**아직 미집필** — techartnomad 등 리서치 완료)
+- `topic-catalog-toon.md` — 카툰/NPR 렌더링 82토픽 (**1편 집필됨**: cel-shading-ramp = A절 셀/램프. 나머지 백로그)
 - `topic-catalog-hw-rendering.md` — **하드웨어↔렌더링 73토픽** (영역 A~E, 인터랙티브/정적 태그 포함) ← **현재 집필 중인 영역**
 
 ## 9. 현재 챕터 (라이브) 섹션 순서
@@ -104,16 +104,25 @@ GPU 명령 제출(command-queues) · **그래픽스 드라이버**(gpu-cpu-conve
 pipeline-state-shaders → dx-evolution-vulkan; DirectX+Vulkan 병행, 초보-드라이버 독자, 공식문서 기반 — 기존
 directx-driver-internals를 흡수·대체함) · **GPU 실행 모델**(gpu-execution-model, warp-divergence-occupancy) ·
 **GPU ↔ 렌더링**(graphics-pipeline-journey, rendering-execution-model, texture-filtering-mipmapping, texture-compression,
-tile-based-rendering, memory-bandwidth-roofline) · Unreal RHI(ue-gpu-crash-debugging)
+tile-based-rendering, memory-bandwidth-roofline) · Unreal RHI(ue-gpu-crash-debugging) ·
+**카툰 · NPR 렌더링**(cel-shading-ramp — 신규 섹션)
+
+**문서 연결:** `chapters.ts`의 `RELATED`(무방향 교차링크) → 각 챕터 하단 "관련 문서" 카드 + `/map` 지도
+페이지(section 컬럼 + 관련 간선 SVG 그래프, hover 강조). 새 챕터는 RELATED에 한두 개 교차링크를 더할 것.
+
+**출처 노트:** 이제 모든 라이브 챕터에 `docs/sources/<slug>-sources.md` + 본문 "참고 자료"가 있음.
 
 ## 10. 지금 진행 중 / 남은 일 (TODO)
 - **모바일 도식 규약(2026-06 적용):** 정적 2D 도식 캔버스엔 touch-action 설정 금지(전역 CSS가 페이지 스크롤 허용),
   드래그 위젯만 usePointerDrag가 touch-action:none 설정. 2D figure는 min-width 440 + 가로스크롤(캡션/컨트롤 sticky),
   `:has`로 3D 제외. 새 도식은 wrapText로 좁은 폭(~360–440px) 글자 겹침 방지.
-- **펜딩 시각 검증:** 드라이버 5부작 + texture-filtering/tile-based/memory-bandwidth 위젯을 브라우저(클린 프로필)
-  라이트/다크·모바일(~360px)로 확인(표 겹침·라벨 잘림·드래그). 빌드/타입 통과 ≠ 올바른 렌더.
-- **펜딩 시각 검증:** 브라우저(Chrome for Claude 클린 프로필)로 새 도식 전부 확인 — GPU 실행모델 9개 + rendering-execution 5개 + 곧 나올 것들. 라이트/다크/모바일(~360px) 글자 겹침·잘림. (확장이 자주 끊김 → 재연결 필요.)
-- **그래픽스/GPU 카탈로그 나머지**도 백로그.
+- **시각 검증 하니스(2026-06 추가):** `scripts/shoot.mjs`(페이지)·`scripts/shoot-figs.mjs`(figure 개별) +
+  `playwright-core`(devDep). 로컬 dev(`npm run dev`, base `/interactive-graphics-book/`) 띄우고
+  `SHOT_DIR=/tmp/x node scripts/shoot-figs.mjs <base-url> chapters/<slug> [light|dark] [width]`로 캡처 후 이미지를 직접 검수.
+  크롬 경로는 `PW_CHROME`로 override(클라우드 기본 `/opt/pw-browsers/...`). **client:visible는 헤드리스에서 스크롤
+  패스로 강제 발화**해야 그려짐(스크립트에 내장). 빌드/타입 통과 ≠ 올바른 렌더 — 새 도식은 이걸로 확인.
+- 드라이버 5부작·cel-shading·texture-filtering/tile-based/memory-bandwidth·/map 은 이 하니스로 라이트/다크/모바일 검증 완료.
+- **백로그:** 카툰/NPR 나머지(topic-catalog-toon) · 그래픽스/GPU 카탈로그 나머지.
 
 ## 11. 필독 문서
 - `docs/AUTHORING-GUIDE.md` — 집필 가이드(원칙·구조·도식 규약·함정·검수)
