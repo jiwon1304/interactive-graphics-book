@@ -48,7 +48,8 @@
 ## 5. 저작권 메모
 
 - 원신·엔드필드 등 캐릭터 모델은 각 게임사 저작물. 추출/커뮤니티 업로드(aplaybox 등)도 공식
-  재배포 허가가 아님 → **저장소 미포함**. 뷰어는 브라우저 로컬 전용(업로드·커밋 없음). HoYoverse 등의
+  재배포 허가가 아님 → **저장소 미포함, 공개 배포 불가.** 뷰어에는 **재배포 허용(CC0/오픈
+  라이선스) 모델만 동봉**하며 출처·라이선스는 `public/models/ATTRIBUTION.md`에 기록. HoYoverse 등의
   비상업 2차 창작 가이드라인 확인 권고.
 
 ---
@@ -56,5 +57,6 @@
 ## 데모 ↔ 사실 대응
 
 - `FaceShadowSDF`: SDF 임계 비교 vs N·L 자기그림자 대비. 필드 시각화. (miHoYo 계열 원리.)
-- `AnimeModelViewer`: toon ramp + 그림자 틴트 + 림 + inverted-hull + 구면 법선 평활화. BYO .glb(로컬).
+- `AnimeModelViewer`: toon ramp + 그림자 틴트 + 림 + inverted-hull + 구면 법선 평활화. 동봉 CC0
+  모델(없으면 양식화 프록시 폴백).
 - `HairAnisotropy`: Kajiya–Kay + 접선 shift + toon-step + angel ring.

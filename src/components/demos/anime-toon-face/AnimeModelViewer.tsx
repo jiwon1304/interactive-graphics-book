@@ -6,7 +6,30 @@ import * as THREE from 'three';
 import DemoCanvas from '../../DemoCanvas';
 import { ControlPanel, Slider, ColorControl, ToggleControl } from '../../controls';
 import { lightDirFromAngles, hexToSRGB } from '../cel-shading-ramp/shared';
-import { OUTLINE_VERT_OBJECT, OUTLINE_FRAG } from '../toon-outline/outline';
+
+// 아웃라인(법선 extrude) — VRoid 알파컷 카드를 위해 uv를 넘기고 알파 discard.
+const OUTLINE_VERT = /* glsl */ `
+  uniform float uWidth;
+  out vec2 vUv;
+  void main() {
+    vUv = uv;
+    vec3 p = position + normal * uWidth;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
+  }
+`;
+const OUTLINE_FRAG = /* glsl */ `
+  precision highp float;
+  in vec2 vUv;
+  out vec4 fragColor;
+  uniform vec3  uColor;
+  uniform sampler2D uMap;
+  uniform float uHasMap;
+  uniform float uCutout;
+  void main() {
+    if (uHasMap > 0.5 && texture(uMap, vUv).a < uCutout) discard;
+    fragColor = vec4(uColor, 1.0);
+  }
+`;
 
 // ── 애니 toon 머티리얼 ──────────────────────────────────────────────
 // 정점: 월드 법선을 모델 중심에서의 반경 방향으로 lerp(uSmooth) → "구면 법선 평활화".
@@ -36,6 +59,7 @@ const TOON_FRAG = /* glsl */ `
 
   uniform sampler2D uMap;
   uniform float uHasMap;
+  uniform float uCutout;
   uniform vec3  uColor;
   uniform vec3  uLightDir;
   uniform vec3  uShadowTint;
@@ -47,7 +71,16 @@ const TOON_FRAG = /* glsl */ `
 
   void main() {
     vec3 N = normalize(vWN);
-    vec3 base = (uHasMap > 0.5) ? texture(uMap, vUv).rgb : uColor;
+    // 이 책의 다른 toon 데모처럼 sRGB 표시색 공간에서 그대로 다룬다(커스텀 ShaderMaterial은
+    // 출력 sRGB 인코딩을 자동 적용하지 않으므로 디코드/인코드 없이 raw로 둔다).
+    vec3 base;
+    if (uHasMap > 0.5) {
+      vec4 t = texture(uMap, vUv);
+      if (t.a < uCutout) discard;              // 머리카락·속눈썹 알파컷
+      base = t.rgb;
+    } else {
+      base = uColor;
+    }
 
     float ndl = dot(N, normalize(uLightDir)) * 0.5 + 0.5; // half-Lambert
     float lit = (uSoft > 0.5)
@@ -83,6 +116,7 @@ function makeToonMaterial(map: THREE.Texture | null, color: THREE.Color, center:
     uniforms: {
       uMap: { value: map },
       uHasMap: { value: map ? 1 : 0 },
+      uCutout: { value: 0.5 },
       uColor: { value: new THREE.Vector3(color.r, color.g, color.b) },
       uLightDir: { value: new THREE.Vector3(1, 0.6, 0.6) },
       uShadowTint: { value: new THREE.Vector3(0.55, 0.5, 0.62) },
@@ -97,14 +131,17 @@ function makeToonMaterial(map: THREE.Texture | null, color: THREE.Color, center:
   });
 }
 
-function makeOutlineMaterial() {
+function makeOutlineMaterial(map: THREE.Texture | null) {
   return new THREE.ShaderMaterial({
     glslVersion: THREE.GLSL3,
-    vertexShader: OUTLINE_VERT_OBJECT,
+    vertexShader: OUTLINE_VERT,
     fragmentShader: OUTLINE_FRAG,
     uniforms: {
       uWidth: { value: 0.01 },
       uColor: { value: new THREE.Vector3(...hexToSRGB('#16121c')) },
+      uMap: { value: map },
+      uHasMap: { value: map ? 1 : 0 },
+      uCutout: { value: 0.5 },
     },
     side: THREE.BackSide,
   });
@@ -150,13 +187,16 @@ function processObject(root: THREE.Object3D): Processed {
     const src = Array.isArray(mesh.material) ? mesh.material[0] : mesh.material;
     const map = (src as THREE.MeshStandardMaterial).map ?? null;
     if (map) map.colorSpace = THREE.SRGBColorSpace;
-    const color = (src as THREE.MeshStandardMaterial).color ?? new THREE.Color(0.8, 0.8, 0.85);
+    // three.Color는 선형 저장 → sRGB 표시공간으로 변환해 맵과 같은 공간에서 다룬다.
+    const color = ((src as THREE.MeshStandardMaterial).color ?? new THREE.Color(0.8, 0.8, 0.85))
+      .clone()
+      .convertLinearToSRGB();
 
     const tm = makeToonMaterial(map, color, worldCenter);
     mesh.material = tm;
     toon.push(tm);
 
-    const om = makeOutlineMaterial();
+    const om = makeOutlineMaterial(map);
     const outlineMesh = new THREE.Mesh(geo, om);
     mesh.add(outlineMesh); // 같은 변환 공유
     outline.push(om);
@@ -165,28 +205,68 @@ function processObject(root: THREE.Object3D): Processed {
   return { group, toon, outline };
 }
 
-/** 폴백: 코·눈이 있는 간단한 머리 프록시(법선 평활화 효과가 보이도록). */
+/**
+ * 폴백: CC0 모델이 없을 때 쓰는, 코·눈·앞머리·목·어깨가 있는 양식화 아니메 두상 프록시.
+ * (법선 평활화·SDF 영역·아웃라인이 실제 캐릭터 비슷하게 보이도록 프리미티브로 조립.)
+ */
 function buildFallback(): THREE.Object3D {
   const g = new THREE.Group();
   const skin = new THREE.MeshStandardMaterial({ color: new THREE.Color('#ffd9b8') });
-  const dark = new THREE.MeshStandardMaterial({ color: new THREE.Color('#3a2f45') });
+  const hair = new THREE.MeshStandardMaterial({ color: new THREE.Color('#5a4a6e') });
+  const eyeWhite = new THREE.MeshStandardMaterial({ color: new THREE.Color('#f4f2f6') });
+  const iris = new THREE.MeshStandardMaterial({ color: new THREE.Color('#3a6ea5') });
+  const dark = new THREE.MeshStandardMaterial({ color: new THREE.Color('#2a2336') });
+  const cloth = new THREE.MeshStandardMaterial({ color: new THREE.Color('#9aa7c8') });
 
-  const head = new THREE.Mesh(new THREE.SphereGeometry(1, 64, 64), skin);
-  head.scale.set(0.92, 1.08, 0.95);
+  // 머리
+  const head = new THREE.Mesh(new THREE.SphereGeometry(1, 72, 72), skin);
+  head.scale.set(0.9, 1.06, 0.94);
   g.add(head);
 
-  const nose = new THREE.Mesh(new THREE.SphereGeometry(0.16, 24, 24), skin);
-  nose.position.set(0, -0.1, 0.95);
+  // 코(작게)
+  const nose = new THREE.Mesh(new THREE.SphereGeometry(0.1, 20, 20), skin);
+  nose.position.set(0, -0.12, 0.92);
   g.add(nose);
 
+  // 큰 아니메 눈(흰자 + 홍채) + 눈썹
   for (const sx of [-1, 1]) {
-    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.13, 24, 24), dark);
-    eye.position.set(sx * 0.34, 0.12, 0.86);
-    g.add(eye);
-    const brow = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.05, 0.06), dark);
-    brow.position.set(sx * 0.34, 0.36, 0.9);
+    const white = new THREE.Mesh(new THREE.SphereGeometry(0.2, 28, 28), eyeWhite);
+    white.position.set(sx * 0.36, 0.05, 0.82);
+    white.scale.set(1, 1.25, 0.5);
+    g.add(white);
+    const ir = new THREE.Mesh(new THREE.SphereGeometry(0.12, 24, 24), iris);
+    ir.position.set(sx * 0.36, 0.02, 0.95);
+    ir.scale.set(1, 1.3, 0.5);
+    g.add(ir);
+    const brow = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.05, 0.06), dark);
+    brow.position.set(sx * 0.36, 0.34, 0.9);
+    brow.rotation.z = sx * 0.06;
     g.add(brow);
   }
+
+  // 앞머리(바깥 셸) + 뒷머리
+  const back = new THREE.Mesh(new THREE.SphereGeometry(1.04, 48, 48, 0, Math.PI * 2, 0, Math.PI * 0.62), hair);
+  back.scale.set(0.96, 1.08, 1.0);
+  back.position.y = 0.06;
+  g.add(back);
+  for (let k = -3; k <= 3; k++) {
+    const bang = new THREE.Mesh(new THREE.ConeGeometry(0.16, 0.6, 12), hair);
+    bang.position.set(k * 0.17, 0.62, 0.78);
+    bang.rotation.x = Math.PI; // 끝이 아래로
+    bang.rotation.z = k * 0.05;
+    bang.scale.set(1, 1, 0.5);
+    g.add(bang);
+  }
+
+  // 목 + 어깨(바스트)
+  const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.4, 0.5, 24), skin);
+  neck.position.y = -1.2;
+  g.add(neck);
+  const torso = new THREE.Mesh(new THREE.SphereGeometry(1, 40, 40), cloth);
+  torso.position.y = -2.0;
+  torso.scale.set(1.25, 0.8, 0.8);
+  g.add(torso);
+
   return g;
 }
 
@@ -222,8 +302,7 @@ function Model({ params, processed }: { params: SharedParams; processed: Process
  */
 export default function AnimeModelViewer() {
   const [processed, setProcessed] = useState<Processed | null>(null);
-  const [fileName, setFileName] = useState<string>('(내장 프록시 머리)');
-  const [error, setError] = useState<string>('');
+  const [source, setSource] = useState<string>('불러오는 중…');
 
   const [azimuth, setAzimuth] = useState(40);
   const [threshold, setThreshold] = useState(0.5);
@@ -254,26 +333,28 @@ export default function AnimeModelViewer() {
     setProcessed(p);
   }
 
-  // 최초 폴백 로드
+  // 동봉된 CC0 모델을 시도하고, 없거나 실패하면 양식화 프록시로 폴백.
   useEffect(() => {
-    setProcessedDisposing(processObject(buildFallback()));
+    let cancelled = false;
+    const url = `${import.meta.env.BASE_URL}models/anime-character.glb`;
+    new GLTFLoader()
+      .loadAsync(url)
+      .then((gltf) => {
+        if (cancelled) return;
+        gltf.scene.rotation.y = Math.PI; // VRM 0.x는 -Z를 향하므로 카메라쪽으로 돌림
+        setProcessedDisposing(processObject(gltf.scene));
+        setSource('동봉 CC0 모델 (VRoid, CC0)');
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setProcessedDisposing(processObject(buildFallback()));
+        setSource('양식화 프록시(폴백)');
+      });
+    return () => {
+      cancelled = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  async function onFile(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setError('');
-    try {
-      const buf = await file.arrayBuffer();
-      const loader = new GLTFLoader();
-      const gltf = await loader.parseAsync(buf, '');
-      setProcessedDisposing(processObject(gltf.scene));
-      setFileName(file.name);
-    } catch (err) {
-      setError('이 파일을 불러오지 못했습니다. 자체 포함(.glb) 모델을 권장합니다. ' + String(err));
-    }
-  }
 
   const params: SharedParams = {
     azimuth, threshold, soft, shadowTint, rimColor, rimPower, rimInt, smooth, outlineWidth,
@@ -287,25 +368,7 @@ export default function AnimeModelViewer() {
       </DemoCanvas>
 
       <ControlPanel>
-        <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '0.6rem' }}>
-          {/* 파일 입력은 프리미티브가 없어 직접 사용(브라우저 로컬 처리, 업로드 없음) */}
-          <label
-            style={{
-              fontSize: '0.85rem',
-              fontWeight: 600,
-              color: 'var(--bg)',
-              background: 'var(--accent)',
-              borderRadius: 999,
-              padding: '0.35rem 0.9rem',
-              cursor: 'pointer',
-            }}
-          >
-            .glb 모델 불러오기
-            <input type="file" accept=".glb,.gltf,model/gltf-binary" onChange={onFile} style={{ display: 'none' }} />
-          </label>
-          <span style={{ color: 'var(--muted)', fontSize: '0.82rem' }}>{fileName}</span>
-        </div>
-        {error && <p style={{ color: '#c0392b', fontSize: '0.82rem', margin: 0 }}>{error}</p>}
+        <div style={{ color: 'var(--muted)', fontSize: '0.82rem' }}>모델: {source}</div>
 
         <Slider label="광원 방위각" value={azimuth} min={0} max={360} step={1} onChange={setAzimuth} unit="°" />
         <Slider label="그림자 경계(threshold)" value={threshold} min={0.1} max={0.9} step={0.01} onChange={setThreshold} format={(v) => v.toFixed(2)} />
@@ -319,11 +382,11 @@ export default function AnimeModelViewer() {
       </ControlPanel>
 
       <figcaption>
-        <strong>직접 해보세요:</strong> 기본은 내장 머리 프록시입니다. <strong>"구면 법선 평활화"</strong>를
-        올려 보세요 — 코·눈두덩의 울퉁불퉁한 그림자가, 법선을 머리 중심의 구면 방향으로 끌어당길수록
-        매끈한 한 덩어리로 정리됩니다(애니 얼굴 셰이딩의 핵심 트릭). 합법적으로 보유한 .glb 캐릭터
-        모델이 있다면 "불러오기"로 올려 같은 파이프라인을 적용해 보세요 — 파일은 브라우저 안에서만
-        처리되며 어디에도 전송·저장되지 않습니다.
+        <strong>직접 해보세요:</strong> 동봉된 CC0 캐릭터(없으면 양식화 프록시)에 이 책의 toon
+        파이프라인 — 평면 ramp + 그림자 틴트 + 림 + inverted-hull 아웃라인 — 이 적용돼 있습니다.
+        <strong>"구면 법선 평활화"</strong>를 올려 보세요: 코·눈두덩의 울퉁불퉁한 그림자가, 법선을
+        모델 중심의 구면 방향으로 끌어당길수록 매끈한 한 덩어리로 정리됩니다(애니 얼굴 셰이딩의 핵심
+        트릭). 광원 방위각·그림자 경계·아웃라인 두께도 함께 만져 보세요.
       </figcaption>
     </figure>
   );
