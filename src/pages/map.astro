@@ -1,0 +1,261 @@
+---
+import ChapterLayout from '../layouts/ChapterLayout.astro';
+import { chaptersBySection, getRelationEdges, chapterHref } from '../chapters';
+
+// 라이브 챕터만, section별 컬럼으로 배치
+const groups = chaptersBySection()
+  .map((g) => ({ section: g.section, items: g.items.filter((c) => !c.draft) }))
+  .filter((g) => g.items.length > 0);
+
+const W = 168;
+const H = 60;
+const COLGAP = 56;
+const ROWGAP = 18;
+const PAD = 24;
+const HEADER_Y = 64;
+const COLPITCH = W + COLGAP;
+
+interface MapNode {
+  slug: string;
+  lines: string[];
+  x: number;
+  y: number;
+  col: number;
+  cx: number;
+  cy: number;
+  leftX: number;
+  rightX: number;
+}
+
+// 한글 기준 대략 maxChars로 줄바꿈(최대 maxLines줄, 넘치면 … 처리)
+function wrap(text: string, maxChars: number, maxLines: number): string[] {
+  const words = text.split(/\s+/);
+  const lines: string[] = [];
+  let cur = '';
+  for (const w of words) {
+    if (cur && (cur + ' ' + w).length > maxChars) {
+      lines.push(cur);
+      cur = w;
+    } else {
+      cur = cur ? cur + ' ' + w : w;
+    }
+  }
+  if (cur) lines.push(cur);
+  if (lines.length > maxLines) {
+    lines.length = maxLines;
+    const last = lines[maxLines - 1];
+    lines[maxLines - 1] = last.slice(0, Math.max(0, maxChars - 1)) + '…';
+  }
+  return lines;
+}
+
+const nodes: MapNode[] = [];
+const pos = new Map<string, MapNode>();
+const headers: { lines: string[]; x: number }[] = [];
+let maxRows = 0;
+
+groups.forEach((g, col) => {
+  maxRows = Math.max(maxRows, g.items.length);
+  headers.push({ lines: wrap(g.section || '기타', 12, 2), x: PAD + col * COLPITCH });
+  g.items.forEach((c, row) => {
+    const x = PAD + col * COLPITCH;
+    const y = HEADER_Y + row * (H + ROWGAP);
+    const n: MapNode = {
+      slug: c.slug,
+      lines: wrap(c.title, 14, 3),
+      x,
+      y,
+      col,
+      cx: x + W / 2,
+      cy: y + H / 2,
+      leftX: x,
+      rightX: x + W,
+    };
+    nodes.push(n);
+    pos.set(c.slug, n);
+  });
+});
+
+const width = PAD * 2 + groups.length * W + Math.max(0, groups.length - 1) * COLGAP;
+const height = HEADER_Y + maxRows * (H + ROWGAP) - ROWGAP + PAD;
+
+const edges = getRelationEdges()
+  .map(({ a, b }) => ({ na: pos.get(a), nb: pos.get(b) }))
+  .filter((e): e is { na: MapNode; nb: MapNode } => !!e.na && !!e.nb)
+  .map(({ na, nb }) => {
+    let path: string;
+    if (na.col === nb.col) {
+      const x = na.rightX;
+      const cxp = x + 40;
+      path = `M ${x} ${na.cy} C ${cxp} ${na.cy}, ${cxp} ${nb.cy}, ${x} ${nb.cy}`;
+    } else {
+      const [l, r] = na.col < nb.col ? [na, nb] : [nb, na];
+      const mid = (l.rightX + r.leftX) / 2;
+      path = `M ${l.rightX} ${l.cy} C ${mid} ${l.cy}, ${mid} ${r.cy}, ${r.leftX} ${r.cy}`;
+    }
+    return { a: na.slug, b: nb.slug, path };
+  });
+---
+
+<ChapterLayout
+  title="지도 — 인터랙티브 컴퓨터 그래픽스"
+  description="챕터들이 어떻게 이어지는지 한눈에 보는 지식 그래프"
+>
+  <h1>지도</h1>
+  <p>
+    챕터를 section별 열로 묶고, 개념적으로 이어지는 문서끼리 선으로 연결했습니다. 같은 열의 위→아래는
+    대체로 읽는 순서입니다. 노드에 마우스를 올리면(또는 포커스하면) 연결된 문서가 강조됩니다. 노드를
+    누르면 해당 챕터로 이동합니다. <em>(좁은 화면에서는 좌우로 스크롤하세요.)</em>
+  </p>
+
+  <div class="map-scroll">
+    <svg
+      class="map-svg"
+      viewBox={`0 0 ${width} ${height}`}
+      width={width}
+      height={height}
+      role="img"
+      aria-label="챕터 관계 그래프"
+    >
+      <g class="map-edges">
+        {edges.map((e) => (
+          <path class="map-edge" d={e.path} data-a={e.a} data-b={e.b} fill="none" />
+        ))}
+      </g>
+      <g class="map-headers">
+        {headers.map((h) =>
+          h.lines.map((ln, i) => (
+            <text class="map-header" x={h.x} y={20 + i * 16}>
+              {ln}
+            </text>
+          ))
+        )}
+      </g>
+      <g class="map-nodes">
+        {nodes.map((n) => (
+          <a href={chapterHref(n.slug)} class="map-node" data-slug={n.slug}>
+            <rect x={n.x} y={n.y} width={W} height={H} rx="9" />
+            <text
+              class="map-node-label"
+              x={n.cx}
+              y={n.cy - ((n.lines.length - 1) * 13) / 2}
+              text-anchor="middle"
+            >
+              {n.lines.map((ln, i) => (
+                <tspan x={n.cx} dy={i === 0 ? 0 : 13}>
+                  {ln}
+                </tspan>
+              ))}
+            </text>
+          </a>
+        ))}
+      </g>
+    </svg>
+  </div>
+
+  <script>
+    const svg = document.querySelector<SVGSVGElement>('.map-svg');
+    if (svg) {
+      const edges = Array.from(svg.querySelectorAll<SVGPathElement>('.map-edge'));
+      const nodes = Array.from(svg.querySelectorAll<SVGAElement>('.map-node'));
+
+      // slug → 이웃 slug 집합
+      const neighbors = new Map<string, Set<string>>();
+      for (const e of edges) {
+        const a = e.dataset.a!;
+        const b = e.dataset.b!;
+        (neighbors.get(a) ?? neighbors.set(a, new Set()).get(a)!).add(b);
+        (neighbors.get(b) ?? neighbors.set(b, new Set()).get(b)!).add(a);
+      }
+
+      function activate(slug: string) {
+        const near = neighbors.get(slug) ?? new Set<string>();
+        svg!.classList.add('has-active');
+        for (const n of nodes) {
+          const s = n.dataset.slug!;
+          n.classList.toggle('hot', s === slug || near.has(s));
+        }
+        for (const e of edges) {
+          e.classList.toggle('hot', e.dataset.a === slug || e.dataset.b === slug);
+        }
+      }
+      function clear() {
+        svg!.classList.remove('has-active');
+        for (const n of nodes) n.classList.remove('hot');
+        for (const e of edges) e.classList.remove('hot');
+      }
+
+      for (const n of nodes) {
+        const slug = n.dataset.slug!;
+        n.addEventListener('mouseenter', () => activate(slug));
+        n.addEventListener('mouseleave', clear);
+        n.addEventListener('focus', () => activate(slug));
+        n.addEventListener('blur', clear);
+      }
+    }
+  </script>
+
+  <style>
+    .map-scroll {
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+      margin: 1.5rem 0 1rem;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: var(--surface);
+      padding: 0.5rem;
+    }
+    .map-svg {
+      display: block;
+      height: auto;
+    }
+    .map-header {
+      fill: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .map-edge {
+      stroke: var(--border);
+      stroke-width: 1.6;
+      transition: stroke 0.12s, stroke-width 0.12s, opacity 0.12s;
+    }
+    .map-node rect {
+      fill: var(--bg);
+      stroke: var(--border);
+      stroke-width: 1.4;
+      transition: stroke 0.12s, fill 0.12s;
+    }
+    .map-node-label {
+      fill: var(--text);
+      font-size: 11px;
+      font-weight: 600;
+      dominant-baseline: middle;
+    }
+    .map-node:hover rect,
+    .map-node:focus rect {
+      stroke: var(--accent);
+    }
+    .map-node:hover,
+    .map-node:focus {
+      text-decoration: none;
+    }
+    /* 한 노드 활성 시: 관련 없는 노드/엣지는 흐리게 */
+    .map-svg.has-active .map-edge {
+      opacity: 0.15;
+    }
+    .map-svg.has-active .map-edge.hot {
+      opacity: 1;
+      stroke: var(--accent);
+      stroke-width: 2.4;
+    }
+    .map-svg.has-active .map-node:not(.hot) rect {
+      opacity: 0.32;
+    }
+    .map-svg.has-active .map-node:not(.hot) .map-node-label {
+      opacity: 0.32;
+    }
+    .map-svg.has-active .map-node.hot rect {
+      stroke: var(--accent);
+    }
+  </style>
+</ChapterLayout>

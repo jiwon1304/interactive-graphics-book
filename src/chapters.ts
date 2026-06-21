@@ -174,6 +174,14 @@ export const chapters: Chapter[] = [
     description: 'RHI breadcrumbs·새 제출 파이프라인·Stat GPU·Unreal Insights·TDR/page fault·크래시 리포트 자동화',
     section: 'Unreal RHI',
   },
+  // ── 카툰 · NPR 렌더링 ──
+  {
+    slug: 'cel-shading-ramp',
+    title: '셀 셰이딩과 램프 라이팅',
+    description:
+      '연속 diffuse를 step·quantize·편집 가능한 1D ramp로 끊고 half-Lambert·warm–cool·fwidth로 다듬기',
+    section: '카툰 · NPR 렌더링',
+  },
 ];
 
 /**
@@ -225,4 +233,100 @@ export function chaptersBySection(): { section: string; items: Chapter[] }[] {
 export function slugFromPathname(pathname: string): string | undefined {
   const m = pathname.match(/\/chapters\/([^/]+)\/?$/);
   return m ? m[1] : undefined;
+}
+
+/**
+ * 챕터 간 "관련 문서" 링크(지식 그래프의 간선).
+ * 한쪽에만 적어도 **양방향(undirected)**으로 취급됩니다(getRelated가 역방향도 모음).
+ * 같은 section의 순서(이전/다음)는 자동이므로, 여기엔 주로 **개념적으로 이어지는 교차 링크**를 둡니다.
+ */
+const RELATED: Record<string, string[]> = {
+  transformations: ['quaternions', 'bezier-de-casteljau'],
+  quaternions: ['transformations'],
+  'bezier-de-casteljau': ['transformations'],
+  'microfacet-brdf': ['monte-carlo-integration', 'texture-filtering-mipmapping', 'cel-shading-ramp'],
+  'monte-carlo-integration': ['microfacet-brdf'],
+  'raymarching-sdf': ['noise-functions'],
+  'noise-functions': ['raymarching-sdf'],
+  'command-queues': ['gpu-cpu-conversation', 'dx-evolution-vulkan'],
+  'gpu-cpu-conversation': ['command-queues', 'wddm-graphics-stack', 'draw-call-journey'],
+  'wddm-graphics-stack': ['gpu-cpu-conversation', 'draw-call-journey'],
+  'draw-call-journey': [
+    'wddm-graphics-stack',
+    'pipeline-state-shaders',
+    'dx-evolution-vulkan',
+    'graphics-pipeline-journey',
+  ],
+  'pipeline-state-shaders': ['draw-call-journey', 'dx-evolution-vulkan'],
+  'dx-evolution-vulkan': [
+    'pipeline-state-shaders',
+    'draw-call-journey',
+    'command-queues',
+    'ue-gpu-crash-debugging',
+  ],
+  'gpu-execution-model': ['warp-divergence-occupancy', 'rendering-execution-model', 'memory-bandwidth-roofline'],
+  'warp-divergence-occupancy': ['gpu-execution-model', 'rendering-execution-model'],
+  'graphics-pipeline-journey': ['rendering-execution-model', 'tile-based-rendering', 'draw-call-journey'],
+  'rendering-execution-model': [
+    'gpu-execution-model',
+    'graphics-pipeline-journey',
+    'texture-filtering-mipmapping',
+    'warp-divergence-occupancy',
+  ],
+  'texture-filtering-mipmapping': [
+    'rendering-execution-model',
+    'texture-compression',
+    'memory-bandwidth-roofline',
+    'microfacet-brdf',
+  ],
+  'texture-compression': ['texture-filtering-mipmapping', 'memory-bandwidth-roofline'],
+  'tile-based-rendering': ['graphics-pipeline-journey', 'memory-bandwidth-roofline', 'rendering-execution-model'],
+  'memory-bandwidth-roofline': ['tile-based-rendering', 'texture-compression', 'gpu-execution-model'],
+  'ue-gpu-crash-debugging': ['dx-evolution-vulkan', 'command-queues', 'draw-call-journey'],
+};
+
+/** slug → Chapter 빠른 조회(라이브 챕터만). */
+function liveBySlug(): Map<string, Chapter> {
+  const m = new Map<string, Chapter>();
+  for (const c of chapters) if (!c.draft) m.set(c.slug, c);
+  return m;
+}
+
+/**
+ * 주어진 챕터의 관련 문서를 반환합니다(양방향 union, draft·자기자신 제외, 중복 제거).
+ * 순서: RELATED에 적은 순 → 역방향에서 발견된 순.
+ */
+export function getRelated(slug: string): Chapter[] {
+  const live = liveBySlug();
+  const seen = new Set<string>([slug]);
+  const out: Chapter[] = [];
+  const push = (s: string) => {
+    if (seen.has(s)) return;
+    seen.add(s);
+    const c = live.get(s);
+    if (c) out.push(c);
+  };
+  (RELATED[slug] ?? []).forEach(push);
+  for (const [from, tos] of Object.entries(RELATED)) {
+    if (tos.includes(slug)) push(from);
+  }
+  return out;
+}
+
+/** 지도(map) 페이지용: 라이브 챕터 사이의 무방향 간선 목록(중복 제거). */
+export function getRelationEdges(): { a: string; b: string }[] {
+  const live = liveBySlug();
+  const pairs = new Set<string>();
+  const edges: { a: string; b: string }[] = [];
+  for (const [from, tos] of Object.entries(RELATED)) {
+    if (!live.has(from)) continue;
+    for (const to of tos) {
+      if (!live.has(to) || from === to) continue;
+      const key = from < to ? `${from}|${to}` : `${to}|${from}`;
+      if (pairs.has(key)) continue;
+      pairs.add(key);
+      edges.push({ a: from, b: to });
+    }
+  }
+  return edges;
 }

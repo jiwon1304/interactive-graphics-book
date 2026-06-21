@@ -18,6 +18,19 @@ const groups = chaptersBySection();
   </div>
 
   <nav class="chapter-nav">
+    <div class="nav-group">
+      <ul>
+        <li>
+          <a
+            class="nav-link"
+            href={`${homeHref()}map`}
+            aria-current={here === `${homeHref()}map`.replace(/\/$/, '') ? 'page' : undefined}
+          >
+            🗺️ 지도
+          </a>
+        </li>
+      </ul>
+    </div>
     {
       groups.map((g) => (
         <div class="nav-group">

@@ -361,6 +361,53 @@ a.nav-link:hover {
   color: var(--accent);
 }
 
+/* ---- 관련 문서 카드(챕터 하단) ---- */
+.related {
+  margin-top: 3rem;
+  padding-top: 1.4rem;
+  border-top: 1px solid var(--border);
+}
+.related-h {
+  font-size: 1.05rem;
+  margin: 0 0 0.9rem;
+}
+.related-grid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 0.7rem;
+}
+.related-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  height: 100%;
+  padding: 0.7rem 0.9rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text);
+}
+.related-card:hover {
+  text-decoration: none;
+  border-color: var(--accent);
+}
+.related-title {
+  font-weight: 600;
+  color: var(--accent);
+}
+.related-desc {
+  font-size: 0.8rem;
+  color: var(--muted);
+  line-height: 1.4;
+}
+.related-map {
+  margin: 0.9rem 0 0;
+  font-size: 0.9rem;
+}
+
 /* ---- 인터랙티브 데모 ---- */
 figure.demo {
   margin: 2rem 0;
