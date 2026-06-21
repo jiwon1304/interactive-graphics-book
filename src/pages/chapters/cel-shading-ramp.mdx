@@ -1,0 +1,288 @@
+---
+layout: ../../layouts/ChapterLayout.astro
+title: "셀 셰이딩과 램프 라이팅"
+description: 연속 diffuse를 step·quantize·편집 가능한 1D ramp로 끊고, half-Lambert·warm–cool·fwidth로 다듬는 cel shading의 과정
+---
+
+import HardStepToon from '../../components/demos/cel-shading-ramp/HardStepToon.tsx';
+import BandingToon from '../../components/demos/cel-shading-ramp/BandingToon.tsx';
+import RampEditor from '../../components/demos/cel-shading-ramp/RampEditor.tsx';
+import HalfLambertCompare from '../../components/demos/cel-shading-ramp/HalfLambertCompare.tsx';
+import WarmCoolToon from '../../components/demos/cel-shading-ramp/WarmCoolToon.tsx';
+import FwidthAA from '../../components/demos/cel-shading-ramp/FwidthAA.tsx';
+
+# 셀 셰이딩과 램프 라이팅
+
+## 연속을 불연속으로 — 왜 toon인가
+
+표준 diffuse 라이팅의 핵심은 한 줄입니다. 표면 법선 $n$과 광원 방향 $l$의 내적,
+$n\cdot l$. 이 값은 빛이 정면으로 들어오는 $1$에서 직각인 $0$까지 **연속적으로** 변하고,
+diffuse 항 $\max(0,\,n\cdot l)$은 그 연속값을 그대로 밝기로 씁니다. 구를 비추면 하이라이트에서
+terminator(명암 경계)를 지나 어둠까지 부드러운 그라디언트가 깔립니다. 이것이 사진처럼 보이는 이유입니다.
+
+cel shading(셀 셰이딩, toon shading)은 정반대를 원합니다. 손으로 그린 만화 셀처럼, 표면을
+**소수의 평평한 tone**으로 칠하고 그 사이를 또렷한 경계로 끊고 싶습니다. 1996년 Decaudin은
+3D 장면을 카툰처럼 렌더하려고 Phong 모델에서 그라디언트를 제거해 면을 소수의 색으로만 칠했고,
+2000년 Lake 등은 이를 실시간으로 만들면서 핵심 아이디어를 정식화했습니다: **연속 $n\cdot l$을
+입력으로 받아, 그것을 소수의 단계로 바꾸는 함수를 끼워 넣는다.**
+
+이 챕터는 그 "끼워 넣는 함수"를 가장 단순한 것부터 한 단계씩 빌드업합니다. step 하나로
+시작해서, 양자화로 밴드를 늘리고, 그 밴딩 규칙을 **직접 편집 가능한 1D ramp**로 일반화한 뒤,
+half-Lambert로 어두운 면을 살리고, warm–cool로 색조를 입히고, 마지막으로 fwidth로 경계의
+계단을 화면공간에서 지웁니다. 각 단계마다 식과, 그 식을 직접 만지는 데모가 따라옵니다.
+
+먼저 가장 단순한 끊기, hard step부터.
+
+## 1. Hard step — 임계 하나로 명/암 두 면
+
+연속값 $x = \operatorname{clamp}(n\cdot l,\,0,\,1)$을 두 tone으로 끊는 가장 간단한 함수는
+`step`입니다. 임계 $t$를 기준으로 아래는 $0$, 위는 $1$.
+
+$$
+\operatorname{step}(t, x) =
+\begin{cases}
+0 & x < t \\
+1 & x \ge t
+\end{cases}
+$$
+
+그러면 최종 색은 어두운 색과 밝은 색 사이를 이 0/1로 고르는 것뿐입니다.
+
+$$
+\mathbf{c} = \operatorname{mix}\big(\mathbf{c}_{\text{shadow}},\,\mathbf{c}_{\text{lit}},\,\operatorname{step}(t, x)\big)
+$$
+
+여기서 중요한 관찰: **임계 $t$를 바꾸면 명암 경계가 표면 위를 이동**합니다. $t$가 $0.5$면 빛에
+$60°$까지 기운 면까지 밝고, $t$를 올리면 빛을 거의 정면으로 받는 좁은 영역만 밝아집니다.
+경계의 위치는 곧 "$n\cdot l = t$인 점들의 집합"이고, 구에서는 그 등치선이 하나의 원입니다.
+
+아래 데모에서 임계를 움직여 경계를 옮겨 보세요. N·L 마스크를 켜면, step이 무엇을 끊고 있는지 ―
+즉 끊기 전의 연속 $n\cdot l$ ― 가 흑백 그라디언트로 보입니다.
+
+<HardStepToon client:visible />
+
+step의 한계는 분명합니다. tone이 둘뿐이라 형태 정보가 빈약합니다. 만화 셀도 보통 base·shadow·
+highlight처럼 3~4단계는 씁니다. 그러니 경계를 여러 개로 늘려야 합니다.
+
+## 2. Quantize — 밴드 수 N으로 양자화
+
+밴드를 $N$개로 늘리는 표준 방법은 **양자화(quantize)**입니다. 연속값에 $N$을 곱하고 내림(floor)하면
+$0, 1, \dots, N-1$의 정수 계단이 나오고, 다시 정규화해 $[0,1]$로 돌려놓습니다.
+
+$$
+q(x) = \frac{\big\lfloor x \cdot N \big\rfloor}{N - 1}, \qquad
+\big\lfloor x \cdot N \big\rfloor \in \{0, 1, \dots, N-1\}
+$$
+
+$\lfloor x \cdot N\rfloor$은 $x\in[0,1]$에서 $0$부터 $N-1$까지의 정수를 주고($x=1$의 경계만
+$N$이 되므로 $N-1$로 clamp), $N-1$로 나눠 최댓값이 정확히 $1$이 되게 합니다. $N=2$면 1절의
+hard step($t=0.5$)과 같고, $N$을 키울수록 계단이 촘촘해져 연속 음영에 수렴합니다.
+
+이 식의 밴드 경계는 균등합니다 — $x = \tfrac{1}{N}, \tfrac{2}{N}, \dots$ 에서 끊깁니다. 슬라이더로
+$N$을 $2$에서 $8$까지 바꾸며 구와 막대가 같은 규칙으로 계단이 되는 것을 보세요. 막대 위는 연속
+$n\cdot l$, 아래는 양자화된 결과입니다.
+
+<BandingToon client:visible />
+
+여기서 자연스러운 불만이 생깁니다. 밴드 경계가 왜 꼭 균등해야 하나요? 만화에서는 그림자 영역을
+넓게, 하이라이트를 좁게 잡고 싶을 때가 많습니다. 또 각 밴드의 색도 단순히 회색 단계가 아니라
+임의의 색이고 싶습니다. 양자화 식은 이걸 표현할 수 없습니다 — 경계 위치도, 밴드 색도 식에
+박혀 있으니까요. 필요한 건 **임의의 입력→색 매핑**, 곧 lookup table입니다.
+
+## 3. 편집 가능한 1D ramp (LUT) — 이 챕터의 핵심
+
+step도 quantize도 결국 "$x = n\cdot l$이라는 한 값을 받아 색을 내놓는 함수"입니다. 그렇다면
+그 함수를 식으로 고정하지 말고, **자유롭게 편집 가능한 1차원 함수**로 두면 어떨까요. 이것이
+Lake 등(2000)이 정식화한 **1D ramp / shade lookup**입니다: $n\cdot l$(또는 그 변형)으로
+**1D 텍스처를 인덱싱**해 음영색을 읽어 옵니다.
+
+$$
+\mathbf{c} = \operatorname{ramp}\big(x\big), \qquad x = n\cdot l \in [0,1]
+$$
+
+ramp 텍스처가 무엇이냐에 따라 같은 셰이더가 전혀 다른 룩을 냅니다. 왼쪽이 어두운 색, 오른쪽이
+밝은 색이고 그 사이가 **계단(hold)**이면 cel shading이 되고, **부드러운 보간**이면 painterly한
+연속 음영이 됩니다. step·quantize는 이 ramp의 특수한 경우일 뿐입니다 — 균등 계단 ramp가 곧
+2절의 양자화입니다.
+
+핵심은 ramp가 **데이터**라는 점입니다. 셰이더 코드를 건드리지 않고 텍스처만 칠하면 라이팅
+응답 전체가 바뀝니다. 그래서 프로덕션에서는 아티스트가 ramp 텍스처를 직접 그립니다. 아래
+데모에서 직접 해보세요 — 램프 바의 stop을 드래그해 밴드 경계를 옮기면 구가 그 자리에서 즉시
+re-band 됩니다. stop을 추가해 밴드를 늘리고, 색을 칠하고, "부드럽게"로 계단을 녹여 보세요.
+
+<RampEditor client:visible />
+
+이 위젯이 보여주는 한 가지가 이 챕터 전체의 요점입니다: **ramp가 곧 라이팅 응답입니다.**
+$n\cdot l$이라는 한 차원의 입력을 색으로 바꾸는 LUT, 그 이상도 이하도 아닙니다. 남은 절들은
+모두 "그럼 입력 $x$를 무엇으로 둘 것인가", "ramp의 축을 어떻게 다시 매핑할 것인가"의 변주입니다.
+
+> **두 독자를 위한 메모.** 구현 시 ramp는 보통 가로 $256$ 픽셀 정도의 1D 텍스처입니다.
+> 이 데모는 stop 리스트를 CPU에서 그 폭으로 구워 `DataTexture`로 올리고, 셰이더는
+> `texture(uRamp, vec2(ndl, 0.5))` 한 줄로 읽습니다. 계단을 원하면 텍스처를 계단 모양으로
+> 굽고 `NearestFilter`를, 부드러움을 원하면 보간해 굽고 `LinearFilter`를 씁니다.
+
+## 4. Half-Lambert — 어두운 면을 살리는 입력 remap
+
+지금까지 입력은 $x = \operatorname{clamp}(n\cdot l, 0, 1)$이었습니다. 그런데 $n\cdot l < 0$인
+면 — 빛을 등진 뒷면 — 은 전부 $0$으로 뭉개집니다. 그 결과 광원을 옆이나 뒤로 두면 물체의 뒷면이
+형태를 잃고 너무 평평해 보입니다. Valve는 Half-Life 2의 Source 엔진에서 이 문제를 **입력을 다시
+매핑**해 풀었습니다. 이것이 **Half-Lambert**입니다.
+
+$$
+x_{\text{half}} = \tfrac{1}{2}(n\cdot l) + \tfrac{1}{2}
+$$
+
+$n\cdot l \in [-1, 1]$을 $[0, 1]$로 선형 remap합니다. 정면($n\cdot l = 1$)은 $1$, 직각($0$)은
+$0.5$, 정반대($-1$)는 $0$. 핵심은 **뒷면도 $0$으로 죽지 않고 $0$~$0.5$ 구간에 살아남는다**는
+점입니다. 어두운 면에 음영이 남으니 형태가 보입니다. Valve의 원래 식은 여기에 **제곱**을 더 합니다.
+
+$$
+x_{\text{half}} = \Big(\tfrac{1}{2}(n\cdot l) + \tfrac{1}{2}\Big)^{2}
+$$
+
+제곱은 어두운 쪽($x_{\text{half}} < 1$)을 눌러 대비를 되살립니다 — 선형 remap만 하면 전체가
+너무 떠 보이는 것을 보정합니다. 이 식은 **물리적 근거가 없는 hack**입니다. 에너지 보존도,
+실제 산란도 아닙니다. 그저 "뒷면이 죽지 않게 입력을 늘려 펴는" 트릭이고, Source에서는 주로
+캐릭터 얼굴에 쓰여 `$phong`이 켜지면 대개 강제로 적용됩니다.
+
+여기서 ramp의 추상화가 빛을 발합니다. Half-Lambert는 **새 셰이더가 아니라 입력을 바꾸는 것**일
+뿐입니다 — 같은 ramp(또는 step/quantize)에 $x$ 대신 $x_{\text{half}}$를 넣습니다. 아래에서
+광원을 뒤로 돌린 뒤 Half-Lambert를 껐다 켜며 뒷면이 어떻게 살아나는지, 제곱이 대비를 어떻게
+되살리는지 보세요. 그래프의 파란 곡선이 적용 중인 remap입니다.
+
+<HalfLambertCompare client:visible />
+
+## 5. Warm–cool — 밝기뿐 아니라 색조로 형태 읽기
+
+지금까지 ramp의 출력은 사실상 밝기였습니다(회색 단계, 또는 한 색의 명도 변화). 하지만 형태를
+읽는 단서는 밝기만이 아닙니다. 1998년 Gooch 등은 technical illustration의 전통을 따라, **표면
+방향을 색조(hue)로도** 표현했습니다: 빛을 향한 면은 **따뜻한 색**(노랑 계열), 등진 면은
+**차가운 색**(파랑 계열)으로 칠하고, 극단의 흑/백은 윤곽선과 하이라이트용으로 남겨 둡니다.
+
+가장 단순한 형태는 두 극 사이의 보간입니다. 블렌드 인자를
+
+$$
+t = \frac{1 + (n\cdot l)}{2}
+$$
+
+로 두면 — 이건 4절의 (제곱하지 않은) Half-Lambert와 **정확히 같은 식**입니다 — 색은
+
+$$
+\mathbf{c} = t\,\mathbf{c}_{\text{warm}} + (1 - t)\,\mathbf{c}_{\text{cool}}
+$$
+
+가 됩니다. $n\cdot l = 1$이면 완전한 warm, $-1$이면 완전한 cool, 직각이면 둘의 중간입니다.
+toon에서는 이 $t$를 다시 양자화해 색조 밴드를 만듭니다.
+
+아래에서 "색조 시프트"를 껐다 켜 보세요. 끄면 같은 두 색의 휘도만 보간되어 평범한 회색조
+음영이 됩니다. 켜면 그림자가 차갑게, 하이라이트가 따뜻하게 물들어 같은 밝기 분포인데도 표면
+방향이 훨씬 또렷하게 읽힙니다. 그림자색·하이라이트색을 직접 골라 보세요.
+
+<WarmCoolToon client:visible />
+
+이 세 식 — Half-Lambert의 $\tfrac{1}{2}(n\cdot l)+\tfrac{1}{2}$, Gooch의 $\tfrac{1+(n\cdot l)}{2}$,
+그리고 ramp의 입력축 — 이 모두 같은 것을 가리킨다는 점을 눈치챘을 겁니다. $[-1,1]$의
+$n\cdot l$을 $[0,1]$의 ramp 좌표로 펴는 것. 셀 셰이딩의 거의 모든 변주는 (1) 이 입력을 어떻게
+remap하고, (2) ramp가 그 위에서 무엇을 내놓는가의 조합입니다.
+
+## 6. fwidth — 경계의 계단을 화면공간에서 지우기
+
+마지막 문제는 품질입니다. step이든 quantize든 밴드 경계는 **불연속**이라, 화면에서 들쭉날쭉한
+계단(aliasing)으로 나타납니다. 특히 곡률이 완만한 면이나 줌아웃 시 두드러집니다. 해법은 경계를
+딱 떨어지게 자르는 대신 **아주 좁은 폭에서 부드럽게** 넘기는 것입니다. `smoothstep`이 그 일을 합니다.
+
+$$
+s = \operatorname{smoothstep}(t - w,\; t + w,\; x)
+$$
+
+문제는 폭 $w$를 무엇으로 두느냐입니다. $w$를 상수로 두면(값 공간에서 고정폭), 화면에서의 경계
+두께는 **그 지점에서 $x$가 얼마나 빨리 변하느냐**에 따라 달라집니다. $n\cdot l$이 천천히 변하는
+완만한 면에서는 경계가 넓게 번지고, 빠르게 변하는 가파른 면에서는 가늘어집니다. 줌인하면 같은
+면이 화면에서 더 큰 면적을 차지하니 또 두께가 달라집니다.
+
+우리가 원하는 건 **화면공간에서 일정한 폭**(약 1픽셀)입니다. 그러려면 한 픽셀 이동당 $x$가
+얼마나 변하는지를 알아야 하는데, GPU가 정확히 그걸 줍니다 — `fwidth`입니다.
+
+$$
+\operatorname{fwidth}(x) = \left|\frac{\partial x}{\partial s_x}\right| + \left|\frac{\partial x}{\partial s_y}\right|
+$$
+
+$s_x, s_y$는 화면 픽셀 좌표입니다. GPU는 프래그먼트를 $2\times2$ quad 단위로 처리하므로, 이웃
+프래그먼트의 $x$ 차이로 화면 양방향 미분을 추정하고 그 크기의 합을 줍니다. 곧 `fwidth(x)`는
+**"한 픽셀 옮기면 $x$가 이만큼 변한다"**는 값입니다. 이걸 그대로 smoothstep의 폭으로 쓰면:
+
+$$
+w = \operatorname{fwidth}(x), \qquad s = \operatorname{smoothstep}\big(t - w,\; t + w,\; x\big)
+$$
+
+$x$가 빨리 변하는 곳에서는 $w$가 커지고 천천히 변하는 곳에서는 작아져서, **경계의 화면공간
+두께가 어디서나 약 1픽셀로 일정**해집니다. 줌인·아웃, 비스듬한 면 어디서나 계단이 사라지고
+두께가 유지됩니다.
+
+아래에서 "경계 방식"을 hard → 고정폭 → fwidth로 바꾸며, 카메라를 줌인/아웃하고 도형을 돌려
+경계 품질을 비교해 보세요.
+
+<FwidthAA client:visible />
+
+이것은 toon에 국한된 트릭이 아닙니다. `fwidth`로 화면공간 일정폭 경계를 만드는 방법은 절차적
+패턴, SDF 텍스트, 와이어프레임 등 **불연속을 anti-alias 해야 하는 모든 곳**에서 같은 형태로
+쓰입니다.
+
+## 조립 — 셀 셰이딩의 전체 그림
+
+여섯 단계를 한 줄로 다시 보면 cel shading의 구조가 드러납니다.
+
+$$
+\underbrace{n\cdot l}_{\text{(1) 입력}}
+\;\xrightarrow{\text{remap}}\;
+\underbrace{x = \tfrac{1}{2}(n\cdot l)+\tfrac{1}{2}}_{\text{(2) half-Lambert 등}}
+\;\xrightarrow{\text{LUT}}\;
+\underbrace{\operatorname{ramp}(x)}_{\text{(3) step / quantize / 편집 ramp}}
+\;\xrightarrow{\text{fwidth}}\;
+\underbrace{\text{화면공간 AA 경계}}_{\text{(4) 품질}}
+$$
+
+- **입력**: $n\cdot l$. 필요하면 half-Lambert로 $[-1,1]\to[0,1]$ remap해 뒷면을 살립니다.
+- **LUT**: 그 값으로 1D ramp를 인덱싱합니다. ramp가 step이면 명/암 둘, 균등 계단이면 양자화,
+  임의 stop이면 편집 가능한 밴딩, 부드러운 보간이면 painterly. 출력색을 warm–cool로 두면
+  밝기 대신 색조로 형태를 읽습니다.
+- **품질**: 경계의 계단은 fwidth 기반 smoothstep으로 화면공간 일정폭으로 다듬습니다.
+
+이 세 손잡이 — 입력 remap, ramp, 경계 폭 — 의 조합이 셀 셰이딩의 표현 공간 거의 전부입니다.
+
+## 더 나아가기
+
+이 챕터는 **diffuse 항을 어떻게 끊는가**에 집중했습니다. 실제 toon 파이프라인에는 여기에
+얹히는 것들이 더 있습니다.
+
+- **외곽선(outline)**: cel shading의 절반은 라인아트입니다. inverted-hull(부푼 백페이스 복제),
+  깊이·노멀 불연속 후처리(Decaudin이 1996년에 z·normal 버퍼 불연속으로 한 것이 이 계열),
+  스크린공간 일정 두께 보정 등 — 별도 챕터의 주제입니다.
+- **하드 셀 스펙큘러**: diffuse처럼 specular(예: Blinn–Phong)에도 smoothstep 임계를 걸어 둥근
+  하이라이트를 또렷한 도형으로 굳힙니다.
+- **2D ramp로 확장**: Barla 등(2006)의 **X-Toon**은 1D ramp의 둘째 축에 "tone detail"(깊이·표면
+  방향)을 추가해, 같은 룩업으로 LOD·aerial perspective·backlighting까지 표현합니다.
+- **프로덕션의 art control**: Guilty Gear Xrd(Motomura, GDC 2015)는 수학적 정확성을 일부러
+  포기하고, 그림자 영역을 텍스처로 직접 제어해(원치 않는 자기그림자 정리, 얼굴 SDF 그림자 맵 등)
+  복잡한 3D 캐릭터 위에서 일관된 셀 음영을 얻습니다. 셀 셰이딩이 물리에서 멀어지는 방향이
+  곧 아티스트에게 손잡이를 더 주는 방향이라는 점을 잘 보여줍니다.
+
+## 참고 자료
+
+- Philippe Decaudin, "Cartoon-Looking Rendering of 3D-Scenes" (INRIA RR-2919, 1996) —
+  [프로젝트 페이지](https://phildec.users.sourceforge.net/Research/Cartoon.php)
+- Adam Lake et al., "Stylized Rendering Techniques for Scalable Real-Time 3D Animation"
+  (NPAR 2000) — 1D ramp / shade lookup
+- Gary McTaggart, "Half-Life 2 / Valve Source Shading" (GDC 2004) —
+  [PDF](https://cdn.akamai.steamstatic.com/apps/valve/2004/GDC2004_Half-Life2_Shading.pdf);
+  Mitchell, McTaggart, Green, "Shading in Valve's Source Engine" (SIGGRAPH 2006 Course Ch.7) —
+  [PDF](https://advances.realtimerendering.com/s2006/Chapter7-Shading_in_Valve's_Source_Engine.pdf);
+  Valve Developer Community, [Half Lambert](https://developer.valvesoftware.com/wiki/Half_Lambert)
+- Amy Gooch et al., "A Non-Photorealistic Lighting Model For Automatic Technical Illustration"
+  (SIGGRAPH 1998) — [초록](https://users.cs.northwestern.edu/~ago820/SIG98/abstract.html)
+- Pascal Barla, Joëlle Thollot, Lee Markosian, "X-Toon: An Extended Toon Shader" (NPAR 2006) —
+  [PDF](https://inria.hal.science/inria-00362888/file/x-toon.pdf)
+- Junya C. Motomura, "GUILTY GEAR Xrd -SIGN-" (GDC 2015) —
+  [PDF](https://www.ggxrd.com/Motomura_Junya_GuiltyGearXrd.pdf)
+- Khronos GLSL 레퍼런스: [`fwidth`](https://registry.khronos.org/OpenGL-Refpages/gl4/html/fwidth.xhtml),
+  [`dFdx`](https://registry.khronos.org/OpenGL-Refpages/gl4/html/dFdx.xhtml)
