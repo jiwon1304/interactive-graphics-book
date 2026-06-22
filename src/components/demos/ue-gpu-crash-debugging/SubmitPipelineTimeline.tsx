@@ -19,7 +19,8 @@ import { UE_COLORS, roundRect, withAlpha, monoFont } from './ue2d';
 // (인터랙티브 아님 — 대표값 N=4, 폴링 지연=2로 고정).
 // ---------------------------------------------------------------------------
 
-const CANVAS_H = 340;
+const CANVAS_H = 360;
+const CANVAS_MAXW = 360; // 모바일 우선: 내부 렌더 폭 상한
 
 // 정적 비교용 대표값.
 const N_LISTS = 4; // 커맨드 리스트 수
@@ -172,7 +173,7 @@ export default function SubmitPipelineTimeline() {
       y0: number,
       makespanColor: string,
     ): number => {
-      ctx.font = monoFont(11);
+      ctx.font = monoFont(12);
       ctx.fillStyle = theme.text;
       ctx.textAlign = 'left';
       ctx.textBaseline = 'alphabetic';
@@ -189,7 +190,7 @@ export default function SubmitPipelineTimeline() {
         ctx.lineWidth = 1;
         ctx.stroke();
 
-        ctx.font = monoFont(9.5);
+        ctx.font = monoFont(11);
         ctx.fillStyle = theme.muted;
         ctx.textAlign = 'right';
         ctx.textBaseline = 'middle';
@@ -285,7 +286,13 @@ export default function SubmitPipelineTimeline() {
       <canvas
         ref={ref}
         className="demo-canvas"
-        style={{ height: CANVAS_H, display: 'block' }}
+        style={{
+          height: CANVAS_H,
+          display: 'block',
+          width: '100%',
+          maxWidth: CANVAS_MAXW,
+          minWidth: 0,
+        }}
       />
       <div
         style={{

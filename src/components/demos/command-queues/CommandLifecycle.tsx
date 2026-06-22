@@ -41,7 +41,8 @@ const GPU_HISTORY: CmdKind[] = ['Clear', 'Draw']; // 오래된→최근
 const GPU_RUNNING: CmdKind = 'Dispatch';
 const GPU_PROGRESS = 0.55;
 
-const CANVAS_H = 320;
+const CANVAS_W = 360;
+const CANVAS_H = 340;
 
 export default function CommandLifecycle() {
   const draw = (d: DrawCtx): void => {
@@ -57,14 +58,14 @@ export default function CommandLifecycle() {
     const laneW = w - laneX - padX;
 
     const lanes: Array<{ y: number; label: string }> = [
-      { y: top0, label: '① CPU: 기록(record) — 열린 커맨드 리스트' },
-      { y: top0 + laneH + laneGap, label: '② 큐(queue) 대기열 — FIFO(제출 순서)' },
+      { y: top0, label: '① CPU: 기록(record) — 열린 리스트' },
+      { y: top0 + laneH + laneGap, label: '② 큐 대기열 — FIFO(제출 순서)' },
       { y: top0 + 2 * (laneH + laneGap), label: '③ GPU: 실행(execute)' },
     ];
 
     // 레인 배경 + 라벨
     for (const lane of lanes) {
-      ctx.font = '11px ui-monospace, monospace';
+      ctx.font = '12px ui-monospace, monospace';
       ctx.fillStyle = theme.muted;
       ctx.fillText(lane.label, laneX + 2, lane.y - 6);
       roundRect(ctx, laneX, lane.y, laneW, laneH, 8);
@@ -103,7 +104,7 @@ export default function CommandLifecycle() {
         ctx.fill();
         ctx.restore();
       }
-      ctx.font = '10px ui-monospace, monospace';
+      ctx.font = '12px ui-monospace, monospace';
       ctx.fillStyle = withAlpha(theme.text, a);
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
@@ -121,9 +122,9 @@ export default function CommandLifecycle() {
         drawChip(x, cy, kind);
         x += chipW + chipGap;
       }
-      ctx.font = '9px ui-monospace, monospace';
+      ctx.font = '12px ui-monospace, monospace';
       ctx.fillStyle = theme.muted;
-      ctx.fillText('아직 GPU는 모름 — 메모리에 적는 중', x + 8, lane.y + laneH / 2 + 3);
+      ctx.fillText('아직 GPU는 모름', x + 8, lane.y + laneH / 2 + 4);
     }
 
     // (2) 큐 레인: 제출된 배치들(점선 묶음 = 한 번의 ExecuteCommandLists)
@@ -139,9 +140,9 @@ export default function CommandLifecycle() {
         ctx.lineWidth = 1;
         ctx.stroke();
         ctx.setLineDash([]);
-        ctx.font = '9px ui-monospace, monospace';
+        ctx.font = '12px ui-monospace, monospace';
         ctx.fillStyle = theme.muted;
-        ctx.fillText(`배치 #${batch.id}`, x - 4, cy - 9);
+        ctx.fillText(`배치 #${batch.id}`, x - 4, cy - 10);
         let cx = x;
         for (const kind of batch.cmds) {
           drawChip(cx, cy, kind);
@@ -149,11 +150,11 @@ export default function CommandLifecycle() {
         }
         x += groupW + 14;
       }
-      // 드레인 방향 화살표(맨 앞 #1이 먼저 꺼내짐)
-      ctx.font = '9px ui-monospace, monospace';
+      // 드레인 방향(맨 앞 #1이 먼저 꺼내짐)
+      ctx.font = '12px ui-monospace, monospace';
       ctx.fillStyle = theme.muted;
       ctx.textAlign = 'right';
-      ctx.fillText('← 먼저 꺼냄', laneX + laneW - 6, lane.y + 12);
+      ctx.fillText('← 먼저 꺼냄', laneX + laneW - 6, lane.y + laneH + 14);
       ctx.textAlign = 'start';
     }
 
@@ -167,11 +168,11 @@ export default function CommandLifecycle() {
         x += chipW + chipGap;
       }
       drawChip(x, cy, GPU_RUNNING, { progress: GPU_PROGRESS });
-      ctx.font = '9px ui-monospace, monospace';
+      ctx.font = '12px ui-monospace, monospace';
       ctx.fillStyle = QUEUE_COLORS.ok;
-      ctx.fillText('▶ 실행 중', x, cy - 6);
+      ctx.fillText('▶ 실행 중', x, cy - 8);
       ctx.fillStyle = theme.muted;
-      ctx.fillText('완료(history)', laneX + 10, cy + chipH + 13);
+      ctx.fillText('완료(history)', laneX + 10, cy + chipH + 15);
     }
 
     // 흐름 화살표: ①→②(제출), ②→③(드레인)
@@ -189,10 +190,10 @@ export default function CommandLifecycle() {
         { width: 1.4, head: 6 },
       );
       ctx.save();
-      ctx.font = '9px ui-monospace, monospace';
+      ctx.font = '12px ui-monospace, monospace';
       ctx.fillStyle = theme.muted;
       // 라벨은 출발 레인 바로 아래(갭 상단)에 둠 → 도착 레인 헤더(갭 하단)와 분리
-      ctx.fillText('제출', midX + 8, lanes[0].y + laneH + 12);
+      ctx.fillText('제출', midX + 8, lanes[0].y + laneH + 14);
       ctx.restore();
       // ② → ③
       drawArrow(
@@ -205,9 +206,9 @@ export default function CommandLifecycle() {
         { width: 1.4, head: 6 },
       );
       ctx.save();
-      ctx.font = '9px ui-monospace, monospace';
+      ctx.font = '12px ui-monospace, monospace';
       ctx.fillStyle = theme.muted;
-      ctx.fillText('드레인(나중에)', midX + 8, lanes[1].y + laneH + 12);
+      ctx.fillText('드레인(나중에)', midX + 8, lanes[1].y + laneH + 14);
       ctx.restore();
     }
   };
@@ -219,7 +220,14 @@ export default function CommandLifecycle() {
       <canvas
         ref={ref}
         className="demo-canvas"
-        style={{ height: CANVAS_H, display: 'block' }}
+        style={{
+          width: '100%',
+          maxWidth: CANVAS_W,
+          minWidth: 0,
+          height: 'auto',
+          aspectRatio: `${CANVAS_W} / ${CANVAS_H}`,
+          display: 'block',
+        }}
       />
       <figcaption>
         명령은 세 단계를 거칩니다. <strong>기록(record)</strong>은 CPU가 명령을 커맨드 리스트에

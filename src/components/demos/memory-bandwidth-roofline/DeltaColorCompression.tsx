@@ -133,7 +133,9 @@ export default function DeltaColorCompression() {
 
   return (
     <figure className="demo">
-      <canvas ref={ref} className="demo-canvas" style={{ height: 250, display: 'block' }} />
+      <div className="demo-canvas" style={{ width: '100%', maxWidth: 400, margin: '0 auto' }}>
+        <canvas ref={ref} style={{ width: '100%', height: 250, display: 'block' }} />
+      </div>
       <figcaption>
         DCC는 4×4 블록을 통째 저장하지 않고, 한{' '}
         <span style={{ color: COLORS.accent2 }}>anchor</span> 값 하나 + 나머지 15개를 anchor 대비{' '}

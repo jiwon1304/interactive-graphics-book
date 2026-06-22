@@ -113,11 +113,11 @@ export default function InsightsFenceTimeline() {
       y0: number,
       deadlock: boolean,
     ): number => {
-      ctx.font = monoFont(11);
+      ctx.font = monoFont(12);
       ctx.fillStyle = deadlock ? UE_COLORS.bad : theme.muted;
       ctx.textAlign = 'left';
       ctx.textBaseline = 'alphabetic';
-      ctx.fillText(title, plotX, y0);
+      ctx.fillText(title, padX, y0);
 
       const gfxY = y0 + 10;
       const cmpY = gfxY + laneH + laneGap;
@@ -135,7 +135,7 @@ export default function InsightsFenceTimeline() {
 
       // 레인 배경 + 라벨
       for (const lane of lanes) {
-        ctx.font = monoFont(10.5);
+        ctx.font = monoFont(11);
         ctx.fillStyle = deadlock ? UE_COLORS.bad : lane.color;
         ctx.textAlign = 'right';
         ctx.textBaseline = 'middle';
@@ -165,7 +165,7 @@ export default function InsightsFenceTimeline() {
           ctx.lineWidth = 1;
           ctx.stroke();
           ctx.setLineDash([]);
-          ctx.font = monoFont(9);
+          ctx.font = monoFont(10.5);
           ctx.fillStyle = UE_COLORS.stall;
           ctx.textAlign = 'center';
           if (sw > 26) ctx.fillText('wait', sx + sw / 2, lane.y + laneH / 2 + 3);
@@ -187,11 +187,11 @@ export default function InsightsFenceTimeline() {
           ctx.strokeStyle = fill;
           ctx.lineWidth = 1.5;
           ctx.stroke();
-          ctx.font = monoFont(10);
+          ctx.font = monoFont(11);
           ctx.fillStyle = '#fff';
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';
-          if (bw > 40) ctx.fillText(b.label, bx + bw / 2, by + bh / 2);
+          if (bw > 46) ctx.fillText(b.label, bx + bw / 2, by + bh / 2);
           ctx.textAlign = 'left';
           ctx.textBaseline = 'alphabetic';
         }
@@ -212,7 +212,7 @@ export default function InsightsFenceTimeline() {
           width: 2,
           head: 7,
         });
-        ctx.font = monoFont(9.5);
+        ctx.font = monoFont(10.5);
         ctx.fillStyle = UE_COLORS.bad;
         ctx.textAlign = 'center';
         ctx.fillText('fence #41', ax - 30, (gMid + cMid) / 2);
@@ -227,12 +227,12 @@ export default function InsightsFenceTimeline() {
         ctx.strokeStyle = UE_COLORS.bad;
         ctx.lineWidth = 1.5;
         ctx.stroke();
-        ctx.font = monoFont(10.5);
+        ctx.font = monoFont(11);
         ctx.fillStyle = UE_COLORS.bad;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillText(
-          '⛔ DEADLOCK — 두 큐가 서로의 펜스를 무한 대기 (순환 의존)',
+          '⛔ DEADLOCK — 서로의 펜스 무한 대기',
           plotX + plotW / 2,
           vy + 13,
         );
@@ -254,7 +254,7 @@ export default function InsightsFenceTimeline() {
           width: 1.5,
           head: 7,
         });
-        ctx.font = monoFont(9);
+        ctx.font = monoFont(10.5);
         ctx.fillStyle = UE_COLORS.active;
         ctx.textAlign = 'center';
         const mx = (x1 + x2) / 2;
@@ -276,7 +276,7 @@ export default function InsightsFenceTimeline() {
       ctx.moveTo(xOf(normal.makespan), ry - 4);
       ctx.lineTo(xOf(normal.makespan), ry + 4);
       ctx.stroke();
-      ctx.font = monoFont(9.5);
+      ctx.font = monoFont(10.5);
       ctx.fillStyle = UE_COLORS.ok;
       ctx.textAlign = 'left';
       ctx.fillText(`makespan ${normal.makespan.toFixed(1)} ms`, plotX + 4, ry - 5);
@@ -284,14 +284,14 @@ export default function InsightsFenceTimeline() {
     };
 
     const afterNormal = drawTimeline(
-      'Unreal Insights — 정상(비순환): compute가 graphics 펜스 대기',
+      '정상: compute가 graphics 펜스 대기',
       normal.gfx,
       normal.cmp,
       18,
       false,
     );
     drawTimeline(
-      '순환 의존(deadlock): graphics ↔ compute 서로의 펜스 대기 (발표 예시 #2)',
+      'deadlock: 서로의 펜스 무한 대기 (예시 #2)',
       dead.gfx,
       dead.cmp,
       afterNormal + 16,

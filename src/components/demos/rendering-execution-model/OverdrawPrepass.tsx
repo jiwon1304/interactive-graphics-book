@@ -150,7 +150,9 @@ export default function OverdrawPrepass() {
 
   return (
     <figure className="demo">
-      <canvas ref={ref} className="demo-canvas" style={{ height: 360, display: 'block' }} />
+      <div className="demo-canvas" style={{ width: '100%', maxWidth: 360, margin: '0 auto' }}>
+        <canvas ref={ref} style={{ width: '100%', height: 340, display: 'block' }} />
+      </div>
       <ControlPanel>
         <ToggleControl
           label="깊이 프리패스 (색 전에 깊이만)"

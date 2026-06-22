@@ -17,6 +17,7 @@ import { UE_COLORS, roundRect, withAlpha, drawArrow, monoFont } from './ue2d';
 // ---------------------------------------------------------------------------
 
 const CANVAS_H = 320;
+const CANVAS_MAXW = 360; // 모바일 우선: 내부 렌더 폭 상한
 const N_MIPS = 5; // MIP0 .. MIP4
 
 // 정적 대표값(발표 예시 #3): 메모리가 빠듯해 MIP3을 포함한 고해상도가 해제됨,
@@ -66,11 +67,11 @@ export default function PageFaultViz() {
     const padX = 16;
 
     // 제목
-    ctx.font = monoFont(11);
+    ctx.font = monoFont(13);
     ctx.fillStyle = theme.muted;
     ctx.textAlign = 'left';
     ctx.textBaseline = 'alphabetic';
-    ctx.fillText('텍스처 MIP 체인 — 레지던시 & 페이지 폴트 (발표 예시 #3)', padX, 20);
+    ctx.fillText('MIP 체인 레지던시 (예시 #3)', padX, 20);
 
     // MIP 박스들을 가로로 배치. 비용(u)은 텍스트로.
     const boxTop = 44;
@@ -127,19 +128,19 @@ export default function PageFaultViz() {
       }
 
       // 라벨
-      ctx.font = monoFont(11);
+      ctx.font = monoFont(12);
       ctx.fillStyle = isRes ? '#fff' : theme.muted;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText(`MIP${level}`, x + boxW / 2, boxTop + boxH / 2 - 7);
-      ctx.font = monoFont(9);
+      ctx.fillText(`MIP${level}`, x + boxW / 2, boxTop + boxH / 2 - 8);
+      ctx.font = monoFont(11);
       ctx.fillStyle = isRes ? withAlpha('#ffffff', 0.85) : theme.muted;
-      ctx.fillText(isRes ? '올라옴' : '해제됨', x + boxW / 2, boxTop + boxH / 2 + 9);
+      ctx.fillText(isRes ? '올라옴' : '해제됨', x + boxW / 2, boxTop + boxH / 2 + 10);
       ctx.textBaseline = 'alphabetic';
       ctx.textAlign = 'left';
 
       // 상대 비용 표시(위)
-      ctx.font = monoFont(8);
+      ctx.font = monoFont(10);
       ctx.fillStyle = theme.muted;
       ctx.textAlign = 'center';
       ctx.fillText(`${mipCost(level)}u`, x + boxW / 2, boxTop - 5);
@@ -155,11 +156,11 @@ export default function PageFaultViz() {
     ctx.strokeStyle = fault ? UE_COLORS.bad : UE_COLORS.graphics;
     ctx.lineWidth = 1.5;
     ctx.stroke();
-    ctx.font = monoFont(10);
+    ctx.font = monoFont(11);
     ctx.fillStyle = fault ? UE_COLORS.bad : UE_COLORS.graphics;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText(`셰이더: Sample(tex, MIP${REF_MIP})`, shaderX + shaderW / 2, shaderY + 15);
+    ctx.fillText(`셰이더: Sample(MIP${REF_MIP})`, shaderX + shaderW / 2, shaderY + 15);
     ctx.textAlign = 'left';
     ctx.textBaseline = 'alphabetic';
 
@@ -189,8 +190,8 @@ export default function PageFaultViz() {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     const verdict = fault
-      ? `⛔ page fault: MIP${REF_MIP}을 참조했지만 메모리 부족으로 해제됨 → 존재하지 않는 주소 접근`
-      : `✅ valid sample: MIP${REF_MIP}이 레지던트(올라옴) — 정상 접근`;
+      ? `⛔ page fault: 해제된 MIP${REF_MIP} 접근`
+      : `✅ valid: MIP${REF_MIP} 레지던트`;
     ctx.fillText(verdict, padX + (w - padX * 2) / 2, vy + 15);
     ctx.textAlign = 'left';
     ctx.textBaseline = 'alphabetic';
@@ -209,7 +210,13 @@ export default function PageFaultViz() {
       <canvas
         ref={ref}
         className="demo-canvas"
-        style={{ height: CANVAS_H, display: 'block' }}
+        style={{
+          height: CANVAS_H,
+          display: 'block',
+          width: '100%',
+          maxWidth: CANVAS_MAXW,
+          minWidth: 0,
+        }}
       />
       <div
         style={{

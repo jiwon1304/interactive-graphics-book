@@ -151,7 +151,7 @@ export default function HazardChecker() {
       roundRect(ctx, bx - 5, CARD_Y - 6, 10, CARD_H + 12, 4);
       ctx.fill();
       ctx.fillStyle = '#ffffff';
-      ctx.font = 'bold 9px ui-monospace, monospace';
+      ctx.font = 'bold 12px ui-monospace, monospace';
       ctx.save();
       ctx.translate(bx, midY);
       ctx.rotate(-Math.PI / 2);
@@ -163,42 +163,33 @@ export default function HazardChecker() {
       // src ▸ dst 스테이지/접근 + 레이아웃 전이 라벨.
       ctx.textAlign = 'center';
       ctx.textBaseline = 'alphabetic';
-      ctx.font = '9px ui-monospace, monospace';
-      const labelY = CARD_Y + CARD_H + 54;
-      ctx.fillStyle = theme.text;
-      ctx.fillText(`${SPEC.srcStage} / ${SPEC.srcAccess}`, bx, labelY);
+      ctx.font = '12px ui-monospace, monospace';
+      const labelY = CARD_Y + CARD_H + 56;
+      const cx = w / 2;
       ctx.fillStyle = theme.muted;
-      ctx.fillText('▸', bx, labelY + 12);
+      ctx.fillText('배리어 = 실행+메모리 의존 + 레이아웃 전이', cx, labelY - 16);
       ctx.fillStyle = theme.text;
-      ctx.fillText(`${SPEC.dstStage} / ${SPEC.dstAccess}`, bx, labelY + 24);
+      ctx.fillText(`src: ${SPEC.srcStage} / ${SPEC.srcAccess}`, cx, labelY + 4);
+      ctx.fillStyle = theme.text;
+      ctx.fillText(`dst: ${SPEC.dstStage} / ${SPEC.dstAccess}`, cx, labelY + 24);
       ctx.fillStyle = QUEUE_COLORS.ok;
-      ctx.fillText(`${SPEC.oldLayout} ▸ ${SPEC.newLayout}`, bx, labelY + 40);
+      ctx.fillText(`layout: ${SPEC.oldLayout} ▸ ${SPEC.newLayout}`, cx, labelY + 44);
       ctx.textAlign = 'left';
     }
 
     // 판정 알약(우상단) — 올바른 배리어이므로 ✓.
-    pill(ctx, x1 - 64, 14, '✓ 해저드 없음', QUEUE_COLORS.ok, '#ffffff', 'bold 11px ui-monospace, monospace');
+    pill(ctx, x1 - 52, 24, '✓ 해저드 없음', QUEUE_COLORS.ok, '#ffffff', 'bold 12px ui-monospace, monospace');
 
     // 실패 모드 주석(하단).
-    const noteY = CANVAS_H - 56;
-    ctx.font = '10px ui-monospace, monospace';
+    const noteY = CANVAS_H - 62;
+    ctx.font = '12px ui-monospace, monospace';
     ctx.textAlign = 'left';
+    ctx.textBaseline = 'alphabetic';
     ctx.fillStyle = QUEUE_COLORS.bad;
     ctx.fillText('빼먹으면 깨지는 두 가지:', x0, noteY);
     ctx.fillStyle = theme.muted;
-    ctx.fillText(
-      '① 배리어 자체가 없으면 → B가 A의 쓰기 전에 읽음 = RAW 해저드(깜빡임/검증 오류)',
-      x0,
-      noteY + 16,
-    );
-    ctx.fillText(
-      '② 단계·접근은 맞아도 레이아웃 전이를 빼면 → 쓰레기 샘플(두 번째 실패 모드)',
-      x0,
-      noteY + 32,
-    );
-
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'alphabetic';
+    ctx.fillText('① 배리어 없음 → RAW 해저드', x0, noteY + 18);
+    ctx.fillText('② 레이아웃 전이 누락 → 쓰레기 샘플', x0, noteY + 36);
   };
 
   const { ref } = useCanvas2d(draw, []);
@@ -208,7 +199,14 @@ export default function HazardChecker() {
       <canvas
         ref={ref}
         className="demo-canvas"
-        style={{ height: CANVAS_H, display: 'block' }}
+        style={{
+          width: '100%',
+          maxWidth: CANVAS_W,
+          minWidth: 0,
+          height: 'auto',
+          aspectRatio: `${CANVAS_W} / ${CANVAS_H}`,
+          display: 'block',
+        }}
       />
       <figcaption>
         같은 리소스에 두 연산이 잇따르면 세 가지 해저드가 생길 수 있습니다 —{' '}

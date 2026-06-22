@@ -16,6 +16,7 @@ import { UE_COLORS, roundRect, withAlpha, drawArrow, monoFont } from './ue2d';
 // ---------------------------------------------------------------------------
 
 const CANVAS_H = 340;
+const CANVAS_MAXW = 360; // 모바일 우선: 내부 렌더 폭 상한
 
 /** 결정적 FNV-1a 32비트 해시 → 짧은 hex. */
 function fnv1a(s: string): string {
@@ -56,7 +57,6 @@ function jiraPriority(count: number, minorColor: string): { label: string; color
 }
 
 const STAGES = ['수집', '해시', '조회', '카운트'] as const;
-type Stage = (typeof STAGES)[number];
 
 export default function CrashReportPipeline() {
   // 테이블: 콜스택을 해시해 dedup, 빈도순 정렬.
@@ -78,23 +78,17 @@ export default function CrashReportPipeline() {
     const padX = 14;
 
     // 제목
-    ctx.font = monoFont(11);
+    ctx.font = monoFont(13);
     ctx.fillStyle = theme.muted;
     ctx.textAlign = 'left';
     ctx.textBaseline = 'alphabetic';
-    ctx.fillText('크래시 리포트 자동화 — 수집 → 해시 → dedup → Jira', padX, 18);
+    ctx.fillText('크래시 리포트 자동화', padX, 18);
 
     // --- 파이프라인 단계(상단, 가로) ---
     const stageY = 30;
-    const stageH = 42;
+    const stageH = 40;
     const sgap = 8;
     const sW = (w - padX * 2 - sgap * (STAGES.length - 1)) / STAGES.length;
-    const stageDesc: Record<Stage, string> = {
-      수집: 'active 콜스택만',
-      해시: 'callstack→hash',
-      조회: 'dedup 테이블',
-      카운트: 'count++ / 삽입',
-    };
 
     for (let i = 0; i < STAGES.length; i++) {
       const x = padX + i * (sW + sgap);
@@ -104,14 +98,11 @@ export default function CrashReportPipeline() {
       ctx.strokeStyle = withAlpha(theme.accent, 0.7);
       ctx.lineWidth = 1.2;
       ctx.stroke();
-      ctx.font = monoFont(11);
+      ctx.font = monoFont(13);
       ctx.fillStyle = theme.text;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText(STAGES[i], x + sW / 2, stageY + stageH / 2 - 7);
-      ctx.font = monoFont(8);
-      ctx.fillStyle = theme.muted;
-      ctx.fillText(stageDesc[STAGES[i]], x + sW / 2, stageY + stageH / 2 + 8);
+      ctx.fillText(STAGES[i], x + sW / 2, stageY + stageH / 2);
       ctx.textAlign = 'left';
       ctx.textBaseline = 'alphabetic';
 
@@ -125,30 +116,27 @@ export default function CrashReportPipeline() {
     }
 
     // --- dedup 테이블(하단) ---
-    const tableY = stageY + stageH + 24;
-    const rowH = 30;
-    ctx.font = monoFont(10);
+    const tableY = stageY + stageH + 26;
+    const rowH = 32;
+    ctx.font = monoFont(11);
     ctx.fillStyle = theme.muted;
-    ctx.fillText('dedup 테이블 (hash → count → Jira 우선순위, 빈도순 정렬)', padX, tableY - 8);
+    ctx.fillText('dedup 테이블 (빈도순 정렬)', padX, tableY - 8);
 
     const colHash = padX + 6;
-    const colTop = padX + 78;
-    const colCount = w - padX - 156;
-    const colBar = w - padX - 122;
-    const barMaxW = 70;
+    const colTop = padX + 76;
+    const colCount = w - padX - 92;
 
     // 헤더
-    ctx.font = monoFont(9);
+    ctx.font = monoFont(11);
     ctx.fillStyle = theme.muted;
     ctx.fillText('hash', colHash, tableY + 6);
     ctx.fillText('top frame', colTop, tableY + 6);
-    ctx.fillText('count', colCount, tableY + 6);
+    ctx.fillText('cnt', colCount, tableY + 6);
     ctx.textAlign = 'right';
     ctx.fillText('Jira', w - padX - 4, tableY + 6);
     ctx.textAlign = 'left';
 
-    const maxCount = rows.reduce((m, r) => Math.max(m, r.count), 1);
-    const bodyY = tableY + 12;
+    const bodyY = tableY + 14;
 
     for (let i = 0; i < rows.length; i++) {
       const r = rows[i];
@@ -168,24 +156,19 @@ export default function CrashReportPipeline() {
       const ty = y + (rowH - 5) / 2;
       ctx.textBaseline = 'middle';
       // hash
-      ctx.font = monoFont(10);
+      ctx.font = monoFont(11);
       ctx.fillStyle = UE_COLORS.graphics;
       ctx.textAlign = 'left';
       ctx.fillText(`#${r.hash}`, colHash, ty);
       // top frame
       ctx.fillStyle = theme.text;
-      const topShown = r.top.length > 12 ? r.top.slice(0, 11) + '…' : r.top;
+      const topShown = r.top.length > 11 ? r.top.slice(0, 10) + '…' : r.top;
       ctx.fillText(topShown, colTop, ty);
       // count
       ctx.fillStyle = theme.text;
       ctx.fillText(`×${r.count}`, colCount, ty);
-      // count 막대
-      const bw = (r.count / maxCount) * barMaxW;
-      roundRect(ctx, colBar, ty - 4, Math.max(2, bw), 8, 3);
-      ctx.fillStyle = pri.color;
-      ctx.fill();
       // Jira 우선순위
-      ctx.font = monoFont(9);
+      ctx.font = monoFont(11);
       ctx.fillStyle = pri.color;
       ctx.textAlign = 'right';
       ctx.fillText(pri.label, w - padX - 4, ty);
@@ -195,11 +178,11 @@ export default function CrashReportPipeline() {
 
     // 테이블 아래 주석(헤더와 겹치지 않게 본문 아래 빈 공간에)
     const noteY = bodyY + rows.length * rowH + 16;
-    ctx.font = monoFont(9);
+    ctx.font = monoFont(11);
     ctx.fillStyle = UE_COLORS.bad;
     ctx.textAlign = 'left';
     ctx.textBaseline = 'alphabetic';
-    ctx.fillText('맨 위 행 = 가장 빈번 → 최우선(Blocker)', padX + 6, noteY);
+    ctx.fillText('맨 위 = 최빈 → 최우선(Blocker)', padX + 6, noteY);
   };
 
   const { ref } = useCanvas2d(draw, []);
@@ -209,7 +192,13 @@ export default function CrashReportPipeline() {
       <canvas
         ref={ref}
         className="demo-canvas"
-        style={{ height: CANVAS_H, display: 'block' }}
+        style={{
+          height: CANVAS_H,
+          display: 'block',
+          width: '100%',
+          maxWidth: CANVAS_MAXW,
+          minWidth: 0,
+        }}
       />
       <figcaption>
         크래시가 쏟아지면 전부 사람이 볼 수 없습니다. 발표가 소개한 자동화는 세 단계입니다(위 흐름):

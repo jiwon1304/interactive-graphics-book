@@ -178,11 +178,12 @@ export default function QuadDerivatives() {
 
   return (
     <figure className="demo">
-      <canvas
-        ref={ref}
-        className="demo-canvas"
-        style={{ height: 380, touchAction: 'none', display: 'block', cursor: 'pointer' }}
-      />
+      <div className="demo-canvas" style={{ width: '100%', maxWidth: 360, margin: '0 auto' }}>
+        <canvas
+          ref={ref}
+          style={{ width: '100%', height: 340, touchAction: 'none', display: 'block', cursor: 'pointer' }}
+        />
+      </div>
       <figcaption>
         한 픽셀(<span style={{ color: 'var(--muted)' }}>me</span>)이 자기 텍스처 좌표 u의{' '}
         <em>변화율</em>을 알려면 이웃이 필요합니다. 그 이웃이 바로 같은 쿼드의{' '}

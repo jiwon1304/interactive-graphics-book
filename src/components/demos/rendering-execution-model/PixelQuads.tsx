@@ -219,11 +219,12 @@ export default function PixelQuads() {
 
   return (
     <figure className="demo">
-      <canvas
-        ref={ref}
-        className="demo-canvas"
-        style={{ height: 380, touchAction: 'none', display: 'block', cursor: 'grab' }}
-      />
+      <div className="demo-canvas" style={{ width: '100%', maxWidth: 360, margin: '0 auto' }}>
+        <canvas
+          ref={ref}
+          style={{ width: '100%', height: 340, touchAction: 'none', display: 'block', cursor: 'grab' }}
+        />
+      </div>
       <figcaption>
         삼각형 세 꼭짓점(<span style={{ color: 'var(--accent)' }}>●</span>)을 드래그하세요. 격자의
         가는 칸은 픽셀, 굵은 칸은 <strong>2×2 쿼드</strong>입니다. 래스터라이저는 픽셀을 하나씩이 아니라{' '}

@@ -30,11 +30,11 @@ interface Pass {
 // 길이는 "오버랩 이득은 크되 의존 스톨도 또렷이 보이는" 교육용 값으로 고정.
 // (스케줄 손검증은 아래 schedule() 주석 참조.)
 const PASSES: ReadonlyArray<Pass> = [
-  { id: 'shadow', label: 'G-Shadow', queue: 'graphics', dur: 3 },
-  { id: 'gbuffer', label: 'G-GBuffer', queue: 'graphics', dur: 3 },
-  { id: 'ssao', label: 'C-SSAO', queue: 'compute', dur: 8 },
-  { id: 'particles', label: 'C-Particles', queue: 'compute', dur: 3 },
-  { id: 'lighting', label: 'G-Lighting', queue: 'graphics', dur: 4 },
+  { id: 'shadow', label: 'Shadow', queue: 'graphics', dur: 3 },
+  { id: 'gbuffer', label: 'GBuf', queue: 'graphics', dur: 3 },
+  { id: 'ssao', label: 'SSAO', queue: 'compute', dur: 8 },
+  { id: 'particles', label: 'Ptcl', queue: 'compute', dur: 3 },
+  { id: 'lighting', label: 'Light', queue: 'graphics', dur: 4 },
 ] as const;
 
 const DEP_FROM = 'ssao';
@@ -91,7 +91,8 @@ function schedule(): Schedule {
   return { items, makespan, serial, stall, depReadyT };
 }
 
-const CANVAS_H = 320;
+const CANVAS_W = 380;
+const CANVAS_H = 340;
 
 export default function AsyncOverlapTimeline() {
   const sched = schedule();
@@ -103,8 +104,8 @@ export default function AsyncOverlapTimeline() {
     ctx.fillStyle = theme.surface;
     ctx.fillRect(0, 0, w, h);
 
-    const padX = 14;
-    const labelW = 78;
+    const padX = 12;
+    const labelW = 72;
     const plotX = padX + labelW;
     const plotW = w - plotX - padX;
 
@@ -121,11 +122,11 @@ export default function AsyncOverlapTimeline() {
     const cmpY = gfxY + laneH + laneGap;
 
     // --- 직렬 기준선(faded) ---
-    ctx.font = '10px ui-monospace, monospace';
+    ctx.font = '12px ui-monospace, monospace';
     ctx.textAlign = 'right';
     ctx.fillStyle = theme.muted;
     ctx.textBaseline = 'middle';
-    ctx.fillText('직렬 기준선', plotX - 8, serialY + serialH / 2);
+    ctx.fillText('직렬', plotX - 8, serialY + serialH / 2);
     ctx.textAlign = 'left';
     ctx.textBaseline = 'alphabetic';
     {
@@ -158,7 +159,7 @@ export default function AsyncOverlapTimeline() {
     ];
 
     for (const lane of lanes) {
-      ctx.font = '11px ui-monospace, monospace';
+      ctx.font = '12px ui-monospace, monospace';
       ctx.fillStyle = lane.color;
       ctx.textAlign = 'right';
       ctx.textBaseline = 'middle';
@@ -189,10 +190,10 @@ export default function AsyncOverlapTimeline() {
         ctx.lineWidth = 1;
         ctx.stroke();
         ctx.setLineDash([]);
-        ctx.font = '9px ui-monospace, monospace';
+        ctx.font = 'bold 12px ui-monospace, monospace';
         ctx.fillStyle = QUEUE_COLORS.stall;
         ctx.textAlign = 'center';
-        ctx.fillText('스톨', sx + Math.max(2, sw) / 2, lane.y + laneH / 2 + 3);
+        ctx.fillText('스톨', sx + Math.max(2, sw) / 2, lane.y + laneH / 2 + 4);
         ctx.textAlign = 'left';
       }
     }
@@ -211,7 +212,7 @@ export default function AsyncOverlapTimeline() {
       ctx.strokeStyle = lane.color;
       ctx.lineWidth = 1.5;
       ctx.stroke();
-      ctx.font = '10px ui-monospace, monospace';
+      ctx.font = '12px ui-monospace, monospace';
       ctx.fillStyle = '#fff';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
@@ -232,9 +233,11 @@ export default function AsyncOverlapTimeline() {
         const x2 = xOf(to.start);
         const y2 = toLane.y + laneH / 2;
         drawArrow(ctx, x1, y1, x2, y2, QUEUE_COLORS.stall, { dashed: true, width: 1.5, head: 6 });
-        ctx.font = '8px ui-monospace, monospace';
+        ctx.font = '12px ui-monospace, monospace';
         ctx.fillStyle = QUEUE_COLORS.stall;
-        ctx.fillText('세마포어', (x1 + x2) / 2 - 18, (y1 + y2) / 2 - 4);
+        ctx.textAlign = 'center';
+        ctx.fillText('세마포어', (x1 + x2) / 2, (y1 + y2) / 2 - 6);
+        ctx.textAlign = 'left';
       }
     }
 
@@ -251,9 +254,9 @@ export default function AsyncOverlapTimeline() {
       ctx.moveTo(xOf(sched.makespan), ry - 4);
       ctx.lineTo(xOf(sched.makespan), ry + 4);
       ctx.stroke();
-      ctx.font = '10px ui-monospace, monospace';
+      ctx.font = '12px ui-monospace, monospace';
       ctx.fillStyle = QUEUE_COLORS.ok;
-      ctx.fillText(`makespan ${sched.makespan.toFixed(1)}`, plotX + 4, ry - 5);
+      ctx.fillText(`makespan ${sched.makespan.toFixed(1)}`, plotX + 4, ry - 6);
     }
   };
 
@@ -264,7 +267,14 @@ export default function AsyncOverlapTimeline() {
       <canvas
         ref={ref}
         className="demo-canvas"
-        style={{ height: CANVAS_H, display: 'block' }}
+        style={{
+          width: '100%',
+          maxWidth: CANVAS_W,
+          minWidth: 0,
+          height: 'auto',
+          aspectRatio: `${CANVAS_W} / ${CANVAS_H}`,
+          display: 'block',
+        }}
       />
       <div
         style={{
