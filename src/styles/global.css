@@ -26,11 +26,13 @@
 
 html[data-theme='dark'] {
   --bg: #0f1115;
-  --surface: #171a21;
-  --border: #272b35;
-  --text: #e6e8ee;
-  --muted: #9aa3b2;
-  --accent: #4f9dde;
+  --surface: #1a1e26;
+  --border: #2c313d;
+  --text: #e8eaf0;
+  /* #a3acbb on #0f1115 ≈ 7.4:1, on #1a1e26 ≈ 6.4:1 — 충분한 대비(보조 텍스트 AA 통과) */
+  --muted: #a3acbb;
+  /* #5cabe6: #0f1115 대비 ≈ 6.8:1, #1a1e26 대비 ≈ 5.9:1 — 링크/강조 AA 통과 */
+  --accent: #5cabe6;
   --accent-brand: #4f9dde;
   --accent-contrast: #0f1115;
   color-scheme: dark;
@@ -113,6 +115,114 @@ pre code {
   overflow-x: auto;
   overflow-y: hidden;
   padding: 0.4rem 0;
+  max-width: 100%;
+}
+/* KaTeX는 색을 상속하지 않는 span이 많아 다크 모드에서 검게 보일 수 있어 강제로 상속 */
+.katex,
+.katex .mord,
+.katex .mbin,
+.katex .mrel,
+.katex .mopen,
+.katex .mclose,
+.katex .mpunct,
+.katex .minner {
+  color: var(--text);
+}
+/* 수식 안의 수평선(분수선·root 등)도 테마색을 따르게 */
+.katex .frac-line,
+.katex .overline .overline-line,
+.katex .underline .underline-line,
+.katex .hline,
+.katex .vlist-t2 > .vlist-r:last-child > .vlist {
+  border-color: var(--text);
+}
+
+/* =========================================================
+   본문 요소 (테이블 / 인용구 / 구분선 / 텍스트 선택) — 다크 대응
+   ========================================================= */
+strong,
+b {
+  color: var(--text);
+}
+
+hr {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 2rem 0;
+}
+
+::selection {
+  background: color-mix(in srgb, var(--accent) 35%, transparent);
+  color: var(--text);
+}
+
+blockquote {
+  margin: 1.4rem 0;
+  padding: 0.6rem 1.1rem;
+  border-left: 4px solid var(--accent-brand);
+  background: color-mix(in srgb, var(--accent-brand) 9%, var(--surface));
+  border-radius: 0 8px 8px 0;
+  color: var(--text);
+}
+blockquote > :first-child {
+  margin-top: 0;
+}
+blockquote > :last-child {
+  margin-bottom: 0;
+}
+blockquote code {
+  background: color-mix(in srgb, var(--text) 8%, transparent);
+}
+
+/* 표: 좁은 화면에서 가로 스크롤, 다크 테마 색 적용 */
+.content table {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  border-collapse: collapse;
+  margin: 1.4rem 0;
+  font-size: 0.92rem;
+}
+.content th,
+.content td {
+  padding: 0.5rem 0.8rem;
+  border: 1px solid var(--border);
+  text-align: left;
+  vertical-align: top;
+}
+.content th {
+  background: var(--surface);
+  color: var(--text);
+  font-weight: 700;
+}
+.content tbody tr:nth-child(even) td {
+  background: color-mix(in srgb, var(--surface) 55%, var(--bg));
+}
+
+/* =========================================================
+   넘침 방지(모바일): 글자가 박스를 탈출하지 않게 전역 가드
+   ========================================================= */
+.content {
+  overflow-wrap: break-word;
+  word-break: break-word;
+}
+.content p,
+.content li,
+figcaption {
+  overflow-wrap: break-word;
+}
+/* 미디어·캔버스·SVG는 컨테이너를 넘지 않음 */
+img,
+video,
+svg,
+canvas {
+  max-width: 100%;
+}
+/* flex/grid 자식이 콘텐츠 크기로 부풀어 넘치는 것을 막는 기본값 */
+.content :where(figure, .demo-controls, .prevnext, .related-grid) > * {
+  min-width: 0;
 }
 
 /* =========================================================
@@ -411,6 +521,22 @@ a.nav-link:hover {
 /* ---- 인터랙티브 데모 ---- */
 figure.demo {
   margin: 2rem 0;
+  max-width: 100%;
+}
+/* figure 안의 모든 박스/도식에서 글자가 컨테이너를 넘지 않게 한다.
+   (DOM으로 그린 "박스 다이어그램"의 라벨이 좁은 화면에서 박스를 탈출하던 문제 방지) */
+figure.demo,
+figure.demo * {
+  min-width: 0;
+}
+figure.demo p,
+figure.demo span,
+figure.demo div,
+figure.demo li,
+figure.demo td,
+figure.demo th {
+  overflow-wrap: break-word;
+  word-break: break-word;
 }
 
 /* 2D 도식(figure 직속 <canvas>)은 좁은 화면에서 글자가 겹치지 않도록 최소 너비를 유지하고
@@ -432,10 +558,16 @@ figure.demo:has(> canvas.demo-canvas) > div {
 
 .demo-canvas {
   width: 100%;
+  max-width: 100%;
   border: 1px solid var(--border);
   border-radius: 10px;
   overflow: hidden;
   background: var(--surface);
+}
+/* R3F가 만든 내부 <canvas>는 부모에 꽉 차되 넘치지 않게 */
+.demo-canvas canvas {
+  display: block;
+  max-width: 100%;
 }
 
 /* touch-action은 비상속이라 R3F/Canvas가 생성하는 <canvas> 자식에 명시한다.

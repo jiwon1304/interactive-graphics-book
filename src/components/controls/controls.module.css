@@ -14,6 +14,7 @@
   border: 1px solid var(--border);
   border-radius: 10px;
   background: var(--surface);
+  max-width: 100%;
 }
 
 /* 모든 컨트롤 공통: 라벨을 위, 입력을 아래로 쌓는 세로 그룹 */
@@ -31,6 +32,8 @@
   justify-content: space-between;
   align-items: baseline;
   gap: 0.6rem;
+  overflow-wrap: break-word;
+  word-break: break-word;
 }
 
 /* 슬라이더의 실시간 값 표시 */
@@ -111,6 +114,7 @@
 /* ---- 셀렉트 ---- */
 .select {
   min-height: 44px;
+  max-width: min(240px, 70vw);
   padding: 0 0.7rem;
   border: 1px solid var(--border);
   border-radius: 8px;
