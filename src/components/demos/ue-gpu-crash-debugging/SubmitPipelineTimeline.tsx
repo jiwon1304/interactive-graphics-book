@@ -254,7 +254,7 @@ export default function SubmitPipelineTimeline() {
       ctx.moveTo(xOf(model.makespan), ry - 4);
       ctx.lineTo(xOf(model.makespan), ry + 4);
       ctx.stroke();
-      ctx.font = monoFont(9.5);
+      ctx.font = monoFont(11);
       ctx.fillStyle = makespanColor;
       ctx.textAlign = 'left';
       ctx.fillText(`makespan ${model.makespan.toFixed(0)}`, plotX + 4, ry - 4);
@@ -263,13 +263,13 @@ export default function SubmitPipelineTimeline() {
     };
 
     const afterOld = drawModel(
-      `기존: 단일 RHI 스레드 (펜스 polling) — 버블 ${oldModel.bubbleTotal.toFixed(0)}`,
+      `기존: 단일 RHI 스레드 (폴링) — 버블 ${oldModel.bubbleTotal.toFixed(0)}`,
       oldModel,
       18,
       UE_COLORS.stall,
     );
     drawModel(
-      '신규: 변환(병렬) · 제출(전용) · 동기화(인터럽트) — 버블 0',
+      '신규: 변환·제출·동기화 분리 — 버블 0',
       newModel,
       afterOld + 12,
       UE_COLORS.ok,
