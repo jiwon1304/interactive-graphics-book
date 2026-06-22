@@ -24,7 +24,6 @@ const OPS: ReadonlyArray<SelectOption<Combiner>> = [
 ];
 
 // rate를 (가로 log2, 세로 log2)로. 1x1=(0,0), 2x2=(1,1), 4x4=(2,2) ...
-const RATE_AXES = [0, 1, 2]; // 1,2,4 → 축당 단계
 function rateLabel(cx: number, cy: number): string {
   const f = (n: number) => (1 << n).toString();
   return `${f(cx)}×${f(cy)}`;

@@ -140,7 +140,7 @@ export default function PageFaultViz() {
       ctx.textAlign = 'left';
 
       // 상대 비용 표시(위)
-      ctx.font = monoFont(10);
+      ctx.font = monoFont(11);
       ctx.fillStyle = theme.muted;
       ctx.textAlign = 'center';
       ctx.fillText(`${mipCost(level)}u`, x + boxW / 2, boxTop - 5);

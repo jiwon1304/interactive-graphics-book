@@ -165,7 +165,7 @@ export default function InsightsFenceTimeline() {
           ctx.lineWidth = 1;
           ctx.stroke();
           ctx.setLineDash([]);
-          ctx.font = monoFont(10.5);
+          ctx.font = monoFont(11);
           ctx.fillStyle = UE_COLORS.stall;
           ctx.textAlign = 'center';
           if (sw > 26) ctx.fillText('wait', sx + sw / 2, lane.y + laneH / 2 + 3);
@@ -212,7 +212,7 @@ export default function InsightsFenceTimeline() {
           width: 2,
           head: 7,
         });
-        ctx.font = monoFont(10.5);
+        ctx.font = monoFont(11);
         ctx.fillStyle = UE_COLORS.bad;
         ctx.textAlign = 'center';
         ctx.fillText('fence #41', ax - 30, (gMid + cMid) / 2);
@@ -254,7 +254,7 @@ export default function InsightsFenceTimeline() {
           width: 1.5,
           head: 7,
         });
-        ctx.font = monoFont(10.5);
+        ctx.font = monoFont(11);
         ctx.fillStyle = UE_COLORS.active;
         ctx.textAlign = 'center';
         const mx = (x1 + x2) / 2;
@@ -276,7 +276,7 @@ export default function InsightsFenceTimeline() {
       ctx.moveTo(xOf(normal.makespan), ry - 4);
       ctx.lineTo(xOf(normal.makespan), ry + 4);
       ctx.stroke();
-      ctx.font = monoFont(10.5);
+      ctx.font = monoFont(11);
       ctx.fillStyle = UE_COLORS.ok;
       ctx.textAlign = 'left';
       ctx.fillText(`makespan ${normal.makespan.toFixed(1)} ms`, plotX + 4, ry - 5);
