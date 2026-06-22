@@ -229,8 +229,8 @@ export default function SubmitPipelineTimeline() {
         } else {
           ctx.fillStyle = withAlpha(b.color, 0.9);
           ctx.fill();
-          if (bw > 14 && b.label) {
-            ctx.font = monoFont(8.5);
+          if (bw > 20 && b.label) {
+            ctx.font = monoFont(10);
             ctx.fillStyle = '#fff';
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
