@@ -12,39 +12,38 @@ interface Node {
 }
 
 const D3D_NODES: Node[] = [
-  { fill: COLORS.app, title: 'D3D 앱', sub: 'Draw / Map / Present' },
-  { fill: COLORS.runtime, title: 'D3D Runtime', sub: 'd3d11/12.dll · 검증 · DDI' },
-  { fill: COLORS.umd, title: 'UMD (IHV)', sub: '셰이더 JIT · command buffer' },
+  { fill: COLORS.app, title: 'D3D 앱', sub: 'Draw / Present' },
+  { fill: COLORS.runtime, title: 'D3D Runtime', sub: 'd3d11/12.dll · DDI' },
+  { fill: COLORS.umd, title: 'UMD (IHV)', sub: '셰이더 JIT · cmd buffer' },
 ];
 
 const VK_NODES: Node[] = [
-  { fill: COLORS.app, title: 'Vulkan 앱', sub: 'VkDeviceMemory를 직접 할당·bind' },
-  { fill: COLORS.runtime, title: 'Vulkan Loader', sub: 'vulkan-1.dll · trampoline/dispatch · layers' },
-  { fill: COLORS.umd, title: 'ICD (IHV)', sub: '= UMD 상당: 셰이더 컴파일 · command buffer' },
+  { fill: COLORS.app, title: 'Vulkan 앱', sub: 'VkDeviceMemory 직접' },
+  { fill: COLORS.runtime, title: 'Vulkan Loader', sub: 'vulkan-1.dll · dispatch' },
+  { fill: COLORS.umd, title: 'ICD (IHV)', sub: '= UMD: cmd buffer' },
 ];
 
 export default function IcdVsUmd() {
   const draw = (d: DrawCtx) => {
     const { ctx, w, h, theme } = d;
-    const narrow = w < 520;
     const padX = Math.max(10, w * 0.03);
-    const gap = narrow ? 12 : 22;
+    const gap = 12;
     const colW = (w - padX * 2 - gap) / 2;
     const d3dX = padX;
     const vkX = padX + colW + gap;
-    const top = 26;
-    const nodeH = narrow ? 40 : 42;
-    const nodeGap = narrow ? 12 : 14;
-    const titlePx = narrow ? 10.5 : 11.5;
-    const subPx = narrow ? 8.5 : 9.5;
+    const top = 28;
+    const nodeH = 44;
+    const nodeGap = 13;
+    const titlePx = 11.5;
+    const subPx = 10;
 
     // 컬럼 제목
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.font = monoFont(narrow ? 11 : 12.5, 'bold');
+    ctx.font = monoFont(13, 'bold');
     ctx.fillStyle = theme.text;
-    ctx.fillText('Direct3D', d3dX + colW / 2, 12);
-    ctx.fillText('Vulkan', vkX + colW / 2, 12);
+    ctx.fillText('Direct3D', d3dX + colW / 2, 13);
+    ctx.fillText('Vulkan', vkX + colW / 2, 13);
     ctx.textAlign = 'start';
     ctx.textBaseline = 'alphabetic';
 
@@ -106,24 +105,16 @@ export default function IcdVsUmd() {
 
     // 공유 커널 박스
     const kernW = w - padX * 2;
-    const kernH = narrow ? 56 : 50;
+    const kernH = 58;
     box(ctx, padX, y, kernW, kernH, COLORS.kernel, '', theme, { alpha: 0.16 });
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.font = monoFont(narrow ? 10.5 : 12.5, 'bold');
+    ctx.font = monoFont(12.5, 'bold');
     ctx.fillStyle = theme.text;
-    ctx.fillText(
-      narrow ? '공유: Dxgkrnl → KMD → GPU' : '공유: Dxgkrnl (VidMm · VidSch)  →  KMD  →  GPU',
-      w / 2,
-      y + (narrow ? 18 : kernH / 2 - 4),
-    );
-    ctx.font = monoFont(narrow ? 8.5 : subPx);
+    ctx.fillText('공유: Dxgkrnl → KMD → GPU', w / 2, y + 20);
+    ctx.font = monoFont(11);
     ctx.fillStyle = theme.muted;
-    if (narrow) {
-      ctx.fillText('같은 D3DKMT* · GPUVA · residency', w / 2, y + 38);
-    } else {
-      ctx.fillText('같은 D3DKMT* 제출 · 같은 GPUVA · 같은 residency', w / 2, y + kernH / 2 + 12);
-    }
+    ctx.fillText('같은 D3DKMT* · GPUVA · residency', w / 2, y + 40);
     ctx.textAlign = 'start';
     ctx.textBaseline = 'alphabetic';
     void h;
@@ -133,7 +124,11 @@ export default function IcdVsUmd() {
 
   return (
     <figure className="demo">
-      <canvas ref={ref} className="demo-canvas" style={{ height: 420, display: 'block' }} />
+      <canvas
+        ref={ref}
+        className="demo-canvas"
+        style={{ width: '100%', maxWidth: 400, height: 440, display: 'block' }}
+      />
       <figcaption>
         Windows에서 Vulkan은 별도 드라이버 스택이 아닙니다. <span style={{ color: COLORS.runtime }}>
         Vulkan loader</span>(<code>vulkan-1.dll</code>)는 D3D runtime 자리에 해당하는데, 앱의 Vulkan

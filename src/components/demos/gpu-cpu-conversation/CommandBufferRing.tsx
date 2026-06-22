@@ -72,17 +72,17 @@ export default function CommandBufferRing() {
     const lx = 10;
     let ly = 14;
     const leg = (c: string, t: string) => {
-      roundRect(ctx, lx, ly - 7, 11, 11, 2);
+      roundRect(ctx, lx, ly - 7, 12, 12, 2);
       ctx.fillStyle = c;
       ctx.fill();
-      ctx.font = monoFont(9.5);
+      ctx.font = monoFont(12);
       ctx.fillStyle = theme.muted;
       ctx.textAlign = 'left';
       ctx.textBaseline = 'middle';
-      ctx.fillText(t, lx + 16, ly - 1);
+      ctx.fillText(t, lx + 17, ly - 1);
       ctx.textAlign = 'start';
       ctx.textBaseline = 'alphabetic';
-      ly += 17;
+      ly += 19;
     };
     leg(withAlpha(COLORS.cmd, 0.8), '기록됨 · 미소비');
     leg(withAlpha(theme.text, 0.12), '빈 슬롯');
@@ -92,7 +92,11 @@ export default function CommandBufferRing() {
 
   return (
     <figure className="demo">
-      <canvas ref={ref} className="demo-canvas" style={{ height: 340, display: 'block' }} />
+      <canvas
+        ref={ref}
+        className="demo-canvas"
+        style={{ width: '100%', height: 340, maxWidth: 400, display: 'block' }}
+      />
       <figcaption>
         CPU와 GPU는 하나의 <strong>ring buffer</strong>를 공유합니다. CPU는{' '}
         <span style={{ color: COLORS.cpu }}>write pointer</span>를 앞세워 명령을 채우고(producer),

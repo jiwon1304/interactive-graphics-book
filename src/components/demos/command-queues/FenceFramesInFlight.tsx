@@ -73,7 +73,8 @@ function simulate(N: number, cpuTime: number, gpuTime: number, maxFrames: number
   return { cpu, gpu, cpuRecEnd, gpuExecEnd };
 }
 
-const CANVAS_H = 420;
+const CANVAS_W = 380;
+const CANVAS_H = 440;
 const FRAME_TIME = 8; // cpu=gpu=8ms 고정(균형 워크로드)
 const SIM_FRAMES = 8;
 

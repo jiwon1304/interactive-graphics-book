@@ -1,26 +1,26 @@
 import { useCanvas2d, type DrawCtx } from './useCanvas2d';
 import { COLORS, label, roundRect, withAlpha, monoFont, drawArrow, wrapText } from './dcj2d';
 
-// 기록 경로 대비(정적). 위 레인: D3D11 immediate — 매 Draw()가 곧장 드라이버 변환을 거쳐 immediate
-// context의 명령 스트림에 들어간다(per-draw 드라이버 변환). 아래 레인: D3D12 command list / Vulkan
-// VkCommandBuffer — 앱이 vkCmdDraw/cmd로 버퍼에 *직접 기록*만 하고(드라이버 per-draw 변환이 적음),
-// 나중에 ExecuteCommandLists / vkQueueSubmit으로 배치 제출. 좁은 화면에서도 두 레인을 세로로 유지.
+// 기록 경로 대비(정적 1컷, 두 레인을 세로로 쌓음). 위 레인: D3D11 immediate — 매 Draw()가 곧장
+// 드라이버 변환을 거쳐 immediate context의 명령 스트림에 들어간다(per-draw 드라이버 변환).
+// 아래 레인: D3D12 command list / Vulkan VkCommandBuffer — 앱이 cmd로 버퍼에 *직접 기록*만 하고
+// (드라이버 per-draw 변환이 적음), 나중에 ExecuteCommandLists / vkQueueSubmit으로 배치 제출.
+// 모바일 우선: 좁은 내부폭(≤400)에 맞춰 셀을 작게, 두 레인을 위→아래로 쌓는다.
 
 export default function D3dVsVulkanRecord() {
   const draw = (d: DrawCtx) => {
     const { ctx, w, h, theme } = d;
     const pad = 12;
-    const narrow = w < 480;
     const laneH = (h - pad * 2 - 18) / 2;
     const lane1Y = pad + 16;
     const lane2Y = lane1Y + laneH + 6;
 
     const dotN = 3; // Draw() 개수(예시)
-    const cellW = narrow ? 52 : 64;
-    const gap = narrow ? 12 : 18;
+    const cellW = 50;
+    const gap = 10;
 
     // ===== 레인 1: D3D11 immediate =====
-    label(ctx, pad, pad + 4, 'D3D11 immediate context', COLORS.dx11, 12, 'bold');
+    label(ctx, pad, pad + 5, 'D3D11 immediate context', COLORS.dx11, 13, 'bold');
     const r1y = lane1Y + 14;
     const boxH = 30;
     let x = pad;
@@ -36,16 +36,16 @@ export default function D3dVsVulkanRecord() {
       // → 드라이버 변환(매번)
       const tx = x + cellW + gap;
       drawArrow(ctx, x + cellW + 1, r1y + boxH / 2, tx - 1, r1y + boxH / 2, COLORS.umd, 1.6, 6);
-      label(ctx, (x + cellW + tx) / 2, r1y - 8, '변환', COLORS.umd, 8, 'bold');
+      label(ctx, (x + cellW + tx) / 2, r1y - 7, '변환', COLORS.umd, 11, 'bold');
       // 드라이버 변환 박스
-      roundRect(ctx, tx, r1y, cellW * 0.7, boxH, 6);
+      roundRect(ctx, tx, r1y, cellW * 0.72, boxH, 6);
       ctx.fillStyle = withAlpha(COLORS.umd, 0.22);
       ctx.fill();
       ctx.strokeStyle = COLORS.umd;
       ctx.lineWidth = 1.3;
       ctx.stroke();
-      label(ctx, tx + cellW * 0.35, r1y + boxH / 2, 'UMD', COLORS.umd, 10, 'bold');
-      x = tx + cellW * 0.7 + gap;
+      label(ctx, tx + cellW * 0.36, r1y + boxH / 2, 'UMD', COLORS.umd, 11, 'bold');
+      x = tx + cellW * 0.72 + gap;
     }
     // immediate 명령 스트림으로
     const streamY1 = r1y + boxH + 16;
@@ -55,7 +55,7 @@ export default function D3dVsVulkanRecord() {
     ctx.strokeStyle = withAlpha(COLORS.umd, 0.8);
     ctx.lineWidth = 1.2;
     ctx.stroke();
-    label(ctx, pad + (x - pad - gap) / 2, streamY1 + 11, 'immediate command buffer (드라이버가 즉시 채움)', theme.muted, 9, 'bold');
+    label(ctx, pad + (x - pad - gap) / 2, streamY1 + 11, '드라이버가 즉시 채우는 버퍼', theme.muted, 12, 'bold');
 
     // 구분선
     ctx.strokeStyle = withAlpha(theme.text, 0.14);
@@ -66,8 +66,8 @@ export default function D3dVsVulkanRecord() {
     ctx.stroke();
 
     // ===== 레인 2: D3D12 / Vulkan =====
-    label(ctx, pad, lane2Y + 10, 'D3D12 command list / Vulkan VkCommandBuffer', COLORS.vk, 12, 'bold');
-    const r2y = lane2Y + 22;
+    label(ctx, pad, lane2Y + 11, 'D3D12 / Vulkan command buffer', COLORS.vk, 13, 'bold');
+    const r2y = lane2Y + 24;
     let x2 = pad;
     for (let i = 0; i < dotN; i++) {
       roundRect(ctx, x2, r2y, cellW, boxH, 6);
@@ -76,7 +76,7 @@ export default function D3dVsVulkanRecord() {
       ctx.strokeStyle = COLORS.app;
       ctx.lineWidth = 1.3;
       ctx.stroke();
-      wrapText(ctx, narrow ? 'cmd Draw' : 'vkCmdDraw', x2 + cellW / 2, r2y + boxH / 2, cellW - 4, theme.text, 9, 'bold');
+      wrapText(ctx, 'cmd Draw', x2 + cellW / 2, r2y + boxH / 2, cellW - 4, theme.text, 11, 'bold');
       // 곧장 버퍼로(변환 박스 없음)
       drawArrow(ctx, x2 + cellW / 2, r2y + boxH + 1, x2 + cellW / 2, r2y + boxH + 13, COLORS.vk, 1.5, 5);
       x2 += cellW + gap;
@@ -90,21 +90,25 @@ export default function D3dVsVulkanRecord() {
     ctx.strokeStyle = withAlpha(COLORS.vk, 0.8);
     ctx.lineWidth = 1.2;
     ctx.stroke();
-    label(ctx, pad + cbW / 2, cbY + 11, '앱이 직접 기록한 command buffer', theme.muted, 9, 'bold');
+    label(ctx, pad + cbW / 2, cbY + 11, '앱이 직접 기록한 버퍼', theme.muted, 12, 'bold');
     // 나중에 배치 제출
     const subX = pad + cbW + gap;
     if (subX + 8 < w - pad) {
       drawArrow(ctx, pad + cbW + 1, cbY + 11, subX - 1, cbY + 11, COLORS.submit, 1.6, 6);
     }
-    ctx.font = monoFont(8, 'bold');
-    label(ctx, pad + cbW / 2, cbY + 32, 'ExecuteCommandLists / vkQueueSubmit 로 나중에 배치 제출', COLORS.submit, 8, 'bold');
+    ctx.font = monoFont(11, 'bold');
+    label(ctx, pad + cbW / 2, cbY + 33, 'vkQueueSubmit 으로 나중에 배치 제출', COLORS.submit, 11, 'bold');
   };
 
   const { ref } = useCanvas2d(draw, []);
 
   return (
     <figure className="demo">
-      <canvas ref={ref} className="demo-canvas" style={{ height: 250, display: 'block' }} />
+      <canvas
+        ref={ref}
+        className="demo-canvas"
+        style={{ width: '100%', maxWidth: 400, height: 250, display: 'block' }}
+      />
       <figcaption>
         같은 일을 적는 두 가지 방식. <span style={{ color: COLORS.dx11 }}>D3D11 immediate context</span>는
         앱이 <code>Draw()</code>를 부를 때마다 드라이버(UMD)가 <strong>그 자리에서 바로</strong> 현재 상태를

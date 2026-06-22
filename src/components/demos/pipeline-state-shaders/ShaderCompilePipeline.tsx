@@ -49,14 +49,14 @@ export default function ShaderCompilePipeline() {
   const draw = (d: DrawCtx) => {
     const { ctx, w, h, theme } = d;
     const pad = 10;
-    const topPad = 26; // 상단 offline/online 헤더
-    const apiW = 56;
+    const topPad = 30; // 상단 offline/online 헤더
+    const apiW = 48;
     const x0 = pad + apiW;
     const x1 = w - pad;
     const usableW = x1 - x0;
     const boxW = Math.min(118, usableW * 0.3);
-    const boxH = 46;
-    const rowGap = 18;
+    const boxH = 48;
+    const rowGap = 30;
     const rowH = boxH + rowGap;
     const totalRowsH = ROWS.length * rowH - rowGap;
     const startY = topPad + (h - topPad - pad - totalRowsH) / 2;
@@ -75,8 +75,8 @@ export default function ShaderCompilePipeline() {
     ctx.lineTo(boundaryX, h - pad);
     ctx.stroke();
     ctx.setLineDash([]);
-    label(ctx, (x0 + boundaryX) / 2, topPad - 14, 'offline (앱 빌드 시)', theme.muted, 9, 'bold');
-    label(ctx, (boundaryX + x1) / 2, topPad - 14, 'online (드라이버, 생성 시)', COLORS.jit, 9, 'bold');
+    label(ctx, (x0 + boundaryX) / 2, topPad - 14, 'offline (빌드 시)', theme.muted, 12, 'bold');
+    label(ctx, (boundaryX + x1) / 2, topPad - 14, 'online (생성 시)', COLORS.jit, 12, 'bold');
 
     ROWS.forEach((row, r) => {
       const top = startY + r * rowH;
@@ -93,23 +93,27 @@ export default function ShaderCompilePipeline() {
         ctx.strokeStyle = s.color;
         ctx.lineWidth = 1.5;
         ctx.stroke();
-        label(ctx, cx, top + 16, s.title, s.color, 12, 'bold');
-        wrapText(ctx, s.sub, cx, top + 33, boxW - 8, theme.muted, { px: 8.5, lineH: 10 });
+        label(ctx, cx, top + 16, s.title, s.color, 13, 'bold');
+        wrapText(ctx, s.sub, cx, top + 33, boxW - 6, theme.muted, { px: 11, lineH: 12 });
       });
 
       // 화살표 + 도구 라벨
       const a0x = cxs[0] + boxW / 2;
       const a1x = cxs[1] - boxW / 2;
       drawArrow(ctx, a0x + 2, cy, a1x - 2, cy, row.apiColor, 1.8, 7);
-      label(ctx, (a0x + a1x) / 2, cy - 9, row.toolOffline, theme.text, 8.5, 'bold');
+      wrapText(ctx, row.toolOffline, (a0x + a1x) / 2, cy - 11, (a1x - a0x) + 14, theme.text, {
+        px: 11,
+        weight: 'bold',
+        lineH: 12,
+      });
 
       const b0x = cxs[1] + boxW / 2;
       const b1x = cxs[2] - boxW / 2;
       drawArrow(ctx, b0x + 2, cy, b1x - 2, cy, COLORS.jit, 1.8, 7);
-      wrapText(ctx, row.toolOnline, (b0x + b1x) / 2, cy - 12, (b1x - b0x) - 6, COLORS.jit, {
-        px: 8.5,
+      wrapText(ctx, row.toolOnline, (b0x + b1x) / 2, cy - 13, (b1x - b0x) + 14, COLORS.jit, {
+        px: 11,
         weight: 'bold',
-        lineH: 9.5,
+        lineH: 12,
       });
     });
   };

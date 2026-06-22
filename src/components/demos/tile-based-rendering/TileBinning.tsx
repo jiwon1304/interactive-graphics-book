@@ -144,7 +144,9 @@ export default function TileBinning() {
 
   return (
     <figure className="demo">
-      <canvas ref={ref} className="demo-canvas" style={{ height: 300, display: 'block' }} />
+      <div className="demo-canvas" style={{ width: '100%', maxWidth: 400, margin: '0 auto' }}>
+        <canvas ref={ref} style={{ width: '100%', height: 300, display: 'block' }} />
+      </div>
       <figcaption>
         TBR은 IMR과 달리 지오메트리를 <strong>한 번에 다 먼저</strong> 처리합니다(왼쪽 박스). 모든
         삼각형을 변환·클립한 뒤, 각 삼각형이 화면의 어느 <strong>타일</strong>에 걸치는지 가려내

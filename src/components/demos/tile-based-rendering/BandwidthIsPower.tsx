@@ -75,11 +75,9 @@ export default function BandwidthIsPower() {
 
   return (
     <figure className="demo">
-      <canvas
-        ref={ref}
-        className="demo-canvas"
-        style={{ height: 220, display: 'block', maxWidth: 400, margin: '0 auto' }}
-      />
+      <div className="demo-canvas" style={{ width: '100%', maxWidth: 400, margin: '0 auto' }}>
+        <canvas ref={ref} style={{ width: '100%', height: 220, display: 'block' }} />
+      </div>
       <figcaption>
         에너지 = 바이트 × (pJ/byte). 프레임당 {MB}MB를 {FPS}fps로 옮길 때, 같은 데이터라도{' '}
         <strong style={{ color: COLORS.dram }}>외부 DRAM</strong> 접근은 1바이트당 약{' '}

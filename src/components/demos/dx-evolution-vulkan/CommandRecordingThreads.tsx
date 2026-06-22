@@ -15,20 +15,20 @@ export default function CommandRecordingThreads() {
     const gpuW = 54;
 
     const gpuBox = (cy: number) =>
-      box(ctx, gpuX, cy - 15, gpuW, 30, COLORS.gpu, 'GPU', theme, { px: 11 });
+      box(ctx, gpuX, cy - 15, gpuW, 30, COLORS.gpu, 'GPU', theme, { px: 12 });
 
     const xBase = pad + leftW;
     const innerW = gpuX - xBase - 8;
 
     // --- DX9 ---
     let top = pad;
-    label(ctx, pad + leftW / 2 - 2, top + laneH / 2, 'DX9', COLORS.dx9, 12, 'bold');
+    label(ctx, pad + leftW / 2 - 2, top + laneH / 2, 'DX9', COLORS.dx9, 13, 'bold');
     {
       const cy = top + laneH / 2;
       const bw = Math.min(86, innerW * 0.32);
-      box(ctx, xBase, cy - 14, bw, 28, COLORS.app, 'Thread', theme, { px: 10 });
+      box(ctx, xBase, cy - 14, bw, 28, COLORS.app, 'Thread', theme, { px: 11 });
       const ix = xBase + bw + 14;
-      box(ctx, ix, cy - 14, Math.min(128, innerW * 0.42), 28, COLORS.runtime, 'Immediate', theme, { px: 10 });
+      box(ctx, ix, cy - 14, Math.min(128, innerW * 0.42), 28, COLORS.runtime, 'Immediate', theme, { px: 11 });
       drawArrow(ctx, xBase + bw + 2, cy, ix - 2, cy, theme.muted, 1.5, 6);
       drawArrow(ctx, ix + Math.min(128, innerW * 0.42) + 2, cy, gpuX - 2, cy, theme.muted, 1.5, 6);
       gpuBox(cy);
@@ -67,22 +67,22 @@ export default function CommandRecordingThreads() {
       xBase,
       gpuX,
       color: COLORS.dx12,
-      threadLabel: (i) => `T${i}: alloc+list`,
+      threadLabel: (i) => `T${i}: list`,
       queues: ['Direct', 'Compute', 'Copy'],
       gpuBox,
     });
 
     // --- Vulkan ---
     top = pad + laneH * 3;
-    label(ctx, pad + leftW / 2 - 2, top + laneH / 2, 'Vk', COLORS.vulkan, 12, 'bold');
+    label(ctx, pad + leftW / 2 - 2, top + laneH / 2, 'Vk', COLORS.vulkan, 13, 'bold');
     drawParallelLanes(ctx, theme, {
       top,
       laneH,
       xBase,
       gpuX,
       color: COLORS.vulkan,
-      threadLabel: (i) => `T${i}: pool+cmdbuf`,
-      queues: ['Graphics Q', 'Compute Q', 'Transfer Q'],
+      threadLabel: (i) => `T${i}: cmdbuf`,
+      queues: ['Graphics', 'Compute', 'Transfer'],
       gpuBox,
     });
   };
@@ -139,14 +139,14 @@ function drawParallelLanes(
   // 스레드 → alloc+list / pool+cmdbuf
   for (let i = 0; i < nT; i++) {
     const cy = innerTop + th * i + th / 2;
-    box(ctx, xBase, cy - th / 2 + 2, listW, th - 4, color, threadLabel(i), theme, { px: 8, alpha: 0.18 });
+    box(ctx, xBase, cy - th / 2 + 2, listW, th - 4, color, threadLabel(i), theme, { px: 10, alpha: 0.18 });
     const qy = innerTop + innerH * ((i + 0.5) / 3);
     drawArrow(ctx, xBase + listW + 2, cy, qx - 2, qy, withAlpha(color, 0.7), 1.2, 5);
   }
   // 큐 3개 → GPU
   queues.forEach((qn, q) => {
     const qy = innerTop + innerH * ((q + 0.5) / 3);
-    box(ctx, qx, qy - 10, qW, 20, COLORS.kernel, qn, theme, { px: 8, alpha: 0.25 });
+    box(ctx, qx, qy - 10, qW, 20, COLORS.kernel, qn, theme, { px: 10, alpha: 0.25 });
     drawArrow(ctx, qx + qW + 2, qy, gpuX - 2, top + laneH / 2 + (q - 1) * 9, withAlpha(theme.text, 0.5), 1.2, 5);
   });
   gpuBox(top + laneH / 2);

@@ -77,11 +77,9 @@ export default function HsrOverdraw() {
 
   return (
     <figure className="demo">
-      <canvas
-        ref={ref}
-        className="demo-canvas"
-        style={{ height: 230, display: 'block', maxWidth: 400, margin: '0 auto' }}
-      />
+      <div className="demo-canvas" style={{ width: '100%', maxWidth: 400, margin: '0 auto' }}>
+        <canvas ref={ref} style={{ width: '100%', height: 230, display: 'block' }} />
+      </div>
       <figcaption>
         한 픽셀 위에 불투명한 면이 <strong>{LAYERS}겹</strong> 겹쳐 있지만, 결국 보이는 건 가장
         앞면 하나뿐입니다.{' '}

@@ -105,11 +105,9 @@ export default function ImrVsTbr() {
 
   return (
     <figure className="demo">
-      <canvas
-        ref={ref}
-        className="demo-canvas"
-        style={{ height: 300, display: 'block', maxWidth: 400, margin: '0 auto' }}
-      />
+      <div className="demo-canvas" style={{ width: '100%', maxWidth: 400, margin: '0 auto' }}>
+        <canvas ref={ref} style={{ width: '100%', height: 300, display: 'block' }} />
+      </div>
       <figcaption>
         한 픽셀 위에 <strong>{od}개</strong>의 프래그먼트가 겹쳐 셰이딩됩니다(overdraw {od}×). 같은
         장면을 두 방식으로 그립니다.{' '}

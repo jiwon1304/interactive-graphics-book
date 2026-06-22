@@ -15,7 +15,8 @@ import { UE_COLORS, roundRect, withAlpha, monoFont } from './ue2d';
 // (인터랙티브 아님).
 // ---------------------------------------------------------------------------
 
-const CANVAS_H = 420;
+const CANVAS_H = 440;
+const CANVAS_MAXW = 360; // 모바일 우선: 내부 렌더 폭 상한
 
 interface QueueBar {
   name: string;
@@ -41,7 +42,7 @@ const SCENARIOS: ReadonlyArray<ScenarioFig> = [
       { name: '그래픽스', busy: 47, wait: 45, idle: 0, waitIsBad: true },
       { name: '컴퓨트', busy: 80, wait: 20, idle: 0, waitIsBad: false },
     ],
-    verdict: '⚠ 문제: 메인(그래픽스) 큐가 펜스·리소스를 기다리며 멈춰 있음 — 의존 구조 점검',
+    verdict: '⚠ 문제: 그래픽스 큐가 펜스·리소스 대기로 멈춤',
     verdictColor: UE_COLORS.bad,
   },
   {
@@ -76,7 +77,7 @@ export default function StatGpuDiagnoser() {
     const plotW = w - plotX - padX;
 
     // 범례(상단)
-    ctx.font = monoFont(10);
+    ctx.font = monoFont(11);
     ctx.textBaseline = 'middle';
     const legend: Array<{ c: string; t: string }> = [
       { c: UE_COLORS.graphics, t: 'Busy' },
@@ -131,7 +132,7 @@ export default function StatGpuDiagnoser() {
         ctx.fillRect(x, y, sw, barH);
         ctx.restore();
         if (sw > 40) {
-          ctx.font = monoFont(9.5);
+          ctx.font = monoFont(11);
           ctx.fillStyle = '#fff';
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';
@@ -181,7 +182,7 @@ export default function StatGpuDiagnoser() {
       ctx.strokeStyle = withAlpha(sc.verdictColor, 0.7);
       ctx.lineWidth = 1;
       ctx.stroke();
-      ctx.font = monoFont(9.5);
+      ctx.font = monoFont(11);
       ctx.fillStyle = sc.verdictColor;
       ctx.textAlign = 'left';
       ctx.textBaseline = 'middle';
@@ -199,7 +200,13 @@ export default function StatGpuDiagnoser() {
       <canvas
         ref={ref}
         className="demo-canvas"
-        style={{ height: CANVAS_H, display: 'block' }}
+        style={{
+          height: CANVAS_H,
+          display: 'block',
+          width: '100%',
+          maxWidth: CANVAS_MAXW,
+          minWidth: 0,
+        }}
       />
       <figcaption>
         <strong>Stat GPU</strong>는 각 큐의 시간을 <strong>Busy / Wait / Idle</strong>로 쪼개

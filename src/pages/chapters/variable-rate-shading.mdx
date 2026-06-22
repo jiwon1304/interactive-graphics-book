@@ -1,0 +1,230 @@
+---
+layout: ../../layouts/ChapterLayout.astro
+title: "Variable Rate Shading — 픽셀마다 다른 셰이딩 밀도"
+description: "셰이딩 rate를 visibility에서 떼어내기 — coarse pixel, 1x1~4x4, 세 source와 combiner, derivative·mip 영향, foveated·content-adaptive, MSAA와의 관계"
+---
+
+import CoarsePixel from '../../components/demos/variable-rate-shading/CoarsePixel.tsx';
+import Combiners from '../../components/demos/variable-rate-shading/Combiners.tsx';
+
+# Variable Rate Shading — 픽셀마다 다른 셰이딩 밀도
+
+화면 한 장을 그릴 때, GPU는 모든 픽셀에 **똑같은 정성**을 들입니다. 맑은 하늘의 단조로운
+파란 영역도, 풀잎 가장자리의 날카로운 디테일도, fragment shader가 픽셀당 한 번씩
+똑같이 실행됩니다. 그런데 정말 그래야 할까요? 하늘 한 뼘은 옆 픽셀과 색이 거의 같은데,
+그 둘을 따로 계산하는 건 — 같은 답을 두 번 구하는 것에 가깝습니다.
+
+여기서 떠오르는 질문 하나. **fragment shader를 "픽셀마다"가 아니라 "2×2 픽셀마다 한 번"
+실행하고, 그 색을 네 픽셀에 똑같이 칠하면 어떨까?** 셰이딩 비용이 1/4로 줄 텐데, 디테일이
+적은 곳이라면 아무도 눈치채지 못할지도 모릅니다. 이게 **Variable Rate Shading(VRS)** 의
+전부입니다 — 화면의 영역마다 셰이딩의 *밀도*를 다르게 주는 것. 아래에서 같은 표면을
+shading rate만 바꿔 그려 보세요.
+
+<CoarsePixel client:visible />
+
+날카로운 specular 하이라이트는 rate를 올리면 금세 뭉개지지만, 매끈한 그라데이션은 4×4
+에서도 멀쩡합니다. VRS는 바로 이 비대칭을 노립니다. 이 챕터에서 우리는 "셰이딩을 굵게
+한다"는 말의 정확한 의미(무엇이 거칠어지고 무엇이 *그대로*인지), 어떤 rate들이 있는지,
+누가 어디서 그 rate를 정하는지(세 source와 combiner), 그리고 그 결정이 텍스처 디테일에
+어떻게 번지는지(derivative와 mip)를 차례로 봅니다.
+
+## 1. 무엇이 거칠어지고, 무엇이 그대로인가 — 핵심 분리
+
+VRS를 한 문장으로 줄이면 이렇습니다: **셰이딩 rate를 visibility(가시성)에서 떼어낸다.**
+이 분리가 VRS의 심장이고, 여기를 정확히 이해하면 나머지는 따라옵니다.
+
+평소 GPU 파이프라인에서는 세 가지가 한 덩어리로 묶여 있습니다 — 삼각형이 어느 픽셀을
+덮는가(**coverage**), 그 픽셀이 앞에 있는가(**depth/stencil**), 그 픽셀이 무슨 색인가
+(**shading**). VRS는 이 셋 중 **마지막 하나만** 굵게 만듭니다. DirectX 명세의 표현을
+그대로 빌리면:
+
+> coarse pixel shading을 쓸 때도, **depth·stencil·coverage는 항상 full sample 해상도에서
+> 계산되고 기록된다.** 셰이딩 결과만 그룹의 모든 sample로 broadcast된다.
+
+즉 2×2 coarse pixel이란 — fragment shader를 그 2×2 영역에 **한 번** 실행해 색 하나를 얻고,
+그 색을 네 픽셀에 복사하는 것입니다. 하지만 그 네 픽셀 각각이 *진짜로 삼각형에 덮였는지*,
+*깊이 테스트를 통과하는지*는 여전히 **픽셀별로(샘플별로)** 따로 판정합니다. 그래서
+삼각형의 **가장자리(에지)는 흐려지지 않습니다** — 거기서는 coverage가 픽셀마다 다르니까요.
+흐려지는 건 삼각형 *내부의 색 변화*뿐입니다.
+
+> **여기가 가장 헷갈리는 지점.** "셰이딩을 2×2로 굵게 하면 화면이 절반 해상도로 보이지
+> 않나?" — 아닙니다. 절반 해상도 렌더링(낮은 해상도로 그린 뒤 확대)은 *에지까지* 계단지게
+> 만듭니다. VRS는 에지(coverage)와 깊이는 full 해상도로 유지하고 *내부 셰이딩만* 굵게 하므로,
+> 실루엣은 또렷한 채로 내부만 살짝 부드러워집니다. "어디를 굵게 하느냐"를 외과용 메스처럼
+> 고를 수 있다는 게 핵심이죠.
+
+이 분리가 왜 이득인지는 비용 구조를 보면 분명합니다. fragment shader는 종종 파이프라인에서
+가장 비싼 단계입니다 — 텍스처를 여러 장 읽고, 라이팅을 풀고, 복잡한 BRDF를 계산하니까요.
+반면 coverage·depth 판정은 고정 기능 회로가 싸게 처리합니다. **비싼 단계만 골라서 줄이고,
+싼 단계는 full로 둔다** — 이게 VRS가 "절반 해상도 렌더링"보다 화질 손해가 훨씬 적으면서도
+셰이딩을 아끼는 이유입니다.
+
+## 2. rate들 — 셰이딩 footprint를 고르는 단계
+
+그러면 얼마나 굵게 할 수 있을까요? D3D12가 정의하는 shading rate는 가로·세로 각각
+1·2·4 픽셀의 조합입니다:
+
+$$
+\underbrace{1{\times}1}_{\text{full}},\quad 1{\times}2,\ 2{\times}1,\ 2{\times}2,\quad 2{\times}4,\ 4{\times}2,\ 4{\times}4
+$$
+
+$N{\times}M$ rate는 "한 번의 셰이딩 결과를 $N{\times}M$ 픽셀 영역에 broadcast"한다는 뜻입니다.
+셰이딩 호출 횟수는 정확히 $\tfrac{1}{N \cdot M}$로 줄죠 — $2{\times}2$면 1/4, $4{\times}4$면
+**1/16**. 이 중 $1{\times}1,1{\times}2,2{\times}1,2{\times}2$는 VRS를 지원하는 모든 하드웨어가
+보장하고, 더 거친 $2{\times}4,4{\times}2,4{\times}4$는 `AdditionalShadingRatesSupported`
+cap이 켜진 하드웨어에서만 쓸 수 있습니다.
+
+여기서 미묘하지만 중요한 제약 하나. fragment shader가 픽셀별로 다른 값을 *써야 하는*
+경우 — 예를 들어 `SV_Depth`로 픽셀마다 깊이를 직접 출력하면 — coarse 셰이딩은
+**자동으로 $1{\times}1$로 되돌아갑니다.** "한 번 셰이딩해 네 픽셀에 복사"한다는 전제가
+픽셀별 출력과 모순되니까요. VRS는 *색 하나를 공유해도 되는* 경우에만 적용됩니다.
+
+## 3. 누가 rate를 정하나 — 세 source와 두 combiner
+
+가장 흥미로운 설계 결정은 "이 픽셀의 rate를 누가 정하느냐"입니다. VRS는 셋을 동시에
+허용하고, 그것들을 **합쳐서** 최종 rate를 만듭니다. D3D12 기준 세 source는:
+
+1. **per-draw** — `RSSetShadingRate()`로 draw 하나 전체에 거는 단일 rate. 가장 단순하고,
+   가장 먼저 쓸 수 있습니다(Tier 1).
+2. **per-primitive** — 정점 셰이더(또는 geometry/mesh 셰이더)가 `SV_ShadingRate`로 내보내는
+   삼각형별 rate. flat-shaded라 provoking vertex의 값이 삼각형 전체에 퍼집니다. 멀리 있는
+   작은 물체를 통째로 거칠게 그릴 때 유용합니다.
+3. **screen-space VRS image** — 화면 위에 깐 저해상도 텍스처(`R8_UINT`). 이 텍스처의
+   **타일 하나가 화면의 한 영역(보통 8×8 또는 16×16 픽셀)의 rate**를 정합니다. "화면의 이
+   부분은 거칠게, 저 부분은 곱게"를 *공간적으로* 칠하는, 가장 강력한 방식이죠.
+
+세 값이 충돌하면? **두 개의 combiner가 차례로** 합칩니다 — 먼저 (per-draw ⊕ per-primitive)로
+중간 rate를 만들고, 그 결과를 (⊕ screen image)로 합쳐 최종 rate를 냅니다. combiner op를
+바꿔 가며 결과가 어떻게 정해지는지 직접 보세요.
+
+<Combiners client:visible />
+
+op는 다섯 가지입니다. `passthrough`(앞 값 유지)·`override`(뒤 값으로 덮기)·`min`(더
+*고운* 쪽 채택)·`max`(더 *거친* 쪽 채택)·`sum`(두 rate를 더하되 최대치로 saturate).
+여기서 방향을 헷갈리지 마세요 — **숫자가 작을수록 곱고(고화질), 클수록 거칩니다.**
+그래서 `min`은 "둘 중 더 곱게 그리자"(품질 우선), `max`는 "둘 중 더 거칠게 그리자"(절약
+우선)가 됩니다. 가장 흔한 조합은 화면 image로 큰 그림(어디를 아낄지)을 칠하고, per-draw로
+"이 UI/텍스트만은 절대 거칠게 하지 마"를 `min`으로 보호하는 식입니다.
+
+<details>
+<summary>Tier 1 vs Tier 2, 그리고 Vulkan에서의 같은 그림</summary>
+
+D3D12는 VRS를 두 **tier**로 나눕니다. **Tier 1**은 위 세 source 중 **per-draw 하나만**
+줍니다(draw 전체를 한 rate로). **Tier 2**가 되어야 per-primitive·screen-space image·combiner·
+픽 셰이더의 `SV_ShadingRate` 입력이 모두 열립니다. 하드웨어로 보면 NVIDIA **Turing**
+(2018)이 최초로 VRS를 실었고, Intel은 **Gen11**(Ice Lake, 2019), AMD는 **RDNA2**(2020,
+DirectX 12 Ultimate)부터 지원합니다.
+
+Vulkan에도 똑같은 개념이 `VK_KHR_fragment_shading_rate`로 들어와 있습니다. 세 rate
+(pipeline=per-draw, primitive, attachment=screen image)와 두 단계 combiner까지 구조가
+거의 1:1로 대응합니다. 다만 combiner op가 조금 달라서, D3D12의 `sum`(덧셈) 대신 Vulkan은
+**`MUL`**(두 rate의 각 축을 곱셈)을 둡니다 — 예: $\{2,2\}\times\{1,4\}=\{2,8\}$(최대치로
+clamp). 나머지 `KEEP`/`REPLACE`/`MIN`/`MAX`는 D3D12의 passthrough/override/min/max와
+같습니다. Turing 시절의 옛 확장 `VK_NV_shading_rate_image`는 16×16 타일마다 *팔레트
+인덱스*를 저장하는 방식이었고, 픽셀당 1회보다 *더 촘촘한*(supersample) rate까지 표현할 수
+있었습니다 — KHR 확장은 그중 coarse 쪽(1×1~4×4)을 표준화한 셈입니다.
+
+</details>
+
+## 4. 굵은 셰이딩이 텍스처를 흐리는 이유 — derivative와 mip
+
+VRS가 셰이딩만 굵게 하고 에지는 그대로 둔다면, coarse 영역의 화질 손해는 정확히 어디서
+올까요? 답은 의외의 곳에 있습니다 — **텍스처 mip 선택**입니다. 이걸 이해하려면 GPU가
+어떻게 mip 레벨을 고르는지부터 짚어야 합니다.
+
+GPU는 인접 픽셀 사이에서 텍스처 좌표가 얼마나 빨리 변하는지 — screen-space
+derivative $\partial u/\partial x,\ \partial u/\partial y$ — 를 보고 mip을 고릅니다.
+[texture filtering](./texture-filtering-mipmapping) 챕터에서 본 LOD 공식이 그것이죠:
+
+$$
+\lambda = \log_2 \max\!\left(
+\sqrt{\Bigl(\tfrac{\partial u}{\partial x}\Bigr)^2 + \Bigl(\tfrac{\partial v}{\partial x}\Bigr)^2},\;
+\sqrt{\Bigl(\tfrac{\partial u}{\partial y}\Bigr)^2 + \Bigl(\tfrac{\partial v}{\partial y}\Bigr)^2}
+\right)
+$$
+
+이 derivative는 [픽셀 쿼드](./rendering-execution-model)(2×2 픽셀 묶음)에서 이웃과의
+차이로 *근사*됩니다. 그런데 coarse 셰이딩을 켜면, 셰이딩의 단위가 픽셀이 아니라 coarse
+pixel이 됩니다. **2×2 coarse rate에서는 셰이딩 쿼드가 화면에서 두 배 넓게 벌어지므로,
+이웃 셰이딩 점 사이의 $u$ 변화량도 두 배가 됩니다.** DirectX 명세의 말 그대로:
+
+> 2×2 coarse pixel을 쓰면 gradient가 coarse pixel을 안 쓸 때보다 두 배 커진다.
+
+derivative가 두 배 → $\lambda$가 $\log_2 2 = 1$만큼 커짐 → **한 단계 더 거친(작은) mip**이
+선택됩니다. 즉 coarse 영역은 *셰이딩 호출만* 주는 게 아니라, 자동으로 **한 단계 흐린
+텍스처**를 쓰게 됩니다. 이것이 1절의 specular 하이라이트가 그렇게 빨리 뭉개진 진짜
+이유입니다 — 고주파 디테일(텍스처·날카로운 하이라이트)은 mip이 한 단계 내려가는 순간
+사라지니까요. 반대로 저주파 영역(하늘·벽)은 애초에 거친 mip으로도 충분해서 손해가 거의
+없습니다.
+
+## 5. 그래서 어디를 굵게 할 것인가 — 적응적 VRS
+
+여기까지 오면 VRS의 진짜 기술은 "rate를 *어디에* 줄 것인가"를 정하는 정책임이 분명해집니다.
+화면 image를 *어떻게 칠하느냐*가 화질과 성능을 가르죠. 실무에서 쓰는 정책 셋:
+
+- **Foveated rendering** — 시선(또는 VR 렌즈)의 중심만 곱게, 주변부는 거칠게. 사람 눈은
+  중심와(fovea) 밖에서 해상도가 급격히 떨어지므로, 주변부를 거칠게 그려도 거의 못 느낍니다.
+  eye-tracking과 결합하면 시선을 따라 곱은 영역이 움직입니다.
+- **Content-Adaptive Shading (CAS)** — *직전 프레임*의 색을 분석해, 명암 변화(contrast)가
+  적은 영역(하늘·안개·평평한 벽)에 거친 rate를 칠합니다. 변화가 없는 곳은 굵게 셰이딩해도
+  결과가 같으니까요.
+- **Motion-Adaptive Shading (MAS)** — 빠르게 움직이는 픽셀에 거친 rate를 줍니다. 어차피
+  모션 블러로 뭉개질 디테일이니, 거기 정성을 들일 이유가 없죠.
+
+AMD의 오픈소스 FidelityFX Variable Shading은 직전 프레임의 **휘도 분산 + 모션 벡터**로
+이 image를 자동 생성합니다. 보고된 성능 이득은 — 1인칭 분석 수치를 우선하자면 — The
+Coalition이 *Gears Tactics/Gears 5*에 Tier 2 VRS를 적용해 "**눈에 띄는 화질 손해 없이
+GPU ~14%**"를 얻었다고 밝혔습니다. NVIDIA는 *Wolfenstein: Youngblood*에서 "최대 15~20%"를
+이야기하지만(자료마다 숫자가 갈립니다), 이건 IHV 마케팅 수치로 받아들이는 게 안전합니다.
+공통된 메시지는 분명합니다: **공짜는 아니지만, 잘 고르면 화질을 거의 안 주고 두 자릿수
+퍼센트를 번다.**
+
+## 6. MSAA·supersampling과의 자리
+
+VRS는 안티앨리어싱과 충돌하지 않습니다 — 오히려 *직교*합니다. [MSAA](./graphics-pipeline-journey)는
+**coverage를 샘플 단위로** 더 촘촘히 보는 기법이고, VRS는 **shading을 픽셀보다 굵게**
+하는 기법이거든요. 그래서 둘을 동시에 쓸 수 있습니다: 에지는 4×MSAA로 부드럽게 따면서,
+내부 셰이딩은 2×2 coarse로 아끼는 식이죠. 단 하드웨어가 한 셰이딩 호출에 추적해야 하는
+sample 수에 상한이 있어(픽셀당 16 sample), 4×MSAA × 2×2 coarse = 16처럼 곱이 16을 넘지
+않는 조합만 허용됩니다.
+
+스펙트럼으로 보면 이렇게 정리됩니다. supersampling은 픽셀당 **1회보다 많이** 셰이딩하고(가장
+비싸고 곱다), 보통 렌더링은 픽셀당 **정확히 1회**, VRS coarse는 픽셀당 **1회보다 적게**
+셰이딩합니다(가장 싸고 거칠다). VRS는 이 "픽셀당 셰이딩 횟수"라는 축을 화면 위치마다
+자유롭게 고르게 해 준 것 — 한 화면 안에서 곳에 따라 supersample부터 4×4 coarse까지
+섞을 수 있는 *연속적인 다이얼*인 셈입니다.
+
+## 7. 더 나아가기
+
+이 챕터는 VRS의 골격 — visibility/shading 분리, rate 단계, 세 source와 combiner,
+derivative·mip로 번지는 화질 영향, 적응적 정책, MSAA와의 관계 — 를 다뤘습니다. 이어지는 길:
+
+- **셰이딩 비용이 진짜 병목일 때만 이득이다.** VRS는 fragment shader가 무거울 때 빛납니다.
+  파이프라인이 [메모리 대역폭](./memory-bandwidth-roofline)이나 정점 처리에 막혀 있으면
+  셰이딩을 줄여도 프레임이 빨라지지 않죠 — 어디가 병목인지를 먼저 알아야 합니다.
+- **specular aliasing과의 싸움.** coarse 셰이딩은 날카로운 하이라이트를 undersample해
+  지글거림을 키웁니다. 이를 normal/roughness를 미리 거칠게 만드는 prefilter
+  ([microfacet BRDF](./microfacet-brdf))로 누그러뜨리는 기법과 함께 쓰면 손해를 줄일 수
+  있습니다.
+- **mesh shader·GPU-driven 파이프라인과의 결합.** per-primitive rate는 mesh 셰이더에서도
+  나올 수 있어, GPU가 컬링·LOD를 직접 정하는 현대 파이프라인과 자연스럽게 맞물립니다.
+
+VRS는 "모든 픽셀에 똑같은 정성"이라는 오래된 가정을 깨고, 화면 위에 *주의의 지도*를
+그리게 해 줍니다 — 눈이 보는 곳엔 곱게, 안 보는 곳엔 거칠게. 가장 비싼 단계를, 가장 티
+안 나는 곳에서만 아끼는 메스. 그게 VRS입니다.
+
+## 참고 자료
+
+- *Variable Rate Shading* (D3D12 명세, coarse pixel 정의·rate·tier·combiner·MSAA 제약) —
+  [microsoft/DirectX-Specs](https://microsoft.github.io/DirectX-Specs/d3d/VariableRateShading.html)
+- *VRS: a scalpel in a world of sledgehammers* — [DirectX devblog](https://devblogs.microsoft.com/directx/variable-rate-shading-a-scalpel-in-a-world-of-sledgehammers/)
+- *Moving Gears to Tier 2 VRS* (~14% 수치, 1인칭 사례) — [DirectX devblog](https://devblogs.microsoft.com/directx/gears-vrs-tier2/)
+- *VK_KHR_fragment_shading_rate* (pipeline/primitive/attachment·combiner·MUL) —
+  [Khronos proposal](https://docs.vulkan.org/features/latest/features/proposals/VK_KHR_fragment_shading_rate.html)
+- *VK_NV_shading_rate_image* (16×16 타일·팔레트) —
+  [Khronos registry](https://registry.khronos.org/vulkan/specs/1.3-extensions/man/html/VK_NV_shading_rate_image.html)
+- NVIDIA, *Adaptive Shading: a deep dive* (CAS/MAS, 성능 수치는 IHV 자료) —
+  [NVIDIA](https://www.nvidia.com/en-us/geforce/news/nvidia-adaptive-shading-a-deep-dive/) ·
+  [GDC19 PDF](https://www.leiy.cc/publications/nas/nas-gdc19.pdf)
+- AMD, *FidelityFX Variable Shading* (오픈소스 image 생성, 휘도 분산+모션) —
+  [GPUOpen](https://gpuopen.com/fidelityfx-variable-shading/)

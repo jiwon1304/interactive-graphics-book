@@ -245,10 +245,10 @@ export default function TimelineSemaphoreGater() {
 
     // 타임라인 값 카운터(큰 단조 숫자) + 틱.
     ctx.fillStyle = theme.text;
-    ctx.font = '11px ui-monospace, monospace';
+    ctx.font = '12px ui-monospace, monospace';
     ctx.textBaseline = 'middle';
-    ctx.fillText('타임라인 세마포어 값', x0, VALUE_BOX_Y);
-    const tickX0 = x0 + 160;
+    ctx.fillText('세마포어 값', x0, VALUE_BOX_Y);
+    const tickX0 = x0 + 110;
     for (let vv = 0; vv <= 3; vv++) {
       const tx = tickX0 + vv * 26;
       const on = vv <= finalValue;
@@ -257,9 +257,9 @@ export default function TimelineSemaphoreGater() {
       ctx.fillStyle = on ? QUEUE_COLORS.ok : withAlpha(theme.muted, 0.4);
       ctx.fill();
       ctx.fillStyle = theme.muted;
-      ctx.font = '9px ui-monospace, monospace';
+      ctx.font = '12px ui-monospace, monospace';
       ctx.textAlign = 'center';
-      ctx.fillText(`${vv}`, tx, VALUE_BOX_Y + 14);
+      ctx.fillText(`${vv}`, tx, VALUE_BOX_Y + 16);
       ctx.textAlign = 'start';
     }
     ctx.font = 'bold 22px ui-monospace, monospace';
@@ -270,17 +270,17 @@ export default function TimelineSemaphoreGater() {
 
     // C1 대기 임계값 알약 — 값 카운터 줄(틱·v=N) 아래 별도 줄에 둬서
     // 좁은 폭에서도 v=N·틱 숫자와 가로로 겹치지 않게 한다.
-    ctx.font = '10px ui-monospace, monospace';
+    ctx.font = '12px ui-monospace, monospace';
     const waitText = `C1: wait ≥ ${WAIT_W}`;
     const pillCx = x0 + ctx.measureText(waitText).width / 2 + 6;
     pill(
       ctx,
       pillCx,
-      VALUE_BOX_Y + 30,
+      VALUE_BOX_Y + 34,
       waitText,
       withAlpha(QUEUE_COLORS.ok, 0.9),
       '#ffffff',
-      '10px ui-monospace, monospace',
+      '12px ui-monospace, monospace',
     );
 
     ctx.textBaseline = 'alphabetic';
@@ -293,7 +293,14 @@ export default function TimelineSemaphoreGater() {
       <canvas
         ref={ref}
         className="demo-canvas"
-        style={{ height: 300, display: 'block' }}
+        style={{
+          width: '100%',
+          maxWidth: CANVAS_W,
+          minWidth: 0,
+          height: 'auto',
+          aspectRatio: `${CANVAS_W} / ${CANVAS_H}`,
+          display: 'block',
+        }}
       />
       <figcaption>
         세마포어는 <strong>큐와 큐 사이</strong>(또는 큐↔표시)를 동기화합니다 — CPU와 GPU를 잇는
