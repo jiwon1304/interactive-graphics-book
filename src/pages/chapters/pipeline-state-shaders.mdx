@@ -110,13 +110,13 @@ Vulkan의 **VkPipeline**은 이와 **동형(同形)**입니다. `vkCreateGraphic
 `VkGraphicsPipelineCreateInfo`가 shader stages, vertex input, input assembly, rasterization,
 multisample, depth-stencil, color blend, 그리고 pipeline layout과 render pass/attachment
 포맷을 한꺼번에 담습니다. 같은 문제(드라이버가 조합을 늦게 알아 draw마다 변환하던 것)에 대한
-같은 답입니다 — 위 위젯에서 API를 바꿔 두 용어의 1:1 대응을 확인해 보세요.
+같은 답입니다 — 위 그림은 API별로 두 용어의 1:1 대응을 보여줍니다.
 
 대가는 도입부에서 본 그 hitching입니다. 변환 비용 전체가 **생성 시점**으로 몰리니, PSO/
 VkPipeline 생성이 무겁습니다(위 타이밍 도식의 앞쪽 큰 막대). 그래서 두 가지가 중요해집니다.
 첫째, **dynamic state** — 전부를 굳히면 viewport 하나 바꾸는 데도 PSO를 새로 만들어야 하므로,
 자주 바뀌는 일부 상태(`VkDynamicState`의 viewport·scissor 등)는 번들에서 빼서 draw 시점에
-명령으로 설정할 수 있게 합니다(위 위젯의 "dynamic state 분리" 토글). 둘째, **pipeline
+명령으로 설정할 수 있게 합니다(위 그림의 "dynamic state 분리" 부분). 둘째, **pipeline
 cache** — 다음 절에서 셰이더 컴파일을 본 뒤 다루겠습니다.
 
 > **이게 곧 비용 이동의 수학입니다.** 한 프레임의 상태 변환 총비용을 거칠게 쓰면
