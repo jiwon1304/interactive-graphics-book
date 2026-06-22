@@ -12,26 +12,25 @@ interface Op {
 }
 
 const OPS: Op[] = [
-  { api: 'SetPipelineState(pso)', op: 'BIND_PIPELINE', payload: 'pso handle' },
-  { api: 'IASetVertexBuffers(vb)', op: 'SET_VERTEX_BUF', payload: 'addr · stride' },
-  { api: 'SetGraphicsRoot…(cbv)', op: 'SET_CONSTANTS', payload: 'addr · size' },
+  { api: 'SetPipelineState', op: 'BIND_PIPELINE', payload: 'pso handle' },
+  { api: 'SetVertexBuffers', op: 'SET_VTX_BUF', payload: 'addr · stride' },
+  { api: 'SetConstants', op: 'SET_CONST', payload: 'addr · size' },
   { api: 'DrawIndexed(36)', op: 'DRAW_INDEXED', payload: 'count=36' },
 ];
 
 export default function DrawToBytes() {
   const draw = (d: DrawCtx) => {
     const { ctx, w, h, theme } = d;
-    const pad = 12;
-    const narrow = w < 520;
-    const colGap = narrow ? 10 : 22;
+    const pad = 10;
+    const colGap = 12;
     const colW = (w - pad * 2 - colGap) / 2;
     const leftX = pad;
     const rightX = pad + colW + colGap;
-    const top = 30;
+    const top = 32;
 
     // 헤더
-    label(ctx, leftX + colW / 2, 14, '앱이 부르는 API', COLORS.app, 12, 'bold');
-    label(ctx, rightX + colW / 2, 14, 'command buffer (기록된 바이트)', COLORS.cmd, 12, 'bold');
+    label(ctx, leftX + colW / 2, 15, '앱이 부르는 API', COLORS.app, 12, 'bold');
+    label(ctx, rightX + colW / 2, 15, 'command buffer', COLORS.cmd, 12, 'bold');
 
     const rowH = (h - top - 16) / OPS.length;
     OPS.forEach((o, i) => {
@@ -47,11 +46,11 @@ export default function DrawToBytes() {
       ctx.strokeStyle = withAlpha(COLORS.app, 0.5);
       ctx.lineWidth = 1.2;
       ctx.stroke();
-      ctx.font = monoFont(narrow ? 9.5 : 11);
+      ctx.font = monoFont(11);
       ctx.fillStyle = theme.text;
       ctx.textAlign = 'left';
       ctx.textBaseline = 'middle';
-      ctx.fillText(o.api, leftX + 8, cy);
+      ctx.fillText(o.api, leftX + 7, cy);
       ctx.textAlign = 'start';
       ctx.textBaseline = 'alphabetic';
 
@@ -66,13 +65,13 @@ export default function DrawToBytes() {
       ctx.lineWidth = 1.3;
       ctx.stroke();
       // opcode 작은 칩
-      const chipW = Math.min(colW * 0.5, 116);
-      roundRect(ctx, rightX + 6, by + 6, chipW, 15, 3);
+      const chipW = Math.min(colW * 0.72, 130);
+      roundRect(ctx, rightX + 6, by + 6, chipW, 16, 3);
       ctx.fillStyle = withAlpha(COLORS.cmd, 0.85);
       ctx.fill();
-      label(ctx, rightX + 6 + chipW / 2, by + 6 + 7.5, o.op, theme.bg, narrow ? 8.5 : 9.5, 'bold');
+      label(ctx, rightX + 6 + chipW / 2, by + 6 + 8, o.op, theme.bg, 11, 'bold');
       // payload
-      textL(ctx, rightX + 8, by + bh - 11, o.payload, theme.muted, narrow ? 8.5 : 9.5);
+      textL(ctx, rightX + 7, by + bh - 11, o.payload, theme.muted, 11);
     });
   };
 
@@ -80,7 +79,11 @@ export default function DrawToBytes() {
 
   return (
     <figure className="demo">
-      <canvas ref={ref} className="demo-canvas" style={{ height: 280, display: 'block' }} />
+      <canvas
+        ref={ref}
+        className="demo-canvas"
+        style={{ width: '100%', height: 300, maxWidth: 400, display: 'block' }}
+      />
       <figcaption>
         앱이 부르는 한 줄 한 줄은 GPU로 곧장 가지 않습니다 — 드라이버가 그 의미를 그 하드웨어가
         이해하는 <strong>command buffer</strong>(opcode + payload의 바이트열)로 <strong>기록(record)</strong>

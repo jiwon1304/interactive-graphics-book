@@ -17,6 +17,7 @@ import { UE_COLORS, roundRect, withAlpha, monoFont } from './ue2d';
 // ---------------------------------------------------------------------------
 
 const CANVAS_H = 320;
+const CANVAS_MAXW = 380; // 모바일 우선: 내부 렌더 폭 상한(≤400)
 const TDR_LIMIT = 2.0; // 초 (Windows 기본)
 const AXIS_MAX = 2.6; // 축 최대(2초 마커가 가운데쯤 오도록)
 
@@ -79,7 +80,7 @@ export default function TdrCountdown() {
       const barY = top;
 
       // 작업 제목
-      ctx.font = monoFont(10.5);
+      ctx.font = monoFont(12);
       ctx.fillStyle = theme.text;
       ctx.textAlign = 'left';
       ctx.textBaseline = 'alphabetic';
@@ -117,7 +118,7 @@ export default function TdrCountdown() {
         ctx.lineTo(plotX + plotW - 12, ay + 5);
         ctx.closePath();
         ctx.fill();
-        ctx.font = monoFont(9);
+        ctx.font = monoFont(12);
         ctx.fillStyle = '#fff';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
@@ -135,7 +136,7 @@ export default function TdrCountdown() {
         ctx.lineTo(lx, barY + barH + 4);
         ctx.stroke();
         ctx.setLineDash([]);
-        ctx.font = monoFont(9);
+        ctx.font = monoFont(12);
         ctx.fillStyle = theme.muted;
         ctx.textAlign = 'center';
         ctx.fillText('작업 끝', lx, barY + barH + 14);
@@ -183,7 +184,13 @@ export default function TdrCountdown() {
       <canvas
         ref={ref}
         className="demo-canvas"
-        style={{ height: CANVAS_H, display: 'block' }}
+        style={{
+          height: CANVAS_H,
+          display: 'block',
+          width: '100%',
+          maxWidth: CANVAS_MAXW,
+          minWidth: 0,
+        }}
       />
       <figcaption>
         GPU가 작업을 마치지 못하고 멈추면, OS의 <strong>TDR</strong>(Timeout Detection and

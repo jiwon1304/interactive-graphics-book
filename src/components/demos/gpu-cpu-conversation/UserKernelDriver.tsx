@@ -11,22 +11,21 @@ export default function UserKernelDriver() {
     const { ctx, w, theme } = d;
     const pad = 12;
     const bw = w - pad * 2;
-    const narrow = w < 480;
 
     // 세로 배치: user 3블록 → 경계 → kernel 2블록
     const top = 8;
-    const userBoxH = narrow ? 40 : 44;
-    const userGap = 12;
+    const userBoxH = 50;
+    const userGap = 14;
 
     let y = top;
     const node = (fill: string, title: string, sub: string) => {
       box(ctx, pad, y, bw, userBoxH, fill, '', theme);
-      label(ctx, pad + bw / 2, y + userBoxH / 2 - (narrow ? 8 : 9), title, theme.text, narrow ? 11 : 12.5, 'bold');
-      ctx.font = monoFont(narrow ? 8.5 : 9.5);
+      label(ctx, pad + bw / 2, y + userBoxH / 2 - 10, title, theme.text, 13, 'bold');
+      ctx.font = monoFont(12);
       ctx.fillStyle = theme.muted;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      wrapText(ctx, sub, pad + bw / 2, y + userBoxH / 2 + (narrow ? 8 : 9), bw - 24, 11);
+      wrapText(ctx, sub, pad + bw / 2, y + userBoxH / 2 + 9, bw - 20, 13);
       ctx.textAlign = 'start';
       ctx.textBaseline = 'alphabetic';
       y += userBoxH + userGap;
@@ -40,10 +39,10 @@ export default function UserKernelDriver() {
     node(COLORS.umd, 'UMD (user-mode driver)', 'command buffer를 프로세스 메모리에 기록');
 
     // "여기까지 커널 진입 0회" 표시
-    ctx.font = monoFont(narrow ? 9 : 10, 'bold');
+    ctx.font = monoFont(12, 'bold');
     ctx.fillStyle = COLORS.umd;
     ctx.textAlign = 'right';
-    ctx.fillText('user 모드 · 커널 진입 0회', pad + bw, y - userGap + 1);
+    ctx.fillText('커널 진입 0회', pad + bw, y - userGap + 1);
     ctx.textAlign = 'start';
 
     // user/kernel 경계(점선) — 제출 시 한 번 넘음
@@ -57,12 +56,12 @@ export default function UserKernelDriver() {
     ctx.stroke();
     ctx.setLineDash([]);
     // 경계 라벨 박스
-    ctx.font = monoFont(narrow ? 9 : 10, 'bold');
-    const bl = 'user / kernel 경계 (submit = syscall)';
+    ctx.font = monoFont(12, 'bold');
+    const bl = 'user / kernel 경계 (submit)';
     const tw = ctx.measureText(bl).width + 12;
     ctx.fillStyle = theme.bg;
-    ctx.fillRect(pad + bw / 2 - tw / 2, lineY - 8, tw, 16);
-    label(ctx, pad + bw / 2, lineY, bl, COLORS.fence, narrow ? 9 : 10, 'bold');
+    ctx.fillRect(pad + bw / 2 - tw / 2, lineY - 9, tw, 18);
+    label(ctx, pad + bw / 2, lineY, bl, COLORS.fence, 12, 'bold');
     y = lineY + userGap / 2 + 6;
 
     // submit 화살표(경계 가로지름)
@@ -77,7 +76,11 @@ export default function UserKernelDriver() {
 
   return (
     <figure className="demo">
-      <canvas ref={ref} className="demo-canvas" style={{ height: 360, display: 'block' }} />
+      <canvas
+        ref={ref}
+        className="demo-canvas"
+        style={{ width: '100%', height: 380, maxWidth: 400, display: 'block' }}
+      />
       <figcaption>
         드라이버는 한 덩어리가 아니라 <strong>user 모드</strong>와 <strong>kernel 모드</strong>로
         쪼개져 있습니다. <span style={{ color: COLORS.umd }}>UMD</span>(user-mode driver)는 앱과 같은

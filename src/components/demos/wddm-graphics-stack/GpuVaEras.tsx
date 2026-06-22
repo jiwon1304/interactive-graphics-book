@@ -41,23 +41,14 @@ const ERA2: Era = {
 export default function GpuVaEras() {
   const draw = (d: DrawCtx) => {
     const { ctx, w, h, theme } = d;
-    const narrow = w < 560;
     const padX = Math.max(10, w * 0.03);
 
-    if (narrow) {
-      // 세로 2단
-      const colW = w - padX * 2;
-      let y = 10;
-      y = drawEra(ctx, padX, y, colW, ERA1, theme, true);
-      y += 18;
-      drawEra(ctx, padX, y, colW, ERA2, theme, true);
-    } else {
-      const gap = 20;
-      const colW = (w - padX * 2 - gap) / 2;
-      const top = 10;
-      drawEra(ctx, padX, top, colW, ERA1, theme, false);
-      drawEra(ctx, padX + colW + gap, top, colW, ERA2, theme, false);
-    }
+    // 항상 세로 2단(모바일 우선). 두 시대를 위→아래로 쌓는다.
+    const colW = w - padX * 2;
+    let y = 10;
+    y = drawEra(ctx, padX, y, colW, ERA1, theme);
+    y += 18;
+    drawEra(ctx, padX, y, colW, ERA2, theme);
     void h;
   };
 
@@ -65,7 +56,11 @@ export default function GpuVaEras() {
 
   return (
     <figure className="demo">
-      <canvas ref={ref} className="demo-canvas" style={{ height: 420, display: 'block' }} />
+      <canvas
+        ref={ref}
+        className="demo-canvas"
+        style={{ width: '100%', maxWidth: 400, height: 460, display: 'block' }}
+      />
       <figcaption>
         같은 "리소스를 바인딩" 명령이 두 시대에 전혀 다르게 처리됩니다.
         <span style={{ color: COLORS.era1 }}> WDDM 1.x</span>에서 GPU는 segment의 <strong>물리주소
@@ -90,42 +85,41 @@ function drawEra(
   colW: number,
   era: Era,
   theme: ThemeColors,
-  narrow: boolean,
 ): number {
   const pad = 10;
   const inner = colW - pad * 2;
-  const bulletPx = narrow ? 9.5 : 10;
+  const bulletPx = 12;
   const lineH = bulletPx + 3;
 
   // 제목
   let y = y0;
   ctx.textAlign = 'left';
   ctx.textBaseline = 'middle';
-  ctx.font = monoFont(narrow ? 11.5 : 12.5, 'bold');
+  ctx.font = monoFont(13.5, 'bold');
   ctx.fillStyle = era.color;
   ctx.fillText(era.tag, x, y + 9);
   y += 24;
 
   // command buffer 칩
-  const cmdH = 30;
+  const cmdH = 32;
   box(ctx, x, y, colW, cmdH, COLORS.umd, '', theme, { alpha: 0.14, r: 6 });
-  ctx.font = monoFont(narrow ? 9 : 9.5, 'bold');
+  ctx.font = monoFont(11, 'bold');
   ctx.fillStyle = theme.muted;
-  ctx.fillText('command buffer', x + pad, y + 9);
-  ctx.font = monoFont(narrow ? 9.5 : 10.5, 'bold');
+  ctx.fillText('command buffer', x + pad, y + 10);
+  ctx.font = monoFont(12, 'bold');
   ctx.fillStyle = theme.text;
-  ctx.fillText(era.cmd, x + pad, y + 21);
+  ctx.fillText(era.cmd, x + pad, y + 23);
   y += cmdH + 8;
 
   // 주소 해석 단계(patch 있음/없음)
-  const stepH = 26;
+  const stepH = 28;
   const hasPatch = era === ERA1;
   box(ctx, x, y, colW, stepH, hasPatch ? COLORS.era1 : COLORS.era2, '', theme, {
     alpha: 0.16,
     r: 6,
   });
   ctx.textAlign = 'center';
-  ctx.font = monoFont(narrow ? 9.5 : 10.5, 'bold');
+  ctx.font = monoFont(12, 'bold');
   ctx.fillStyle = hasPatch ? COLORS.era1 : COLORS.era2;
   ctx.fillText(
     hasPatch ? 'VidMm: patch list로 주소 메움' : 'patch 없음 — 주소 그대로 실행',
@@ -165,12 +159,12 @@ function drawEra(
   ctx.lineTo(x + colW, y);
   ctx.stroke();
   y += 8;
-  ctx.font = monoFont(narrow ? 9 : 9.5, 'bold');
+  ctx.font = monoFont(11, 'bold');
   ctx.fillStyle = theme.muted;
-  ctx.fillText('제출:', x, y + 5);
+  ctx.fillText('제출:', x, y + 6);
   ctx.fillStyle = era.color;
-  ctx.fillText(era.submit, x + ctx.measureText('제출:  ').width, y + 5);
-  y += 18;
+  ctx.fillText(era.submit, x + ctx.measureText('제출:  ').width, y + 6);
+  y += 20;
 
   ctx.textAlign = 'start';
   return y;

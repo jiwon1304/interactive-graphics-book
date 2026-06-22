@@ -1,27 +1,25 @@
-import { useState } from 'react';
-import { ControlPanel, Slider } from '../../controls';
 import { useCanvas2d, type DrawCtx } from './useCanvas2d';
 import { COLORS, label, roundRect, withAlpha, monoFont, drawArrow } from './gcc2d';
 
-// frames-in-flight 타임라인(인터랙티브). 두 레인:
+// frames-in-flight 타임라인(정적). 두 레인:
 //  - CPU: 프레임을 차례로 "기록"(record). 단 GPU보다 최대 F프레임 앞설 수 있음(F=frames in flight).
 //  - GPU: CPU가 제출한 프레임을 차례로 "실행", 끝에 present.
-// F=1이면 CPU가 GPU를 기다리느라 비는(idle) 구간이 생기고, F를 늘리면 두 레인이 겹쳐 idle이 사라진다.
+// 대표 상태로 F=1을 고른다: CPU가 GPU를 기다리는(idle/wait) 구간이 또렷이 보여,
+// "F가 작으면 stall"이라는 핵심을 한 컷으로 가장 잘 보여준다.
 //
 // 도식용 단순 모델: CPU 기록시간 tc, GPU 실행시간 tg를 고정 칸으로. 핵심은 절대값이 아니라
 // "F가 작으면 stall, 크면 파이프라인이 채워진다"는 구조.
 
 const TC = 1.0; // CPU가 한 프레임 기록하는 데 드는 칸
 const TG = 1.45; // GPU가 한 프레임 실행하는 데 드는 칸 (GPU가 더 오래 걸리는 경우)
-const FRAMES = 6;
+const FRAMES = 5;
+const FLIGHT = 1; // 대표 상태: frames in flight = 1 (stall이 보이는 경우)
 
 export default function AsyncTimeline() {
-  const [flight, setFlight] = useState(2);
-
   const draw = (d: DrawCtx) => {
     const { ctx, w, theme } = d;
     const pad = 12;
-    const leftW = 42;
+    const leftW = 44;
     const x0 = pad + leftW;
     const x1 = w - pad - 8;
 
@@ -31,10 +29,10 @@ export default function AsyncTimeline() {
     const gpuStart: number[] = [];
     const gpuEnd: number[] = [];
     for (let i = 0; i < FRAMES; i++) {
-      // CPU는 이전 프레임 기록 끝난 뒤 시작하되, GPU보다 flight개 넘게 앞서면 대기:
-      // 프레임 i 기록을 시작하려면 프레임 (i-flight)의 GPU 실행이 끝나야 한다.
+      // CPU는 이전 프레임 기록 끝난 뒤 시작하되, GPU보다 FLIGHT개 넘게 앞서면 대기:
+      // 프레임 i 기록을 시작하려면 프레임 (i-FLIGHT)의 GPU 실행이 끝나야 한다.
       const afterPrevRecord = i === 0 ? 0 : cpuEnd[i - 1];
-      const waitFor = i - flight >= 0 ? gpuEnd[i - flight] : 0;
+      const waitFor = i - FLIGHT >= 0 ? gpuEnd[i - FLIGHT] : 0;
       const cs = Math.max(afterPrevRecord, waitFor);
       cpuStart[i] = cs;
       cpuEnd[i] = cs + TC;
@@ -48,9 +46,9 @@ export default function AsyncTimeline() {
     const scale = (x1 - x0) / (totalT + 0.2);
     const tx = (t: number) => x0 + t * scale;
 
-    const laneTop = 26;
-    const laneH = 40;
-    const gap = 34;
+    const laneTop = 30;
+    const laneH = 44;
+    const gap = 40;
     const cpuY = laneTop;
     const gpuY = laneTop + laneH + gap;
 
@@ -76,7 +74,7 @@ export default function AsyncTimeline() {
         ctx.fillStyle = withAlpha(COLORS.idle, 0.3);
         ctx.fill();
         if ((b - a) * scale > 22) {
-          label(ctx, tx(a) + ((b - a) * scale) / 2, cpuY + laneH / 2, 'wait', COLORS.fence, 8.5, 'bold');
+          label(ctx, tx(a) + ((b - a) * scale) / 2, cpuY + laneH / 2, 'wait', COLORS.fence, 12, 'bold');
         }
       }
     }
@@ -87,7 +85,7 @@ export default function AsyncTimeline() {
       ctx.fillStyle = withAlpha(color, 0.85);
       ctx.fill();
       if (ww > 16) {
-        label(ctx, x + ww / 2, y + laneH / 2, txt, theme.bg, 10, 'bold');
+        label(ctx, x + ww / 2, y + laneH / 2, txt, theme.bg, 12, 'bold');
       }
     };
     for (let i = 0; i < FRAMES; i++) {
@@ -109,36 +107,29 @@ export default function AsyncTimeline() {
     }
 
     // present 범례
-    ctx.font = monoFont(9);
+    ctx.font = monoFont(12);
     ctx.fillStyle = COLORS.present;
     ctx.textAlign = 'left';
-    ctx.fillText('▲ present', x0, gpuY + laneH + 24);
+    ctx.fillText('▲ present', x0, gpuY + laneH + 26);
     ctx.textAlign = 'start';
   };
 
-  const { ref } = useCanvas2d(draw, [flight]);
+  const { ref } = useCanvas2d(draw, []);
 
   return (
     <figure className="demo">
-      <canvas ref={ref} className="demo-canvas" style={{ height: 200, display: 'block' }} />
-      <ControlPanel>
-        <Slider
-          label="frames in flight"
-          value={flight}
-          min={1}
-          max={3}
-          step={1}
-          onChange={setFlight}
-          format={(v) => `${v}`}
-        />
-      </ControlPanel>
+      <canvas
+        ref={ref}
+        className="demo-canvas"
+        style={{ width: '100%', height: 220, maxWidth: 400, display: 'block' }}
+      />
       <figcaption>
         위 레인은 <span style={{ color: COLORS.cpu }}>CPU가 프레임을 기록</span>하는 시간,
         아래는 <span style={{ color: COLORS.gpu }}>GPU가 그 프레임을 실행</span>하는 시간입니다
-        (<span style={{ color: COLORS.present }}>▲ = present</span>). 슬라이더를{' '}
-        <strong>frames in flight = 1</strong>로 두면, CPU는 프레임 N을 제출한 뒤 GPU가 그 프레임을
+        (<span style={{ color: COLORS.present }}>▲ = present</span>). 이 그림은{' '}
+        <strong>frames in flight = 1</strong>인 경우입니다: CPU는 프레임 N을 제출한 뒤 GPU가 그 프레임을
         끝낼 때까지 다음 프레임 기록을 시작하지 못해 <span style={{ color: COLORS.fence }}>wait</span>{' '}
-        구간이 생깁니다 — CPU와 GPU가 번갈아 놀죠. <strong>2~3으로 늘리면</strong> CPU가 GPU보다
+        구간이 생깁니다 — CPU와 GPU가 번갈아 놀죠. frames in flight를 2~3으로 늘리면 CPU가 GPU보다
         한두 프레임 앞서 달릴 수 있어 두 레인이 겹치고, 빈 구간이 사라져 처리량이 올라갑니다. 이것이
         double/triple buffering의 정체입니다: GPU가 N을 그리는 동안 CPU가 N+1을 기록합니다. 공짜는
         아닙니다 — F가 클수록 입력 지연(latency)이 커지고, 프레임마다 별도의 버퍼·자원이 필요해집니다.

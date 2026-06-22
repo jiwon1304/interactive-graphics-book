@@ -18,23 +18,25 @@ import { QUEUE_COLORS, roundRect, withAlpha, drawArrow } from './cq2d';
 // 정답 스코프를 라벨과 함께 정적으로 보여준다.
 // ---------------------------------------------------------------------------
 
+// 짧은 스테이지 라벨(모바일 좁은 폭에서 박스를 안 넘게 축약).
 const STAGES = [
-  'TOP_OF_PIPE',
-  'VERTEX_SHADER',
-  'EARLY_FRAGMENT_TESTS',
-  'FRAGMENT_SHADER',
-  'COLOR_ATTACHMENT_OUTPUT',
-  'BOTTOM_OF_PIPE',
+  'TOP',
+  'VERTEX',
+  'EARLY_Z',
+  'FRAGMENT',
+  'COLOR_OUT',
+  'BOTTOM',
 ] as const;
 
-// 시나리오: 렌더 타깃에 색을 쓴 뒤(COLOR_ATTACHMENT_OUTPUT) 다음 패스가 텍스처로 샘플링(FRAGMENT_SHADER).
-const WRITE_STAGE = STAGES.indexOf('COLOR_ATTACHMENT_OUTPUT');
-const READ_STAGE = STAGES.indexOf('FRAGMENT_SHADER');
+// 시나리오: 렌더 타깃에 색을 쓴 뒤(COLOR_OUT) 다음 패스가 텍스처로 샘플링(FRAGMENT).
+const WRITE_STAGE = STAGES.indexOf('COLOR_OUT');
+const READ_STAGE = STAGES.indexOf('FRAGMENT');
 // tight한 정답: src=쓰기 스테이지, dst=읽기 스테이지(과동기화 0).
 const SRC = WRITE_STAGE;
 const DST = READ_STAGE;
 
-const CANVAS_H = 380;
+const CANVAS_W = 360;
+const CANVAS_H = 440;
 
 export default function BarrierStageScope() {
   const draw = (d: DrawCtx): void => {
@@ -42,9 +44,9 @@ export default function BarrierStageScope() {
     ctx.fillStyle = theme.surface;
     ctx.fillRect(0, 0, w, h);
 
-    const padX = 14;
-    const top = 56;
-    const bottomPad = 52; // 하단 주석 공간
+    const padX = 12;
+    const top = 64;
+    const bottomPad = 70; // 하단 주석 공간(여러 줄)
     const rowH = Math.min(40, (h - top - bottomPad) / STAGES.length);
     // 가운데 거터(gutter)는 점/화살표/주석이 들어갈 공간이라 좁은 폭에서도 최소 폭을 보장.
     const colW = Math.min(150, (w - padX * 2 - 56) / 2);
@@ -54,22 +56,21 @@ export default function BarrierStageScope() {
     const gutterCx = (leftX + colW + rightX) / 2;
 
     // 시나리오 제목.
-    ctx.font = '11px ui-monospace, monospace';
-    ctx.fillStyle = theme.muted;
+    ctx.font = 'bold 14px ui-monospace, monospace';
+    ctx.fillStyle = theme.text;
     ctx.textBaseline = 'alphabetic';
-    ctx.fillText('RT→샘플링: 쓰기=COLOR_OUTPUT, 읽기=FRAGMENT — tight한 정답 스코프', leftX, 24);
+    ctx.fillText('배리어의 stage scope', leftX, 22);
+    ctx.font = '12px ui-monospace, monospace';
+    ctx.fillStyle = theme.muted;
+    ctx.fillText('RT→샘플링: tight한 정답', leftX, 40);
 
     // 컬럼 제목.
     ctx.font = '12px ui-monospace, monospace';
     ctx.textAlign = 'left';
-    ctx.fillStyle = theme.text;
-    ctx.fillText('이전 명령 (producer)', leftX, top - 18);
-    ctx.fillText('다음 명령 (consumer)', rightX, top - 18);
-    ctx.font = '10px ui-monospace, monospace';
     ctx.fillStyle = QUEUE_COLORS.stall;
-    ctx.fillText('srcStage: 여기까지 도달 대기', leftX, top - 4);
+    ctx.fillText('producer (src)', leftX, top - 8);
     ctx.fillStyle = QUEUE_COLORS.graphics;
-    ctx.fillText('dstStage: 여기서부터 블록', rightX, top - 4);
+    ctx.fillText('consumer (dst)', rightX, top - 8);
 
     const drawLadder = (x: number, side: 'left' | 'right'): void => {
       for (let i = 0; i < STAGES.length; i++) {
@@ -98,21 +99,22 @@ export default function BarrierStageScope() {
           ctx.stroke();
         }
 
-        ctx.font = '10px ui-monospace, monospace';
+        ctx.font = '12px ui-monospace, monospace';
         ctx.fillStyle = theme.text;
         ctx.textAlign = 'left';
         ctx.textBaseline = 'middle';
-        ctx.fillText(STAGES[i], x + 8, y + rowH / 2);
+        ctx.fillText(STAGES[i], x + 6, y + rowH / 2);
         ctx.textBaseline = 'alphabetic';
 
         if (isReal) {
-          const label = side === 'left' ? '실제 쓰기' : '실제 읽기';
+          const label = side === 'left' ? '쓰기' : '읽기';
           const col = side === 'left' ? QUEUE_COLORS.bad : QUEUE_COLORS.ok;
-          ctx.font = '9px ui-monospace, monospace';
+          ctx.font = 'bold 12px ui-monospace, monospace';
           ctx.fillStyle = col;
           ctx.textAlign = 'right';
-          ctx.fillText(label, x + colW - 8, y + rowH / 2 + 3);
+          ctx.fillText(label, x + colW - 6, y + rowH / 2);
           ctx.textAlign = 'left';
+          ctx.textBaseline = 'alphabetic';
         }
       }
     };
@@ -123,7 +125,7 @@ export default function BarrierStageScope() {
     // "안 기다림" / "먼저 진행 가능" 주석 — 거터(가운데)에 가운데 정렬로 둬서
     // 사다리 셀의 긴 스테이지 이름과 겹치지 않게 한다. 화살표가 지나는 행(SRC..DST)
     // 바깥의 행(SRC+1, DST-1)에 배치해 화살표/점과도 분리된다.
-    ctx.font = '9px ui-monospace, monospace';
+    ctx.font = '12px ui-monospace, monospace';
     ctx.textAlign = 'center';
     if (SRC < STAGES.length - 1) {
       const y = top + (SRC + 1) * rowH + rowH / 2;
@@ -133,7 +135,7 @@ export default function BarrierStageScope() {
     if (DST > 0) {
       const y = top + (DST - 1) * rowH + rowH / 2;
       ctx.fillStyle = theme.muted;
-      ctx.fillText('↓ 먼저 진행 가능', gutterCx, y + 3);
+      ctx.fillText('↓ 먼저 진행', gutterCx, y + 3);
     }
     ctx.textAlign = 'left';
 
@@ -161,7 +163,7 @@ export default function BarrierStageScope() {
       ctx.strokeStyle = theme.bg;
       ctx.lineWidth = 2;
       ctx.stroke();
-      ctx.font = 'bold 9px ui-monospace, monospace';
+      ctx.font = 'bold 12px ui-monospace, monospace';
       ctx.fillStyle = color;
       ctx.textBaseline = 'middle';
       if (anchor === 'left') {
@@ -179,18 +181,15 @@ export default function BarrierStageScope() {
     drawDot(dstDotX, DST, QUEUE_COLORS.graphics, 'dst', 'left');
 
     // 하단 주석: tight vs 전체 배리어 비교.
-    const noteY = h - 34;
-    ctx.font = '10px ui-monospace, monospace';
+    const noteY = h - 48;
+    ctx.font = '12px ui-monospace, monospace';
     ctx.textAlign = 'left';
-    ctx.fillStyle = QUEUE_COLORS.ok;
-    ctx.fillText('✓ tight: src=COLOR_OUTPUT, dst=FRAGMENT — 딱 필요한 만큼만(과동기화 0)', padX, noteY);
-    ctx.fillStyle = theme.muted;
-    ctx.fillText(
-      'cf. 전체 배리어(src=BOTTOM, dst=TOP)는 커버되지만 전체 직렬화 → 오버랩이 죽는다',
-      padX,
-      noteY + 16,
-    );
     ctx.textBaseline = 'alphabetic';
+    ctx.fillStyle = QUEUE_COLORS.ok;
+    ctx.fillText('✓ tight: src=COLOR_OUT, dst=FRAGMENT', padX, noteY);
+    ctx.fillStyle = theme.muted;
+    ctx.fillText('딱 필요한 만큼만 — 과동기화 0', padX, noteY + 18);
+    ctx.fillText('cf. 전체 배리어는 직렬화 → 오버랩 죽음', padX, noteY + 36);
   };
 
   const { ref } = useCanvas2d(draw, []);
@@ -200,7 +199,14 @@ export default function BarrierStageScope() {
       <canvas
         ref={ref}
         className="demo-canvas"
-        style={{ height: CANVAS_H, display: 'block' }}
+        style={{
+          width: '100%',
+          maxWidth: CANVAS_W,
+          minWidth: 0,
+          height: 'auto',
+          aspectRatio: `${CANVAS_W} / ${CANVAS_H}`,
+          display: 'block',
+        }}
       />
       <figcaption>
         배리어는 “전부 멈춰”라는 벽이 아니라 <strong>스테이지 범위(scope)</strong>입니다.{' '}

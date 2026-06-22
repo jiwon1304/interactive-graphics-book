@@ -55,12 +55,12 @@ export default function ApiResponsibilities() {
   const draw = (d: DrawCtx) => {
     const { ctx, w, theme } = d;
     const pad = 6;
-    const labelW = Math.min(96, Math.max(58, w * 0.18));
+    const labelW = Math.min(82, Math.max(54, w * 0.17));
     const colW = (w - pad * 2 - labelW) / COLS.length;
     const headH = 26;
 
-    // 셀 폰트(좁으면 더 작게)
-    const cellPx = colW < 76 ? 8 : colW < 96 ? 9 : 10;
+    // 셀 폰트(좁아도 가독 최소 10px 유지 — 좁으면 줄바꿈으로 흡수)
+    const cellPx = colW < 82 ? 10 : 11;
     const cellPad = 4;
     const lineH = cellPx + 2;
 

@@ -22,22 +22,21 @@ export default function WddmStack() {
     const { ctx, w, theme } = d;
     const bx = Math.max(12, w * 0.05);
     const bw = w - bx * 2;
-    const narrow = w < 460;
-    const titlePx = narrow ? 11 : 12.5;
-    const rolePx = narrow ? 9.5 : 10.5;
+    const titlePx = 12.5;
+    const rolePx = 11;
     const lineH = rolePx + 3;
-    const gap = narrow ? 16 : 18;
+    const gap = 18;
     const pad = 9;
     const inner = bw - pad * 2;
 
     // 각 레이어 높이를 역할 텍스트 줄 수로 계산
     const heights = LAYERS.map((l) => {
       const lines = wrapText(ctx, l.role, inner, rolePx);
-      return Math.max(narrow ? 46 : 44, pad + titlePx + 6 + lines.length * lineH + pad);
+      return Math.max(48, pad + titlePx + 6 + lines.length * lineH + pad);
     });
     // Dxgkrnl + KMD/GPU 는 별도 계산(서브노드 포함)
-    const kernelH = narrow ? 92 : 84;
-    const gpuH = narrow ? 48 : 46;
+    const kernelH = 100;
+    const gpuH = 50;
 
     let y = 8;
 
@@ -83,12 +82,12 @@ export default function WddmStack() {
     ctx.lineTo(bx + bw, lineY);
     ctx.stroke();
     ctx.setLineDash([]);
-    ctx.font = monoFont(9.5, 'bold');
+    ctx.font = monoFont(11, 'bold');
     const tag = 'user / kernel';
     const tw = ctx.measureText(tag).width + 12;
     ctx.fillStyle = theme.bg;
     ctx.fillRect(bx + bw - tw, lineY - 8, tw, 16);
-    label(ctx, bx + bw - tw / 2, lineY, tag, theme.muted, 9.5, 'bold');
+    label(ctx, bx + bw - tw / 2, lineY, tag, theme.muted, 11, 'bold');
     drawArrow(ctx, bx + bw / 2, y + 2, bx + bw / 2, lineY - 7, theme.muted, 1.6, 6);
     drawArrow(ctx, bx + bw / 2, lineY + 7, bx + bw / 2, y + gap - 3, theme.muted, 1.6, 6);
     y += gap;
@@ -103,18 +102,12 @@ export default function WddmStack() {
     ctx.fillText('Dxgkrnl  (DirectX 그래픽스 커널)', bx + pad, kY + pad + titlePx / 2);
     ctx.textAlign = 'start';
     ctx.textBaseline = 'alphabetic';
-    // 서브칩 두 개를 세로(narrow) 또는 가로로
+    // 서브칩 두 개를 항상 세로로 쌓는다(모바일 우선).
     const chipTop = kY + pad + titlePx + 8;
-    const chipH = narrow ? 24 : 22;
-    if (narrow) {
-      const cw = bw - pad * 2;
-      subChip(ctx, bx + pad, chipTop, cw, chipH, 'VidMm', '메모리·residency·paging', theme);
-      subChip(ctx, bx + pad, chipTop + chipH + 6, cw, chipH, 'VidSch', '엔진 스케줄러·ring buffer 큐잉', theme);
-    } else {
-      const cw = (bw - pad * 2 - 10) / 2;
-      subChip(ctx, bx + pad, chipTop, cw, chipH, 'VidMm', '메모리·residency·paging', theme);
-      subChip(ctx, bx + pad + cw + 10, chipTop, cw, chipH, 'VidSch', '엔진 스케줄러·ring buffer', theme);
-    }
+    const chipH = 26;
+    const cw = bw - pad * 2;
+    subChip(ctx, bx + pad, chipTop, cw, chipH, 'VidMm', '메모리·residency·paging', theme);
+    subChip(ctx, bx + pad, chipTop + chipH + 6, cw, chipH, 'VidSch', '엔진 스케줄러·ring buffer 큐잉', theme);
     y += kernelH;
     arrowDown();
 
@@ -143,12 +136,12 @@ export default function WddmStack() {
     theme: ThemeColors,
   ) => {
     box(ctx, x, yy, cw, ch, COLORS.kernel, '', theme, { alpha: 0.3, r: 5 });
-    ctx.font = monoFont(10, 'bold');
+    ctx.font = monoFont(11.5, 'bold');
     ctx.fillStyle = theme.text;
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
     ctx.fillText(name, x + 8, yy + ch / 2);
-    ctx.font = monoFont(9);
+    ctx.font = monoFont(11);
     ctx.fillStyle = theme.muted;
     ctx.fillText(role, x + 8 + ctx.measureText(name + '  ').width + 6, yy + ch / 2);
     ctx.textAlign = 'start';

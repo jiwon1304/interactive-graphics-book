@@ -102,13 +102,15 @@ function buildSchedule(): Schedule {
   return { gfx, cmp, edge };
 }
 
-const PAD_L = 16;
-const PAD_R = 16;
-const LANE_GFX_Y = 70;
-const LANE_CMP_Y = 150;
+const PAD_L = 14;
+const PAD_R = 14;
+const LANE_GFX_Y = 80;
+const LANE_CMP_Y = 160;
 const LANE_H = 40;
-const AXIS_Y = 220;
-const VALUE_BOX_Y = 252;
+const AXIS_Y = 228;
+const VALUE_BOX_Y = 264;
+const CANVAS_W = 360;
+const CANVAS_H = 330;
 
 export default function TimelineSemaphoreGater() {
   const sched = buildSchedule();

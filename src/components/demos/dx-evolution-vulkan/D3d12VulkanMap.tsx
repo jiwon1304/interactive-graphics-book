@@ -36,7 +36,7 @@ export default function D3d12VulkanMap() {
     const colW = (w - pad * 2 - midGap) / 2;
     const leftX = pad;
     const rightX = pad + colW + midGap;
-    const px = colW < 120 ? 9 : 10;
+    const px = colW < 120 ? 10 : 11;
 
     // 헤더
     const head = (x: number, text: string, c: string) => {
@@ -73,7 +73,7 @@ export default function D3d12VulkanMap() {
         ctx.fill();
       }
       // 역할 라벨(연결선 위)
-      ctx.font = monoFont(8, 'bold');
+      ctx.font = monoFont(11, 'bold');
       ctx.fillStyle = theme.muted;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'bottom';
@@ -91,7 +91,11 @@ export default function D3d12VulkanMap() {
 
   return (
     <figure className="demo">
-      <canvas ref={ref} className="demo-canvas" style={{ height: 360, display: 'block' }} />
+      <canvas
+        ref={ref}
+        className="demo-canvas"
+        style={{ width: '100%', maxWidth: 400, minWidth: 0, height: 400, display: 'block' }}
+      />
       <figcaption>
         D3D12와 Vulkan은 같은 문제(드라이버 per-draw 오버헤드)에 대한 같은 답이라, 개념이 거의{' '}
         <strong>일대일로</strong> 대응합니다. 파이프라인 상태는{' '}
