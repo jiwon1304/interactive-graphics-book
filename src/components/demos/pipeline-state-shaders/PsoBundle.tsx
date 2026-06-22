@@ -92,10 +92,10 @@ export default function PsoBundle() {
     ctx.stroke();
     ctx.setLineDash([]);
     label(ctx, bundleX + bundleW / 2, dynY + 15, 'dynamic state — draw 시 설정', theme.muted, 12, 'bold');
-    dynamic.forEach((p, i) => {
+    dynamic.forEach((p) => {
       const dh = 26;
       const dw = bundleW - 24;
-      const x = bundleX + 12 + i * 0;
+      const x = bundleX + 12;
       const y = dynY + 28;
       roundRect(ctx, x, y, dw, dh, 6);
       ctx.fillStyle = withAlpha(p.color, 0.18);

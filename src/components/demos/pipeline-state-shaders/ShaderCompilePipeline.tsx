@@ -122,7 +122,11 @@ export default function ShaderCompilePipeline() {
 
   return (
     <figure className="demo">
-      <canvas ref={ref} className="demo-canvas" style={{ height: 230, display: 'block' }} />
+      <canvas
+        ref={ref}
+        className="demo-canvas"
+        style={{ height: 270, display: 'block', width: '100%', maxWidth: 380 }}
+      />
       <figcaption>
         셰이더는 <strong>두 단계</strong>로 컴파일됩니다. 왼쪽(점선 왼편)은 <strong>offline</strong> — 앱을
         빌드할 때 HLSL/GLSL 소스를 중간 IR로 한 번 컴파일합니다.{' '}

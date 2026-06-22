@@ -88,8 +88,8 @@ interface PanelSpec {
 }
 
 const PANELS: PanelSpec[] = [
-  { N: 1, title: 'N = 1 (버퍼 1개)', note: '핑퐁 — 둘 다 절반은 논다(처리량 낮음)' },
-  { N: 3, title: 'N = 3 (트리플 버퍼)', note: '두 레인이 겹쳐 거의 꽉 참(버퍼링의 효과)' },
+  { N: 1, title: 'N = 1 (버퍼 1개)', note: '핑퐁 — 둘 다 절반은 논다' },
+  { N: 3, title: 'N = 3 (트리플 버퍼)', note: '레인이 겹쳐 거의 꽉 참' },
 ];
 
 export default function FenceFramesInFlight() {
@@ -111,18 +111,18 @@ export default function FenceFramesInFlight() {
       const sim = simulate(spec.N, FRAME_TIME, FRAME_TIME, SIM_FRAMES);
 
       // 패널 제목 + 노트 (제목·노트·레인 라벨이 겹치지 않게 충분히 띄움)
-      ctx.font = 'bold 12px ui-monospace, monospace';
+      ctx.font = 'bold 14px ui-monospace, monospace';
       ctx.fillStyle = theme.text;
       ctx.fillText(spec.title, plotX, panelTop + 14);
-      ctx.font = '10px ui-monospace, monospace';
+      ctx.font = '12px ui-monospace, monospace';
       ctx.fillStyle = theme.muted;
-      ctx.fillText(spec.note, plotX, panelTop + 30);
+      ctx.fillText(spec.note, plotX, panelTop + 32);
 
-      const cpuLaneY = panelTop + 54;
+      const cpuLaneY = panelTop + 58;
       const gpuLaneY = cpuLaneY + laneH + 24;
 
       // 레인 라벨
-      ctx.font = '10px ui-monospace, monospace';
+      ctx.font = '12px ui-monospace, monospace';
       ctx.fillStyle = theme.muted;
       ctx.fillText('CPU 기록', plotX, cpuLaneY - 6);
       ctx.fillText('GPU 실행', plotX, gpuLaneY - 6);
@@ -166,7 +166,7 @@ export default function FenceFramesInFlight() {
             ctx.fillStyle = withAlpha(busyColor, 0.85);
             ctx.fill();
             if (bw > 16) {
-              ctx.font = '10px ui-monospace, monospace';
+              ctx.font = '12px ui-monospace, monospace';
               ctx.fillStyle = '#ffffff';
               ctx.textAlign = 'center';
               ctx.textBaseline = 'middle';

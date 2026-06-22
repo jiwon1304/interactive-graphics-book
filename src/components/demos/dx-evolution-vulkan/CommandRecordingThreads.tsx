@@ -36,31 +36,31 @@ export default function CommandRecordingThreads() {
 
     // --- DX11 ---
     top = pad + laneH;
-    label(ctx, pad + leftW / 2 - 2, top + laneH / 2, 'DX11', COLORS.dx11, 12, 'bold');
+    label(ctx, pad + leftW / 2 - 2, top + laneH / 2, 'DX11', COLORS.dx11, 13, 'bold');
     {
       const imy = top + 16;
       const bw = Math.min(110, innerW * 0.4);
-      box(ctx, xBase, imy - 12, bw, 24, COLORS.runtime, 'Immediate', theme, { px: 10 });
+      box(ctx, xBase, imy - 12, bw, 24, COLORS.runtime, 'Immediate', theme, { px: 11 });
       drawArrow(ctx, xBase + bw + 2, imy, gpuX - 2, imy, theme.muted, 1.5, 6);
-      const dy1 = top + laneH - 36;
-      const dy2 = top + laneH - 13;
-      box(ctx, xBase, dy1 - 10, bw, 20, COLORS.dx11, 'Deferred A', theme, { px: 9, alpha: 0.2 });
-      box(ctx, xBase, dy2 - 10, bw, 20, COLORS.dx11, 'Deferred B', theme, { px: 9, alpha: 0.2 });
+      const dy1 = top + laneH - 38;
+      const dy2 = top + laneH - 14;
+      box(ctx, xBase, dy1 - 11, bw, 22, COLORS.dx11, 'Deferred A', theme, { px: 10, alpha: 0.2 });
+      box(ctx, xBase, dy2 - 11, bw, 22, COLORS.dx11, 'Deferred B', theme, { px: 10, alpha: 0.2 });
       const clx = xBase + bw + 18;
-      box(ctx, clx, (dy1 + dy2) / 2 - 11, Math.min(96, innerW * 0.34), 22, COLORS.dx11, 'cmd list', theme, { px: 9, alpha: 0.28 });
+      box(ctx, clx, (dy1 + dy2) / 2 - 11, Math.min(96, innerW * 0.34), 22, COLORS.dx11, 'cmd list', theme, { px: 10, alpha: 0.28 });
       drawArrow(ctx, xBase + bw + 2, dy1, clx - 2, (dy1 + dy2) / 2 - 4, COLORS.dx11, 1.3, 5);
       drawArrow(ctx, xBase + bw + 2, dy2, clx - 2, (dy1 + dy2) / 2 + 4, COLORS.dx11, 1.3, 5);
       // replay into immediate (dashed)
       ctx.setLineDash([5, 4]);
       drawArrow(ctx, clx + 30, (dy1 + dy2) / 2 - 11, xBase + 40, imy + 12 + 2, withAlpha(theme.text, 0.55), 1.2, 5);
       ctx.setLineDash([]);
-      label(ctx, clx + 8, (dy1 + dy2) / 2 + 22, 'replay (에뮬*)', theme.muted, 8, 'bold');
+      label(ctx, clx + 14, (dy1 + dy2) / 2 + 22, 'replay*', theme.muted, 11, 'bold');
       gpuBox(imy + 4);
     }
 
     // --- DX12 ---
     top = pad + laneH * 2;
-    label(ctx, pad + leftW / 2 - 2, top + laneH / 2, 'DX12', COLORS.dx12, 12, 'bold');
+    label(ctx, pad + leftW / 2 - 2, top + laneH / 2, 'DX12', COLORS.dx12, 13, 'bold');
     drawParallelLanes(ctx, theme, {
       top,
       laneH,
@@ -91,7 +91,11 @@ export default function CommandRecordingThreads() {
 
   return (
     <figure className="demo">
-      <canvas ref={ref} className="demo-canvas" style={{ height: 380, display: 'block' }} />
+      <canvas
+        ref={ref}
+        className="demo-canvas"
+        style={{ width: '100%', maxWidth: 400, minWidth: 0, height: 380, display: 'block' }}
+      />
       <figcaption>
         명령을 누가·어떻게 기록하는가. <span style={{ color: COLORS.dx9 }}>DX9</span>는 device가 곧
         immediate context라, 사실상 한 스레드가 기록과 제출을 모두 합니다 — 멀티코어로 draw 제출을 나눌

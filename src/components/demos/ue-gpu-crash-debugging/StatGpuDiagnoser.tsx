@@ -51,7 +51,7 @@ const SCENARIOS: ReadonlyArray<ScenarioFig> = [
       { name: '그래픽스', busy: 94, wait: 6, idle: 0, waitIsBad: true },
       { name: '컴퓨트', busy: 45, wait: 55, idle: 0, waitIsBad: false },
     ],
-    verdict: '정상: AsyncCompute는 그래픽스 결과를 기다리도록 설계 — Wait이 보이는 게 자연스러움',
+    verdict: '정상: AsyncCompute의 Wait은 설계상 자연스러움',
     verdictColor: UE_COLORS.ok,
   },
   {
@@ -60,7 +60,7 @@ const SCENARIOS: ReadonlyArray<ScenarioFig> = [
       { name: '그래픽스', busy: 55, wait: 10, idle: 35, waitIsBad: true },
       { name: '컴퓨트', busy: 55, wait: 15, idle: 30, waitIsBad: false },
     ],
-    verdict: 'CPU bound: GPU가 다 비웠는데 CPU가 일감을 못 대줘 굶음 — GPU 최적화로는 안 빨라짐',
+    verdict: 'CPU bound: CPU가 일감을 못 대줘 GPU가 굶음',
     verdictColor: UE_COLORS.stall,
   },
 ];
