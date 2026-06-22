@@ -100,11 +100,9 @@ export default function WarpLockstep() {
 
   return (
     <figure className="demo">
-      <canvas
-        ref={ref}
-        className="demo-canvas"
-        style={{ height: CANVAS_H, display: 'block' }}
-      />
+      <div className="demo-canvas" style={{ width: '100%', maxWidth: 400, margin: '0 auto' }}>
+        <canvas ref={ref} style={{ width: '100%', height: CANVAS_H, display: 'block' }} />
+      </div>
       <figcaption>
         <strong>워프(warp)</strong>는 GPU 실행의 진짜 단위입니다. 스케줄러가 명령을 하나 꺼내면, 그
         명령은 <em>한 사이클에</em> 32개 레인 전부로 동시에 브로드캐스트됩니다. 32개 스레드가 모두{' '}

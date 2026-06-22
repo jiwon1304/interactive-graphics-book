@@ -151,11 +151,9 @@ export default function PredicationVsBranch() {
 
   return (
     <figure className="demo">
-      <canvas
-        ref={ref}
-        className="demo-canvas"
-        style={{ height: CANVAS_H, display: 'block' }}
-      />
+      <div className="demo-canvas" style={{ width: '100%', maxWidth: 400, margin: '0 auto' }}>
+        <canvas ref={ref} style={{ width: '100%', height: CANVAS_H, display: 'block' }} />
+      </div>
       <figcaption>
         같은 짧은 <code>if/else</code>를 컴파일하는 두 방식입니다. <strong>왼쪽(분기)</strong>은
         조건을 평가하고(<code>cmp</code>), <code>br</code> 명령으로 점프해, then 블록과 else 블록을

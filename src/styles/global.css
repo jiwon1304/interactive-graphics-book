@@ -546,8 +546,12 @@ figure.demo:has(> canvas.demo-canvas) {
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
 }
-figure.demo > canvas.demo-canvas {
-  min-width: 440px;
+/* 데스크톱에서만 최소 너비를 유지(글자 겹침 방지). 모바일에서는 width:100%로 화면에 맞춰
+   축소시켜 가로 스크롤을 없앤다(모바일 퍼스트 — docs/MOBILE-FIGURES.md). */
+@media (min-width: 640px) {
+  figure.demo > canvas.demo-canvas {
+    min-width: 440px;
+  }
 }
 figure.demo:has(> canvas.demo-canvas) > figcaption,
 figure.demo:has(> canvas.demo-canvas) > div {

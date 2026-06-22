@@ -177,11 +177,9 @@ export default function SchedulerScoreboard() {
 
   return (
     <figure className="demo">
-      <canvas
-        ref={ref}
-        className="demo-canvas"
-        style={{ height: CANVAS_H, display: 'block' }}
-      />
+      <div className="demo-canvas" style={{ width: '100%', maxWidth: 400, margin: '0 auto' }}>
+        <canvas ref={ref} style={{ width: '100%', height: CANVAS_H, display: 'block' }} />
+      </div>
       <figcaption>
         한 파티션의 <strong>워프 스케줄러</strong>가 사이클마다(가로 C0, C1, …) 무엇을 하는지를 본
         간트 차트입니다. 그 파티션에는 워프 넷(<code>W0</code>–<code>W3</code>)이 걸려 있고, 스케줄러는

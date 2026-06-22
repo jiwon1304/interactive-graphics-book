@@ -122,11 +122,9 @@ export default function CoreCountBuilder() {
 
   return (
     <figure className="demo">
-      <canvas
-        ref={ref}
-        className="demo-canvas"
-        style={{ height: CANVAS_H, display: 'block' }}
-      />
+      <div className="demo-canvas" style={{ width: '100%', maxWidth: 400, margin: '0 auto' }}>
+        <canvas ref={ref} style={{ width: '100%', height: CANVAS_H, display: 'block' }} />
+      </div>
       <figcaption>
         스펙시트의 거대한 “코어 수”는 마법의 숫자가 아니라 <strong>곱셈 한 줄</strong>입니다. 파티션
         하나에 FP32 레인 <strong>32</strong>개, SM 하나에 파티션 <strong>4</strong>개(= SM당 128

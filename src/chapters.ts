@@ -249,6 +249,126 @@ export const chapters: Chapter[] = [
       '한 GPU를 여러 앱이 나눠 쓰는 법 — OS/하드웨어 스케줄러·컨텍스트 전환 비용·프리엠션 granularity·TDR 타임아웃',
     section: 'GPU 명령 제출',
   },
+  // ── GPU 하드웨어 ──
+  {
+    slug: 'variable-rate-shading',
+    title: 'Variable Rate Shading — 픽셀마다 다른 셰이딩 밀도',
+    description:
+      '셰이딩 rate를 visibility에서 분리 — coarse pixel·1x1~4x4·세 source와 combiner·foveated/CAS·MSAA와의 관계',
+    section: 'GPU 하드웨어',
+  },
+  {
+    slug: 'tensor-cores-upscaling',
+    title: 'Tensor Core와 AI 업스케일링 — DLSS · FSR · XeSS',
+    description:
+      '행렬 MAC(systolic)·FP16/INT8 정밀도, jitter+모션벡터로 시간에 흩뿌린 supersampling을 신경망이 재구성하는 temporal upscaling',
+    section: 'GPU 하드웨어',
+  },
+  {
+    slug: 'mesh-shaders-gpu-culling',
+    title: 'Mesh/Amplification 셰이더와 GPU-driven 컬링',
+    description: 'meshlet·amplification·GPU가 직접 LOD/컬링을 결정하는 파이프라인',
+    section: 'GPU 하드웨어',
+    draft: true,
+  },
+  {
+    slug: 'async-compute-hardware-queues',
+    title: 'Async Compute와 하드웨어 큐',
+    description: '여러 큐(graphics/compute/copy)와 작업 오버랩으로 유닛 점유 메우기',
+    section: 'GPU 하드웨어',
+    draft: true,
+  },
+  {
+    slug: 'gpu-power-dvfs-thermal',
+    title: 'GPU 전력·클럭(DVFS)과 thermal throttling',
+    description: 'power/thermal/전류 한계와 부스트 클럭·throttling',
+    section: 'GPU 하드웨어',
+    draft: true,
+  },
+  {
+    slug: 'video-engines-nvenc-nvdec',
+    title: '비디오 엔진 — NVENC/NVDEC와 디스플레이 엔진',
+    description: '고정기능 인/디코드 블록과 스캔아웃 합성',
+    section: 'GPU 하드웨어',
+    draft: true,
+  },
+  {
+    slug: 'gpu-virtualization-sriov-mig',
+    title: 'GPU 가상화 — SR-IOV와 MIG',
+    description: '한 GPU를 격리해 나눠 쓰기',
+    section: 'GPU 하드웨어',
+    draft: true,
+  },
+  {
+    slug: 'sampler-feedback-streaming',
+    title: 'Sampler Feedback와 텍스처 스트리밍',
+    description: '실제로 샘플된 타일만 기록해 mip/타일 스트리밍',
+    section: 'GPU 하드웨어',
+    draft: true,
+  },
+  // ── CPU 아키텍처 (코어 안에서) ──
+  {
+    slug: 'cpu-memory-hierarchy',
+    title: 'CPU 캐시와 메모리 계층',
+    description: '지역성·캐시라인·set-associative·AMAT·3C 미스·conflict 절벽·false sharing',
+    section: 'CPU 아키텍처',
+  },
+  {
+    slug: 'cpu-pipeline-hazards',
+    title: '파이프라인과 해저드',
+    description: 'fetch·decode·execute 겹치기·forwarding·stall·왜 분기가 비싼가',
+    section: 'CPU 아키텍처',
+    draft: true,
+  },
+  {
+    slug: 'branch-prediction',
+    title: '분기 예측',
+    description: '2-bit counter·BHT/BTB·gshare/TAGE·misprediction penalty·branchless',
+    section: 'CPU 아키텍처',
+    draft: true,
+  },
+  {
+    slug: 'superscalar-ooo',
+    title: '슈퍼스칼라와 비순차 실행',
+    description: 'register renaming·reservation station·ROB·speculation',
+    section: 'CPU 아키텍처',
+    draft: true,
+  },
+  {
+    slug: 'memory-consistency-mesi',
+    title: '메모리 일관성과 캐시 코히런시(MESI)',
+    description: 'MESI 상태기계·store buffer 재정렬·x86 TSO vs ARM weak·fence',
+    section: 'CPU 아키텍처',
+    draft: true,
+  },
+  {
+    slug: 'virtual-memory-tlb',
+    title: '가상 메모리와 TLB',
+    description: '페이지 테이블·다단계 walk·TLB·page fault·huge page·VIPT',
+    section: 'CPU 아키텍처',
+    draft: true,
+  },
+  {
+    slug: 'simd-vectorization',
+    title: 'SIMD와 벡터화',
+    description: 'AVX/NEON·AoS vs SoA·자동 벡터화·gather/scatter',
+    section: 'CPU 아키텍처',
+    draft: true,
+  },
+  {
+    slug: 'os-scheduling-context-switch',
+    title: 'OS 스케줄링과 컨텍스트 전환',
+    description: '타임슬라이스·선점·전환 비용·CFS/EEVDF·affinity·NUMA',
+    section: 'CPU 아키텍처',
+    draft: true,
+  },
+  {
+    slug: 'atomics-locks',
+    title: '원자적 연산과 락',
+    description: 'CAS·LL/SC·spinlock vs mutex·lock-free·cache-line 경합',
+    section: 'CPU 아키텍처',
+    draft: true,
+  },
 ];
 
 /**
@@ -294,6 +414,41 @@ export function chaptersBySection(): { section: string; items: Chapter[] }[] {
     g.items.push(c);
   }
   return groups;
+}
+
+/**
+ * 상위 그룹(시리즈/파트). 섹션이 많아져 사이드바가 길어지므로, 섹션들을 시리즈로 묶어
+ * 접을 수 있게(collapsible) 보여준다. 순서가 곧 사이드바 표시 순서.
+ */
+export interface Series {
+  title: string;
+  sections: string[];
+}
+export const SERIES: Series[] = [
+  { title: '수학 · 기초', sections: ['기초', '지오메트리'] },
+  { title: '셰이딩과 빛', sections: ['셰이딩', '렌더링', '레이트레이싱', '절차적 생성'] },
+  { title: 'NPR · 카툰', sections: ['카툰 · NPR 렌더링'] },
+  { title: 'GPU 아키텍처 · 실행', sections: ['GPU 실행 모델', 'GPU ↔ 렌더링', 'GPU 하드웨어', '레이트레이싱 HW'] },
+  { title: '드라이버 · 시스템', sections: ['그래픽스 드라이버', 'GPU 명령 제출', '디스플레이 출력', 'Unreal RHI'] },
+  { title: 'CPU 아키텍처', sections: ['CPU 아키텍처'] },
+];
+
+type SectionGroup = { section: string; items: Chapter[] };
+
+/** 시리즈 → 섹션 그룹 묶음. 어떤 시리즈에도 안 속한 섹션은 '기타'로 모은다. */
+export function chaptersBySeries(): { title: string; groups: SectionGroup[] }[] {
+  const bySection = chaptersBySection();
+  const used = new Set<string>();
+  const result = SERIES.map((s) => {
+    const groups = s.sections
+      .map((sec) => bySection.find((g) => g.section === sec))
+      .filter((g): g is SectionGroup => !!g);
+    groups.forEach((g) => used.add(g.section));
+    return { title: s.title, groups };
+  }).filter((s) => s.groups.length > 0);
+  const leftover = bySection.filter((g) => g.section && !used.has(g.section));
+  if (leftover.length) result.push({ title: '기타', groups: leftover });
+  return result;
 }
 
 /** 경로(pathname)에서 현재 챕터 슬러그를 추출합니다. 챕터 페이지가 아니면 undefined. */

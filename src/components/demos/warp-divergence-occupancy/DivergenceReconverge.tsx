@@ -172,11 +172,9 @@ export default function DivergenceReconverge() {
 
   return (
     <figure className="demo">
-      <canvas
-        ref={ref}
-        className="demo-canvas"
-        style={{ height: CANVAS_H, display: 'block' }}
-      />
+      <div className="demo-canvas" style={{ width: '100%', maxWidth: 400, margin: '0 auto' }}>
+        <canvas ref={ref} style={{ width: '100%', height: CANVAS_H, display: 'block' }} />
+      </div>
       <figcaption>
         한 워프 안에서 <code>if/else</code>가 갈리면 무슨 일이 일어나는지를 시간순(왼→오)으로
         편 그림입니다. 32개 레인 중 일부는 <strong>then</strong>(조건 참), 일부는{' '}

@@ -209,11 +209,9 @@ export default function LatencyHidingLanes() {
 
   return (
     <figure className="demo">
-      <canvas
-        ref={ref}
-        className="demo-canvas"
-        style={{ height: CANVAS_H, display: 'block' }}
-      />
+      <div className="demo-canvas" style={{ width: '100%', maxWidth: 400, margin: '0 auto' }}>
+        <canvas ref={ref} style={{ width: '100%', height: CANVAS_H, display: 'block' }} />
+      </div>
       <figcaption>
         같은 워크로드를 점유율만 바꿔 돌린 두 타임라인입니다(가로=시간). 각 워프는 짧게{' '}
         <strong>compute</strong>(파랑) 하고 긴 <strong>stall</strong>(메모리 대기, 흐린 황토)에 빠지길

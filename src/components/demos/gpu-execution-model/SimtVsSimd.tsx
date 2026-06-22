@@ -149,11 +149,9 @@ export default function SimtVsSimd() {
 
   return (
     <figure className="demo">
-      <canvas
-        ref={ref}
-        className="demo-canvas"
-        style={{ height: CANVAS_H, display: 'block' }}
-      />
+      <div className="demo-canvas" style={{ width: '100%', maxWidth: 400, margin: '0 auto' }}>
+        <canvas ref={ref} style={{ width: '100%', height: CANVAS_H, display: 'block' }} />
+      </div>
       <figcaption>
         분기(<code>if</code>)를 만나면 락스텝의 약점이 드러납니다. 한 워프 안에서 일부 레인은 조건이
         참, 일부는 거짓 — 하지만 모두가 <em>같은 명령</em>을 받아야 합니다. 해법은 둘 다{' '}

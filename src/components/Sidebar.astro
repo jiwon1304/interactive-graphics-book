@@ -1,12 +1,21 @@
 ---
-// 사이드바: 사이트 제목(홈 링크) + section별 챕터 목록.
+// 사이드바: 사이트 제목(홈 링크) + 시리즈(파트)별 접이식 챕터 목록.
+// 섹션이 많아져 길어지므로 SERIES로 묶어 <details>로 접는다.
 // 데스크톱에서는 고정 좌측 패널, 모바일에서는 오프캔버스 드로어로 같은 마크업을 재사용합니다.
-import { chaptersBySection, chapterHref, homeHref } from '../chapters';
+import { chaptersBySeries, chapterHref, homeHref } from '../chapters';
 import ThemeToggle from './ThemeToggle.astro';
 
 // 현재 경로(끝 슬래시 정규화)와 비교해 활성 챕터를 표시
 const here = Astro.url.pathname.replace(/\/$/, '');
-const groups = chaptersBySection();
+const series = chaptersBySeries();
+
+// 현재 페이지가 속한 시리즈만 펼치고, 챕터 페이지가 아니면(홈/지도) 전부 펼친다.
+const matchesHere = (title: string) =>
+  series
+    .find((s) => s.title === title)!
+    .groups.some((g) => g.items.some((c) => !c.draft && chapterHref(c.slug).replace(/\/$/, '') === here));
+const onAChapter = series.some((s) => matchesHere(s.title));
+const isOpen = (title: string) => !onAChapter || matchesHere(title);
 ---
 
 <aside class="sidebar" id="sidebar" aria-label="챕터 목록">
@@ -32,33 +41,83 @@ const groups = chaptersBySection();
       </ul>
     </div>
     {
-      groups.map((g) => (
-        <div class="nav-group">
-          {g.section && <p class="nav-section">{g.section}</p>}
-          <ul>
-            {g.items.map((c) =>
-              c.draft ? (
-                <li>
-                  <span class="nav-link is-draft" aria-disabled="true">
-                    {c.title}
-                    <span class="draft-badge">예정</span>
-                  </span>
-                </li>
-              ) : (
-                <li>
-                  <a
-                    class="nav-link"
-                    href={chapterHref(c.slug)}
-                    aria-current={here === chapterHref(c.slug).replace(/\/$/, '') ? 'page' : undefined}
-                  >
-                    {c.title}
-                  </a>
-                </li>
-              )
-            )}
-          </ul>
-        </div>
+      series.map((s) => (
+        <details class="nav-series" open={isOpen(s.title)}>
+          <summary class="nav-series-summary">{s.title}</summary>
+          {s.groups.map((g) => (
+            <div class="nav-group">
+              {g.section && <p class="nav-section">{g.section}</p>}
+              <ul>
+                {g.items.map((c) =>
+                  c.draft ? (
+                    <li>
+                      <span class="nav-link is-draft" aria-disabled="true">
+                        {c.title}
+                        <span class="draft-badge">예정</span>
+                      </span>
+                    </li>
+                  ) : (
+                    <li>
+                      <a
+                        class="nav-link"
+                        href={chapterHref(c.slug)}
+                        aria-current={here === chapterHref(c.slug).replace(/\/$/, '') ? 'page' : undefined}
+                      >
+                        {c.title}
+                      </a>
+                    </li>
+                  )
+                )}
+              </ul>
+            </div>
+          ))}
+        </details>
       ))
     }
   </nav>
 </aside>
+
+<style>
+  .nav-series {
+    margin: 0.1rem 0 0.35rem;
+    border-top: 1px solid var(--border);
+  }
+  .nav-series-summary {
+    cursor: pointer;
+    list-style: none;
+    padding: 0.55rem 0.2rem 0.45rem;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--muted);
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    user-select: none;
+  }
+  .nav-series-summary::-webkit-details-marker {
+    display: none;
+  }
+  /* 접힘/펼침 화살표 */
+  .nav-series-summary::before {
+    content: '▸';
+    font-size: 0.7em;
+    transition: transform 0.15s ease;
+    color: var(--muted);
+  }
+  .nav-series[open] > .nav-series-summary::before {
+    transform: rotate(90deg);
+  }
+  .nav-series-summary:hover {
+    color: var(--text);
+  }
+  .nav-series > .nav-group {
+    padding-left: 0.3rem;
+  }
+  /* 시리즈 안에서는 섹션 라벨을 더 작게 */
+  .nav-series .nav-section {
+    font-size: 0.68rem;
+    opacity: 0.85;
+  }
+</style>

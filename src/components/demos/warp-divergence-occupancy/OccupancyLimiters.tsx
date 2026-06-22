@@ -151,11 +151,9 @@ export default function OccupancyLimiters() {
 
   return (
     <figure className="demo">
-      <canvas
-        ref={ref}
-        className="demo-canvas"
-        style={{ height: CANVAS_H, display: 'block' }}
-      />
+      <div className="demo-canvas" style={{ width: '100%', maxWidth: 400, margin: '0 auto' }}>
+        <canvas ref={ref} style={{ width: '100%', height: CANVAS_H, display: 'block' }} />
+      </div>
       <figcaption>
         점유율이 <em>왜</em> 그 값으로 정해지는지를 보여줍니다. SM에 동시에 걸 수 있는 워프 수는 네
         자원이 각자 “나는 이만큼까지 허용한다”고 내건 한계 중 <strong>가장 작은 것</strong>이 정합니다 —

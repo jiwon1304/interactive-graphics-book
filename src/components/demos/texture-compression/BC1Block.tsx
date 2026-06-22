@@ -106,8 +106,6 @@ function makeBasis(texels: RGB[]): Basis {
   return { mean, u, v };
 }
 
-const PLOT_HALF = 170; // RGB 점들이 펼쳐지는 화면 반경(픽셀, scene scale)
-
 export default function BC1Block() {
   const [seed] = useState(7);
   const texels = useMemo(() => makeBlock(seed), [seed]);
@@ -190,7 +188,7 @@ export default function BC1Block() {
 
       const drawGrid = (colors: RGB[], x: number, y: number, title: string) => {
         ctx.fillStyle = theme.muted;
-        ctx.font = '11px system-ui, sans-serif';
+        ctx.font = '12px system-ui, sans-serif';
         ctx.textAlign = 'left';
         ctx.textBaseline = 'alphabetic';
         ctx.fillText(title, x, y - 6);
@@ -232,7 +230,7 @@ export default function BC1Block() {
       ctx.fillRect(viewX, 14, viewW, viewH);
       ctx.strokeRect(viewX + 0.5, 14.5, viewW, viewH);
       ctx.fillStyle = theme.muted;
-      ctx.font = '11px system-ui, sans-serif';
+      ctx.font = '12px system-ui, sans-serif';
       ctx.textAlign = 'left';
       ctx.fillText('RGB 색공간 (블록 주평면에 투영)', viewX + 8, 14 + 16);
 
@@ -312,13 +310,13 @@ export default function BC1Block() {
     <figure className="demo">
       <div
         className="demo-canvas"
-        style={{ width: '100%', maxWidth: 620, margin: '0 auto' }}
+        style={{ width: '100%', maxWidth: 420, margin: '0 auto' }}
       >
         <canvas
           ref={canvasRef}
           style={{
             width: '100%',
-            height: 280,
+            height: 300,
             display: 'block',
             touchAction: 'none',
             cursor: 'grab',

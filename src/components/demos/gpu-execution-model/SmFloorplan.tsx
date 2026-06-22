@@ -211,11 +211,9 @@ export default function SmFloorplan() {
 
   return (
     <figure className="demo">
-      <canvas
-        ref={ref}
-        className="demo-canvas"
-        style={{ height: CANVAS_H, display: 'block' }}
-      />
+      <div className="demo-canvas" style={{ width: '100%', maxWidth: 400, margin: '0 auto' }}>
+        <canvas ref={ref} style={{ width: '100%', height: CANVAS_H, display: 'block' }} />
+      </div>
       <figcaption>
         한 <strong>SM</strong>(Streaming Multiprocessor, AMD에선 CU)의 평면도입니다. 흔한 오해는
         SM을 “하나의 큰 코어”로 보는 것인데, 실제로는 <strong>4개의 스케줄러 파티션</strong>(processing
