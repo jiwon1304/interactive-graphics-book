@@ -98,7 +98,7 @@ export default function StatGpuDiagnoser() {
 
     // 한 큐의 스택 막대.
     const drawQueue = (q: QueueBar, y: number, barH: number): void => {
-      ctx.font = monoFont(10.5);
+      ctx.font = monoFont(11);
       ctx.fillStyle = theme.text;
       ctx.textAlign = 'right';
       ctx.textBaseline = 'middle';

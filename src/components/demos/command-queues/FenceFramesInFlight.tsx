@@ -200,9 +200,9 @@ export default function FenceFramesInFlight() {
             withAlpha(QUEUE_COLORS.ok, 0.9),
             { dashed: true, width: 1.4, head: 6 },
           );
-          ctx.font = '8px ui-monospace, monospace';
+          ctx.font = '12px ui-monospace, monospace';
           ctx.fillStyle = QUEUE_COLORS.ok;
-          ctx.fillText('펜스 시그널', xOf(gEnd) + 3, gpuLaneY + laneH + 12);
+          ctx.fillText('펜스 시그널', xOf(gEnd) + 3, gpuLaneY + laneH + 14);
           break;
         }
       }
@@ -220,19 +220,19 @@ export default function FenceFramesInFlight() {
         ctx.strokeStyle = theme.border;
         ctx.lineWidth = 1;
         ctx.stroke();
-        ctx.font = '9px ui-monospace, monospace';
+        ctx.font = '12px ui-monospace, monospace';
         ctx.fillStyle = theme.muted;
-        ctx.fillText('FENCE', bx + 10, by + 15);
+        ctx.fillText('FENCE', bx + 10, by + 16);
         ctx.font = '700 22px ui-monospace, monospace';
         ctx.fillStyle = theme.accent;
-        ctx.fillText(String(fence), bx + 10, by + 40);
+        ctx.fillText(String(fence), bx + 10, by + 42);
       }
 
       // 슬롯 표시(N개) — 펜스 박스 아래
       {
         const sx = w - padX - 72;
-        const sy = cpuLaneY + 56; // 펜스 박스(높이 50) 바로 아래
-        ctx.font = '9px ui-monospace, monospace';
+        const sy = cpuLaneY + 58; // 펜스 박스(높이 50) 바로 아래
+        ctx.font = '12px ui-monospace, monospace';
         ctx.fillStyle = theme.muted;
         ctx.fillText('슬롯:', sx, sy - 2);
         const sw = 16;
@@ -266,7 +266,14 @@ export default function FenceFramesInFlight() {
       <canvas
         ref={ref}
         className="demo-canvas"
-        style={{ height: CANVAS_H, display: 'block' }}
+        style={{
+          width: '100%',
+          maxWidth: CANVAS_W,
+          minWidth: 0,
+          height: 'auto',
+          aspectRatio: `${CANVAS_W} / ${CANVAS_H}`,
+          display: 'block',
+        }}
       />
       <figcaption>
         <strong>펜스(fence)</strong>는 CPU와 GPU를 잇는 동기화 카운터입니다. GPU가 프레임 k를

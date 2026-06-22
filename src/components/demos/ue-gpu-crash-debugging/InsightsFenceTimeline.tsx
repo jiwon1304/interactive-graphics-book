@@ -20,7 +20,8 @@ import { UE_COLORS, roundRect, withAlpha, drawArrow, monoFont } from './ue2d';
 //        두 큐가 빨갛게 얼어붙는다 (발표 예시 #2).
 // ---------------------------------------------------------------------------
 
-const CANVAS_H = 420;
+const CANVAS_H = 440;
+const CANVAS_MAXW = 360; // 모바일 우선: 내부 렌더 폭 상한
 
 // 정적 대표값.
 const LATENCY = 1.2; // 펜스 latency (ms)
@@ -305,7 +306,13 @@ export default function InsightsFenceTimeline() {
       <canvas
         ref={ref}
         className="demo-canvas"
-        style={{ height: CANVAS_H, display: 'block' }}
+        style={{
+          height: CANVAS_H,
+          display: 'block',
+          width: '100%',
+          maxWidth: CANVAS_MAXW,
+          minWidth: 0,
+        }}
       />
       <figcaption>
         Unreal Insights는 CPU와 GPU 작업을 <strong>하나의 타임라인</strong>에 올리고, GPU의{' '}

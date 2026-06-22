@@ -32,6 +32,7 @@ const PASSES: ReadonlyArray<RenderPass> = [
 ] as const;
 
 const CANVAS_H = 350;
+const CANVAS_MAXW = 360; // 모바일 우선: 내부 렌더 폭 상한
 
 // 정지시킬 크래시 시점: BasePass(인덱스 2)에서 hang.
 const CRASH_INDEX = 2;
@@ -116,12 +117,12 @@ export default function BreadcrumbTracer() {
 
       // active/crash 표시
       if (isCrashRow) {
-        ctx.font = monoFont(9);
+        ctx.font = monoFont(11);
         ctx.fillStyle = UE_COLORS.bad;
         ctx.textAlign = 'right';
         ctx.fillText('HANG', listX + listW - 10, dotY - 0.5);
       } else if (done) {
-        ctx.font = monoFont(9);
+        ctx.font = monoFont(11);
         ctx.fillStyle = withAlpha(UE_COLORS.ok, 0.9);
         ctx.textAlign = 'right';
         ctx.fillText('통과', listX + listW - 10, dotY - 0.5);
@@ -151,8 +152,8 @@ export default function BreadcrumbTracer() {
         ctx.textBaseline = 'middle';
         ctx.textAlign = 'left';
         ctx.fillStyle = theme.text;
-        // [idx] passName = N  (N은 monotonic 정수)
-        ctx.fillText(`[${i}] ${PASSES[i].label}`, bufX + 8, y + bRowH / 2 - 0.5);
+        // passName = N  (N은 monotonic 정수)
+        ctx.fillText(PASSES[i].label, bufX + 8, y + bRowH / 2 - 0.5);
         ctx.textAlign = 'right';
         ctx.fillStyle = isLast ? UE_COLORS.bad : UE_COLORS.graphics;
         ctx.font = monoFont(12);
@@ -168,11 +169,11 @@ export default function BreadcrumbTracer() {
         ctx.setLineDash([]);
         if (i === recorded) {
           // 첫 빈칸에 "여기서 멈춤" 표시
-          ctx.font = monoFont(9);
+          ctx.font = monoFont(11);
           ctx.fillStyle = withAlpha(theme.muted, 0.85);
           ctx.textBaseline = 'middle';
           ctx.textAlign = 'left';
-          ctx.fillText('(기록 멈춤 — 더 이상 증가 안 함)', bufX + 8, y + bRowH / 2 - 0.5);
+          ctx.fillText('(기록 멈춤)', bufX + 8, y + bRowH / 2 - 0.5);
         }
       }
       ctx.textAlign = 'left';
@@ -202,10 +203,10 @@ export default function BreadcrumbTracer() {
       ctx.fillText(msg, padX + 10, bannerY + bannerH / 2 - 8);
 
       // CPU 인지 지연 메모
-      ctx.font = monoFont(10);
+      ctx.font = monoFont(11);
       ctx.fillStyle = theme.muted;
       ctx.fillText(
-        'CPU: 아직 정상으로 보임 — hang을 약 2초 뒤에야 인지',
+        'CPU: hang을 약 2초 뒤에야 인지',
         padX + 10,
         bannerY + bannerH / 2 + 9,
       );
@@ -221,7 +222,13 @@ export default function BreadcrumbTracer() {
       <canvas
         ref={ref}
         className="demo-canvas"
-        style={{ height: CANVAS_H, display: 'block' }}
+        style={{
+          height: CANVAS_H,
+          display: 'block',
+          width: '100%',
+          maxWidth: CANVAS_MAXW,
+          minWidth: 0,
+        }}
       />
       <figcaption>
         RHI <strong>Breadcrumbs</strong>: 렌더링이 진행되는 동안 각 렌더 패스가{' '}

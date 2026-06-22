@@ -16,34 +16,35 @@ import { QUEUE_COLORS, withAlpha, roundRect, drawArrow, pill } from './cq2d';
 // ─────────────────────────────────────────────────────────────────────────────
 
 const SPEC = {
-  title: 'RAW — 렌더 타깃에 그린 뒤 셰이더에서 샘플 (참 의존성)',
+  title: 'RAW — RT에 그린 뒤 셰이더 샘플',
   a: {
-    label: 'A: 렌더 타깃에 그리기',
-    detail: 'write · COLOR_ATTACHMENT_OUTPUT',
+    label: 'A: RT에 그리기',
+    detail: 'write · COLOR_OUT',
     layout: 'COLOR_ATTACHMENT',
     color: QUEUE_COLORS.graphics,
     kind: 'write' as 'read' | 'write',
   },
   b: {
-    label: 'B: 셰이더에서 샘플링',
-    detail: 'read · FRAGMENT_SHADER',
+    label: 'B: 셰이더 샘플',
+    detail: 'read · FRAGMENT',
     layout: 'SHADER_READ_ONLY',
     color: QUEUE_COLORS.graphics,
     kind: 'read' as 'read' | 'write',
   },
-  srcStage: 'COLOR_ATTACHMENT_OUTPUT',
-  srcAccess: 'COLOR_ATTACHMENT_WRITE',
-  dstStage: 'FRAGMENT_SHADER',
+  srcStage: 'COLOR_OUT',
+  srcAccess: 'COLOR_WRITE',
+  dstStage: 'FRAGMENT',
   dstAccess: 'SHADER_READ',
-  oldLayout: 'COLOR_ATTACHMENT_OPTIMAL',
-  newLayout: 'SHADER_READ_ONLY_OPTIMAL',
+  oldLayout: 'COLOR_ATTACHMENT',
+  newLayout: 'SHADER_READ_ONLY',
 };
 
-const PAD = 18;
-const CARD_Y = 54;
-const CARD_H = 84;
-const TRACK_GAP = 96;
-const CANVAS_H = 360;
+const PAD = 14;
+const CARD_Y = 56;
+const CARD_H = 88;
+const TRACK_GAP = 64;
+const CANVAS_W = 360;
+const CANVAS_H = 380;
 
 export default function HazardChecker() {
   const draw = (d: DrawCtx) => {
@@ -62,8 +63,8 @@ export default function HazardChecker() {
     ctx.fillRect(0, 0, w, h);
 
     // 제목.
-    ctx.font = '11px ui-monospace, monospace';
-    ctx.fillStyle = theme.muted;
+    ctx.font = 'bold 14px ui-monospace, monospace';
+    ctx.fillStyle = theme.text;
     ctx.textBaseline = 'alphabetic';
     ctx.fillText(SPEC.title, x0, 28);
 
@@ -100,36 +101,36 @@ export default function HazardChecker() {
 
       ctx.textAlign = 'left';
       ctx.textBaseline = 'alphabetic';
-      ctx.font = 'bold 12px ui-monospace, monospace';
+      ctx.font = 'bold 13px ui-monospace, monospace';
       ctx.fillStyle = theme.text;
-      ctx.fillText(op.label, x + 10, CARD_Y + 22);
-      ctx.font = '10px ui-monospace, monospace';
+      ctx.fillText(op.label, x + 10, CARD_Y + 24);
+      ctx.font = '12px ui-monospace, monospace';
       ctx.fillStyle = theme.muted;
-      ctx.fillText(op.detail, x + 10, CARD_Y + 40);
+      ctx.fillText(op.detail, x + 10, CARD_Y + 46);
       const badge = op.kind === 'write' ? 'WRITE' : 'READ';
       pill(
         ctx,
-        x + cw - 34,
-        CARD_Y + 18,
+        x + cw - 32,
+        CARD_Y + 64,
         badge,
         op.kind === 'write' ? op.color : withAlpha(op.color, 0.85),
         '#ffffff',
-        '9px ui-monospace, monospace',
+        '12px ui-monospace, monospace',
       );
 
       // 리소스 상태 칩(레이아웃 라벨).
-      ctx.font = '9px ui-monospace, monospace';
+      ctx.font = '12px ui-monospace, monospace';
       ctx.fillStyle = theme.muted;
       ctx.textAlign = 'left';
-      ctx.fillText('리소스 상태', x + 10, CARD_Y + CARD_H + 16);
+      ctx.fillText('리소스 상태', x + 10, CARD_Y + CARD_H + 18);
       pill(
         ctx,
         x + cw / 2,
-        CARD_Y + CARD_H + 30,
+        CARD_Y + CARD_H + 34,
         resourceLayout,
         withAlpha(theme.text, 0.12),
         theme.text,
-        '9px ui-monospace, monospace',
+        '12px ui-monospace, monospace',
       );
     };
 
