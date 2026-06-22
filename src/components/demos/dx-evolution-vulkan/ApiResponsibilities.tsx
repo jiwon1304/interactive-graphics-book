@@ -17,25 +17,25 @@ interface Row {
 const ROWS: Row[] = [
   {
     k: '상태 변환',
-    vals: ['draw-time 전체', 'state object + draw', 'PSO 생성 시', 'VkPipeline 생성 시'],
+    vals: ['draw-time', 'state obj + draw', 'PSO 생성 시', 'VkPipeline 생성'],
   },
   {
     k: 'hazard / 전이',
-    vals: ['드라이버 자동', '드라이버 자동', '앱 ResourceBarrier', '앱 pipeline barrier'],
+    vals: ['드라이버', '드라이버', '앱 Barrier', '앱 barrier'],
     appCols: [2, 3],
   },
   {
     k: 'residency',
-    vals: ['드라이버', '드라이버 (VidMM)', '앱 MakeResident', '앱 메모리 관리'],
+    vals: ['드라이버', '드라이버', '앱 Resident', '앱 메모리 관리'],
     appCols: [2, 3],
   },
   {
     k: '스레딩',
-    vals: ['단일 스레드', 'immediate + deferred*', 'N스레드 cmd list', 'N스레드 cmd buffer'],
+    vals: ['단일', 'immediate + deferred*', 'N스레드 list', 'N스레드 buffer'],
   },
   {
     k: '바인딩',
-    vals: ['슬롯·드라이버 패치', '슬롯 기반', 'descriptor heap + root sig', 'descriptor set + layout'],
+    vals: ['슬롯·드라이버', '슬롯 기반', 'heap + root sig', 'set + layout'],
     appCols: [2, 3],
   },
   {
@@ -82,7 +82,7 @@ export default function ApiResponsibilities() {
       roundRect(ctx, x + 2, pad, colW - 4, headH - 4, 6);
       ctx.fillStyle = withAlpha(col.c, 0.9);
       ctx.fill();
-      ctx.font = monoFont(colW < 76 ? 11 : 12, 'bold');
+      ctx.font = monoFont(colW < 82 ? 12 : 13, 'bold');
       ctx.fillStyle = '#fff';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
@@ -161,7 +161,11 @@ export default function ApiResponsibilities() {
 
   return (
     <figure className="demo">
-      <canvas ref={ref} className="demo-canvas" style={{ height: 320, display: 'block' }} />
+      <canvas
+        ref={ref}
+        className="demo-canvas"
+        style={{ width: '100%', maxWidth: 400, minWidth: 0, height: 320, display: 'block' }}
+      />
       <figcaption>
         네 API의 책임 분담을 한 장으로. <span style={{ color: COLORS.dx9 }}>DX9</span>는 거의 모든 일을
         드라이버가 <strong>draw-time에</strong> 합니다 — 흩어진 <code>SetRenderState</code> 호출을

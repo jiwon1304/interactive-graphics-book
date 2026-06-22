@@ -49,26 +49,25 @@ export default function DdiCallFlow() {
     const { ctx, w, theme } = d;
     const bx = Math.max(12, w * 0.05);
     const bw = w - bx * 2;
-    const narrow = w < 460;
-    const callPx = narrow ? 11 : 12;
-    const notePx = narrow ? 9.5 : 10.5;
+    const callPx = 12.5;
+    const notePx = 11;
     const lineH = notePx + 3;
     const pad = 9;
-    const inner = bw - pad * 2 - (narrow ? 0 : 120); // 데스크톱은 좌측에 who 컬럼 여유
-    const gap = narrow ? 15 : 16;
+    const inner = bw - pad * 2;
+    const gap = 16;
 
     let y = 8;
     STEPS.forEach((s, i) => {
       const noteLines = wrapText(ctx, s.note, inner, notePx);
-      const bh = Math.max(narrow ? 50 : 46, pad + callPx + 6 + noteLines.length * lineH + pad);
+      const bh = Math.max(52, pad + callPx + 6 + noteLines.length * lineH + pad);
       box(ctx, bx, y, bw, bh, s.fill, '', theme);
 
       ctx.textAlign = 'left';
       ctx.textBaseline = 'middle';
       // who (작게, 위)
-      ctx.font = monoFont(notePx - 0.5, 'bold');
+      ctx.font = monoFont(notePx, 'bold');
       ctx.fillStyle = s.fill;
-      ctx.fillText(s.who, bx + pad, y + pad + (notePx - 0.5) / 2);
+      ctx.fillText(s.who, bx + pad, y + pad + notePx / 2);
       // call (굵게)
       ctx.font = monoFont(callPx, 'bold');
       ctx.fillStyle = theme.text;
@@ -96,7 +95,11 @@ export default function DdiCallFlow() {
 
   return (
     <figure className="demo">
-      <canvas ref={ref} className="demo-canvas" style={{ height: 470, display: 'block' }} />
+      <canvas
+        ref={ref}
+        className="demo-canvas"
+        style={{ width: '100%', maxWidth: 400, height: 500, display: 'block' }}
+      />
       <figcaption>
         한 번의 <code>CreateResource</code>가 레이어를 타고 내려가는 길. 앱 호출을
         <span style={{ color: COLORS.runtime }}> runtime</span>이 검증하고 <strong>DDI</strong>

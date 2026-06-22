@@ -74,11 +74,9 @@ export default function BandwidthCalc() {
 
   return (
     <figure className="demo">
-      <canvas
-        ref={ref}
-        className="demo-canvas"
-        style={{ height: 220, display: 'block', maxWidth: 400, margin: '0 auto' }}
-      />
+      <div className="demo-canvas" style={{ width: '100%', maxWidth: 400, margin: '0 auto' }}>
+        <canvas ref={ref} style={{ width: '100%', height: 220, display: 'block' }} />
+      </div>
       <figcaption>
         color 프레임버퍼 트래픽만 센 단순 모델로 1920×1080 · overdraw {OVERDRAW}× · {FPS}fps를
         비교한 한 컷입니다. <strong>IMR</strong>은 프래그먼트마다 color를 read-modify-write 하므로{' '}

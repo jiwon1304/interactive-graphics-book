@@ -17,7 +17,7 @@ import { UE_COLORS, roundRect, withAlpha, monoFont } from './ue2d';
 // ---------------------------------------------------------------------------
 
 const CANVAS_H = 320;
-const CANVAS_MAXW = 380; // 모바일 우선: 내부 렌더 폭 상한(≤400)
+const CANVAS_MAXW = 360; // 모바일 우선: 내부 렌더 폭 상한(360px 화면에서 글자가 1:1로 보이게)
 const TDR_LIMIT = 2.0; // 초 (Windows 기본)
 const AXIS_MAX = 2.6; // 축 최대(2초 마커가 가운데쯤 오도록)
 
@@ -65,11 +65,11 @@ export default function TdrCountdown() {
     const xOf = (t: number): number => plotX + (Math.min(t, AXIS_MAX) / AXIS_MAX) * plotW;
 
     // 제목
-    ctx.font = monoFont(11);
+    ctx.font = monoFont(13);
     ctx.fillStyle = theme.muted;
     ctx.textAlign = 'left';
     ctx.textBaseline = 'alphabetic';
-    ctx.fillText('GPU 작업 — TDR 2초 타임아웃 (Windows 기본)', plotX, 20);
+    ctx.fillText('GPU 작업 — TDR 2초 타임아웃', plotX, 20);
 
     const rowTop = 40;
     const barH = 40;
@@ -150,7 +150,7 @@ export default function TdrCountdown() {
       ctx.moveTo(tx, barY - 12);
       ctx.lineTo(tx, barY + barH + 12);
       ctx.stroke();
-      ctx.font = monoFont(9.5);
+      ctx.font = monoFont(12);
       ctx.fillStyle = UE_COLORS.bad;
       ctx.textAlign = 'center';
       ctx.fillText('TDR 2.0s', tx, barY - 16);
@@ -164,7 +164,7 @@ export default function TdrCountdown() {
       ctx.strokeStyle = job.color;
       ctx.lineWidth = 1.5;
       ctx.stroke();
-      ctx.font = monoFont(10.5);
+      ctx.font = monoFont(11);
       ctx.fillStyle = job.color;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';

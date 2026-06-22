@@ -129,12 +129,12 @@ export default function TimelineSemaphoreGater() {
     ctx.fillRect(0, 0, w, h);
 
     // 레인 라벨.
-    ctx.font = '11px ui-monospace, monospace';
+    ctx.font = '12px ui-monospace, monospace';
     ctx.textBaseline = 'middle';
     ctx.fillStyle = QUEUE_COLORS.graphics;
-    ctx.fillText('그래픽스 큐  (G1이 값 2를 시그널)', x0, LANE_GFX_Y - LANE_H / 2 - 12);
+    ctx.fillText('그래픽스 큐 — G1이 값 2 시그널', x0, LANE_GFX_Y - LANE_H / 2 - 12);
     ctx.fillStyle = QUEUE_COLORS.compute;
-    ctx.fillText('컴퓨트 큐  (C1은 값 ≥ 2를 대기)', x0, LANE_CMP_Y - LANE_H / 2 - 12);
+    ctx.fillText('컴퓨트 큐 — C1은 값 ≥ 2 대기', x0, LANE_CMP_Y - LANE_H / 2 - 12);
 
     for (const ly of [LANE_GFX_Y, LANE_CMP_Y]) {
       ctx.fillStyle = withAlpha(theme.border, 0.5);
@@ -171,7 +171,7 @@ export default function TimelineSemaphoreGater() {
         ctx.arc(sx, by - 2, 4, 0, Math.PI * 2);
         ctx.fillStyle = QUEUE_COLORS.ok;
         ctx.fill();
-        ctx.font = '10px ui-monospace, monospace';
+        ctx.font = '12px ui-monospace, monospace';
         ctx.fillStyle = QUEUE_COLORS.ok;
         ctx.textAlign = 'center';
         ctx.fillText(`signal ${b.signalValue}`, sx, by - 12);
@@ -200,9 +200,9 @@ export default function TimelineSemaphoreGater() {
       }
       ctx.restore();
       ctx.fillStyle = QUEUE_COLORS.stall;
-      ctx.font = '10px ui-monospace, monospace';
+      ctx.font = 'bold 12px ui-monospace, monospace';
       ctx.textAlign = 'center';
-      ctx.fillText('대기(스톨)', (sx0 + sx1) / 2, LANE_CMP_Y);
+      ctx.fillText('스톨', (sx0 + sx1) / 2, LANE_CMP_Y);
       ctx.textAlign = 'start';
     }
 
@@ -216,10 +216,10 @@ export default function TimelineSemaphoreGater() {
       const tx = toX(c1.start);
       const ty = LANE_CMP_Y - LANE_H / 2 + 2;
       drawArrow(ctx, fx, fy, tx, ty, QUEUE_COLORS.ok, { dashed: true, width: 1.5, head: 7 });
-      ctx.font = '9px ui-monospace, monospace';
+      ctx.font = '12px ui-monospace, monospace';
       ctx.fillStyle = QUEUE_COLORS.ok;
       ctx.textAlign = 'center';
-      ctx.fillText('happens-before', (fx + tx) / 2, (fy + ty) / 2 - 3);
+      ctx.fillText('happens-before', (fx + tx) / 2, (fy + ty) / 2 - 4);
       ctx.textAlign = 'start';
     }
 
@@ -238,10 +238,10 @@ export default function TimelineSemaphoreGater() {
       ctx.strokeStyle = theme.muted;
       ctx.stroke();
     }
-    ctx.font = '9px ui-monospace, monospace';
+    ctx.font = '12px ui-monospace, monospace';
     ctx.fillStyle = theme.muted;
     ctx.textBaseline = 'alphabetic';
-    ctx.fillText('시간 →', x1 - 34, AXIS_Y + 14);
+    ctx.fillText('시간 →', x1 - 42, AXIS_Y + 15);
 
     // 타임라인 값 카운터(큰 단조 숫자) + 틱.
     ctx.fillStyle = theme.text;

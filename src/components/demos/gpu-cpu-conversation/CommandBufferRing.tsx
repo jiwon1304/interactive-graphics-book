@@ -28,7 +28,6 @@ export default function CommandBufferRing() {
     for (let i = 0; i < N; i++) {
       const a = (i / N) * Math.PI * 2 - Math.PI / 2;
       const a2 = ((i + 1) / N) * Math.PI * 2 - Math.PI / 2;
-      const mid = (a + a2) / 2;
       const inner = R - 16;
       ctx.beginPath();
       ctx.arc(cx, cy, R, a + 0.012, a2 - 0.012);
@@ -41,11 +40,6 @@ export default function CommandBufferRing() {
       ctx.strokeStyle = withAlpha(theme.text, 0.18);
       ctx.lineWidth = 1;
       ctx.stroke();
-      if (isPending(i)) {
-        const tx = cx + Math.cos(mid) * (R - 8);
-        const ty = cy + Math.sin(mid) * (R - 8);
-        label(ctx, tx, ty, 'cmd', theme.bg, 7.5, 'bold');
-      }
     }
 
     // 포인터 화살표(중심 → 경계)
@@ -56,19 +50,19 @@ export default function CommandBufferRing() {
       const x0 = cx + Math.cos(a) * (R - 22);
       const y0 = cy + Math.sin(a) * (R - 22);
       drawArrow(ctx, x0, y0, x1, y1, color, 2.4, 9);
-      const lx = cx + Math.cos(a) * (R + 30);
-      const ly = cy + Math.sin(a) * (R + 30);
-      label(ctx, lx, ly, name, color, 10, 'bold');
+      const lx = cx + Math.cos(a) * (R + 32);
+      const ly = cy + Math.sin(a) * (R + 32);
+      label(ctx, lx, ly, name, color, 12, 'bold');
     };
     pointer(writeIdx, COLORS.cpu, 'write (CPU)');
     pointer(readIdx, COLORS.gpu, 'read (GPU)');
 
     // 중앙 라벨
-    label(ctx, cx, cy - 9, 'command', theme.muted, 11, 'bold');
-    label(ctx, cx, cy + 7, 'ring buffer', theme.muted, 11, 'bold');
+    label(ctx, cx, cy - 9, 'command', theme.muted, 12, 'bold');
+    label(ctx, cx, cy + 8, 'ring buffer', theme.muted, 12, 'bold');
 
     // 방향 표시(시계방향)
-    ctx.font = monoFont(9);
+    ctx.font = monoFont(12);
     ctx.fillStyle = theme.muted;
     ctx.textAlign = 'center';
     ctx.fillText('소비 방향 →', cx, h - 8);

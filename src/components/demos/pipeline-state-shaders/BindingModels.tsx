@@ -6,6 +6,7 @@ import { COLORS, roundRect, withAlpha, label, drawArrow, wrapText } from './pss2
 //   D3D12 : root signature(레이아웃) → descriptor table → descriptor heap(실제 디스크립터)
 //   Vulkan: pipeline layout(레이아웃) → descriptor set → descriptor pool(backing)
 // 같은 역할은 같은 색: 레이아웃=rootsig, 그룹/테이블=heap(청록), 슬롯=slot(주황).
+// 모바일: API 라벨을 각 블록 상단 헤더로 올려 가로 폭을 노드 사슬에 모두 양보한다.
 
 interface Node {
   t: string;
@@ -16,7 +17,7 @@ interface Model {
   api: string;
   apiColor: string;
   // 좌→우 노드 사슬. 마지막이 "실제 디스크립터 저장소".
-  chain: Node[];
+  chain: [Node, Node, Node];
   note: string;
 }
 
@@ -25,9 +26,9 @@ const MODELS: Model[] = [
     api: 'D3D11',
     apiColor: COLORS.dx11,
     chain: [
-      { t: 'PSSetShaderResources(slot)', color: COLORS.slot },
-      { t: '고정 슬롯 테이블', color: COLORS.slot },
-      { t: '드라이버가 패치', color: COLORS.jit },
+      { t: '고정 슬롯', color: COLORS.slot },
+      { t: '슬롯 테이블', color: COLORS.slot },
+      { t: '드라이버 패치', color: COLORS.jit },
     ],
     note: '슬롯 기반 — 드라이버가 draw마다 슬롯을 하드웨어 디스크립터로 변환',
   },
@@ -39,7 +40,7 @@ const MODELS: Model[] = [
       { t: 'Descriptor Table', color: COLORS.heap },
       { t: 'Descriptor Heap', color: COLORS.heap },
     ],
-    note: 'root signature=레이아웃 · root constant/descriptor는 인라인 · table은 heap 범위 참조',
+    note: 'root signature=레이아웃 · table은 heap 범위를 가리킴 · draw 패치 없음',
   },
   {
     api: 'Vulkan',
@@ -49,32 +50,33 @@ const MODELS: Model[] = [
       { t: 'Descriptor Set', color: COLORS.heap },
       { t: 'Descriptor Pool', color: COLORS.heap },
     ],
-    note: 'pipeline layout = set layouts + push constants · set은 pool에서 할당',
+    note: 'pipeline layout = set layout들 + push constants · set은 pool에서 할당',
   },
 ];
+
+const CANVAS_MAX_W = 380;
 
 export default function BindingModels() {
   const draw = (d: DrawCtx) => {
     const { ctx, w, h, theme } = d;
     const pad = 10;
-    const apiW = 52;
     const n = MODELS.length;
     const blockH = (h - pad * 2) / n;
-    const x0 = pad + apiW;
+    const x0 = pad;
     const x1 = w - pad;
     const usableW = x1 - x0;
-    const nodeW = Math.min(132, (usableW - 2 * 18) / 3);
-    const nodeH = 38;
-    const gapX = (usableW - 3 * nodeW) / 2;
+    const gapX = 14;
+    const nodeW = (usableW - 2 * gapX) / 3;
+    const nodeH = 40;
 
     MODELS.forEach((m, mi) => {
       const top = pad + mi * blockH;
-      const rowCy = top + blockH / 2 - 8;
+      // API 헤더(상단)
+      label(ctx, x0 + 2, top + 13, m.api, m.apiColor, 14, 'bold');
+      ctx.textAlign = 'start';
 
-      // API 라벨
-      label(ctx, pad + apiW / 2 - 2, rowCy, m.api, m.apiColor, 12, 'bold');
-
-      // 노드 사슬
+      // 노드 사슬(헤더 아래)
+      const rowCy = top + 13 + 8 + nodeH / 2;
       const centers: number[] = [];
       m.chain.forEach((node, i) => {
         const nx = x0 + i * (nodeW + gapX);
@@ -86,20 +88,29 @@ export default function BindingModels() {
         ctx.strokeStyle = node.color;
         ctx.lineWidth = 1.4;
         ctx.stroke();
-        wrapText(ctx, node.t, nx + nodeW / 2, rowCy, nodeW - 8, theme.text, {
-          px: 9,
+        wrapText(ctx, node.t, nx + nodeW / 2, rowCy, nodeW - 6, theme.text, {
+          px: 11,
           weight: 'bold',
-          lineH: 10.5,
+          lineH: 12.5,
         });
       });
       // 화살표
       for (let i = 0; i < centers.length - 1; i++) {
-        drawArrow(ctx, centers[i] + nodeW / 2 + 1, rowCy, centers[i + 1] - nodeW / 2 - 1, rowCy, withAlpha(theme.text, 0.5), 1.5, 6);
+        drawArrow(
+          ctx,
+          centers[i] + nodeW / 2 + 1,
+          rowCy,
+          centers[i + 1] - nodeW / 2 - 1,
+          rowCy,
+          withAlpha(theme.text, 0.5),
+          1.5,
+          6,
+        );
       }
       // 노트(블록 하단)
-      wrapText(ctx, m.note, x0 + usableW / 2, top + blockH - 13, usableW - 6, theme.muted, {
-        px: 8.5,
-        lineH: 10,
+      wrapText(ctx, m.note, x0 + usableW / 2, top + blockH - 14, usableW - 6, theme.muted, {
+        px: 11,
+        lineH: 13,
       });
       // 구분선
       if (mi < n - 1) {
@@ -117,7 +128,11 @@ export default function BindingModels() {
 
   return (
     <figure className="demo">
-      <canvas ref={ref} className="demo-canvas" style={{ height: 300, display: 'block' }} />
+      <canvas
+        ref={ref}
+        className="demo-canvas"
+        style={{ height: 380, display: 'block', width: '100%', maxWidth: CANVAS_MAX_W }}
+      />
       <figcaption>
         리소스를 셰이더에 연결하는 방식의 진화. <span style={{ color: COLORS.dx11 }}>D3D11</span>은{' '}
         <strong>고정 슬롯</strong>입니다 — <code>PSSetShaderResources(slot, …)</code>로 슬롯에 꽂으면

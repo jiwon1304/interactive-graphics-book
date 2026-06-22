@@ -15,7 +15,7 @@ interface Lane {
 export default function StateTranslationTiming() {
   const draw = (d: DrawCtx) => {
     const { ctx, w, h, theme } = d;
-    const leftW = 64;
+    const leftW = 56;
     const pad = 10;
     const nLanes = 4;
     const laneH = (h - pad * 2) / nLanes;
@@ -35,7 +35,7 @@ export default function StateTranslationTiming() {
       ctx.lineTo(x1, base);
       ctx.stroke();
       drawArrow(ctx, x1 - 2, base, x1 + 4, base, withAlpha(theme.text, 0.4), 1.2, 5);
-      label(ctx, x1 - 14, base + 11, 'time', theme.muted, 9);
+      label(ctx, x1 - 16, base + 12, 'time', theme.muted, 12);
 
       const maxBar = laneH - 32;
       // 생성 이벤트(큰 선행 막대)
@@ -44,11 +44,11 @@ export default function StateTranslationTiming() {
         roundRect(ctx, c.x - 7, base - bh, 14, bh, 3);
         ctx.fillStyle = withAlpha(ln.color, 0.85);
         ctx.fill();
-        label(ctx, c.x + 2, base - bh - 7, c.t, ln.color, 8, 'bold');
+        label(ctx, c.x + 2, base - bh - 8, c.t, ln.color, 12, 'bold');
       });
       // draw 이벤트들(같은 간격, 회색)
       const n = 6;
-      const startX = x0 + 152;
+      const startX = x0 + 140;
       const step = (x1 - 20 - startX) / (n - 1);
       for (let i = 0; i < n; i++) {
         const x = startX + i * step;
@@ -57,10 +57,10 @@ export default function StateTranslationTiming() {
         ctx.fillStyle = withAlpha(theme.text, 0.55);
         ctx.fill();
       }
-      ctx.font = monoFont(8);
+      ctx.font = monoFont(12);
       ctx.fillStyle = theme.muted;
       ctx.textAlign = 'center';
-      ctx.fillText('draws →', startX + 2.5 * step, base + 11);
+      ctx.fillText('draws →', startX + 2.5 * step, base + 12);
       ctx.textAlign = 'start';
     };
 
@@ -92,7 +92,11 @@ export default function StateTranslationTiming() {
 
   return (
     <figure className="demo">
-      <canvas ref={ref} className="demo-canvas" style={{ height: 320, display: 'block' }} />
+      <canvas
+        ref={ref}
+        className="demo-canvas"
+        style={{ height: 340, display: 'block', width: '100%', maxWidth: 380 }}
+      />
       <figcaption>
         막대 높이 = 그 시점에 드는 상태 변환 CPU 비용. <span style={{ color: COLORS.dx9 }}>DX9</span>는
         생성 시 변환이 없는 대신 <strong>매 draw마다</strong> 바인딩된 dirty 상태 전부를 하드웨어 명령으로

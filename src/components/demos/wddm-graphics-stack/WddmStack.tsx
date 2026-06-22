@@ -152,7 +152,11 @@ export default function WddmStack() {
 
   return (
     <figure className="demo">
-      <canvas ref={ref} className="demo-canvas" style={{ height: 540, display: 'block' }} />
+      <canvas
+        ref={ref}
+        className="demo-canvas"
+        style={{ width: '100%', maxWidth: 400, height: 560, display: 'block' }}
+      />
       <figcaption>
         Windows의 WDDM(Windows Display Driver Model) 스택. 위 세 칸은 모두 <strong>user 모드 —
         애플리케이션 프로세스 안</strong>에서 돕니다. <span style={{ color: COLORS.runtime }}>D3D

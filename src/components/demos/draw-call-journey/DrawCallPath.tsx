@@ -1,10 +1,10 @@
 import { useCanvas2d, type DrawCtx } from './useCanvas2d';
 import { COLORS, box, label, drawArrow, withAlpha, monoFont } from './dcj2d';
 
-// 드로우 콜 경로(정적, 천천히). 윗부분: 매 Draw마다 user 모드에서 도는 단계
+// 드로우 콜 경로(정적 1컷, 세로 스택). 윗부분: 매 Draw마다 user 모드에서 도는 단계
 // (Draw → runtime 검증 → DDI → UMD 변환 → command buffer append). 아랫부분: command buffer가
 // 가득 차거나 Flush/Present 시에만 kernel로 제출(D3DKMTSubmitCommand) → residency → VidSch → GPU.
-// 좁은 화면(모바일)에서는 세로로 쌓아 라벨이 넘치지 않게 한다.
+// 모바일 우선: 항상 세로로 쌓아 좁은 내부폭(≤400)에서도 라벨이 넘치지 않게 한다.
 
 const USER_STEPS = [
   { c: COLORS.app, t: 'Draw()' },
@@ -23,86 +23,15 @@ const KERNEL_STEPS = [
 export default function DrawCallPath() {
   const draw = (d: DrawCtx) => {
     const { ctx, w, theme } = d;
-    const narrow = w < 520;
     const pad = 10;
-
-    if (!narrow) {
-      // ---- 가로 레이아웃 ----
-      const gap = 10;
-      const colW = (w - pad * 2 - 3 * gap) / 4;
-      const bh = 44;
-
-      // Row 1: user 모드, per draw
-      const y1 = 44;
-      // per-draw 브래킷 + 캡션
-      ctx.strokeStyle = withAlpha(theme.text, 0.4);
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.moveTo(pad, y1 - 10);
-      ctx.lineTo(w - pad, y1 - 10);
-      ctx.stroke();
-      label(ctx, w / 2, y1 - 22, '매 Draw마다 — user mode CPU', theme.muted, 11, 'bold');
-
-      USER_STEPS.forEach((b, i) => {
-        const x = pad + i * (colW + gap);
-        box(ctx, x, y1, colW, bh, b.c, b.t, theme, { px: 12, wrap: true });
-        if (i > 0) drawArrow(ctx, x - gap + 1, y1 + bh / 2, x - 1, y1 + bh / 2, theme.muted, 1.6, 6);
-      });
-
-      // UMD → command buffer
-      const cbX = pad + 3 * (colW + gap);
-      const cbY = y1 + bh + 30;
-      box(ctx, cbX, cbY, colW, 28, COLORS.umd, 'command buffer', theme, {
-        px: 10,
-        alpha: 0.3,
-        wrap: true,
-      });
-      drawArrow(ctx, cbX + colW / 2, y1 + bh + 1, cbX + colW / 2, cbY - 1, COLORS.umd, 1.6, 6);
-      label(ctx, cbX + colW / 2, y1 + bh + 16, 'append', theme.muted, 9, 'bold');
-
-      // user / kernel 경계
-      const y2 = cbY + 28 + 56;
-      const lineY = cbY + 28 + 28;
-      ctx.strokeStyle = withAlpha(theme.text, 0.5);
-      ctx.setLineDash([6, 5]);
-      ctx.lineWidth = 1.2;
-      ctx.beginPath();
-      ctx.moveTo(pad, lineY);
-      ctx.lineTo(w - pad, lineY);
-      ctx.stroke();
-      ctx.setLineDash([]);
-      // 경계 라벨(배경으로 선 덮기)
-      ctx.font = monoFont(10, 'bold');
-      const tw = ctx.measureText('user / kernel 경계').width + 12;
-      ctx.fillStyle = theme.bg;
-      ctx.fillRect(w - pad - tw, lineY - 8, tw, 16);
-      label(ctx, w - pad - tw / 2, lineY, 'user / kernel 경계', theme.muted, 10, 'bold');
-
-      // 제출 화살표(빨강) command buffer → kernel
-      drawArrow(ctx, cbX + colW / 2, cbY + 28 + 1, cbX + colW / 2, lineY - 1, COLORS.submit, 1.8, 7);
-      label(ctx, cbX + colW / 2, cbY + 28 + 14, 'Flush/Present', COLORS.submit, 9, 'bold');
-      // kernel → 첫 박스로 잇기
-      drawArrow(ctx, cbX + colW / 2, lineY + 1, pad + colW / 2, y2 - 1, theme.muted, 1.6, 6);
-
-      // Row 2: kernel + GPU
-      KERNEL_STEPS.forEach((b, i) => {
-        const x = pad + i * (colW + gap);
-        box(ctx, x, y2, colW, bh, b.c, b.t, theme, { px: 11, wrap: true });
-        if (i > 0) drawArrow(ctx, x - gap + 1, y2 + bh / 2, x - 1, y2 + bh / 2, theme.muted, 1.6, 6);
-      });
-      label(ctx, w / 2, y2 + bh + 16, '제출 1회로 수백~수천 draw 처리 (분할 상환)', theme.muted, 11, 'bold');
-      return;
-    }
-
-    // ---- 세로 레이아웃 (모바일) ----
     const colW = w - pad * 2;
     const bh = 34;
     const vgap = 24;
-    let y = 26;
+    let y = 28;
 
-    label(ctx, w / 2, 12, '매 Draw마다 — user mode CPU', theme.muted, 11, 'bold');
+    label(ctx, w / 2, 13, '매 Draw마다 — user mode CPU', theme.muted, 12, 'bold');
     USER_STEPS.forEach((b, i) => {
-      box(ctx, pad, y, colW, bh, b.c, b.t, theme, { px: 12 });
+      box(ctx, pad, y, colW, bh, b.c, b.t, theme, { px: 13 });
       if (i < USER_STEPS.length - 1) {
         drawArrow(ctx, w / 2, y + bh + 1, w / 2, y + bh + vgap - 1, theme.muted, 1.6, 6);
       }
@@ -112,8 +41,9 @@ export default function DrawCallPath() {
     // command buffer
     y += vgap;
     drawArrow(ctx, w / 2, y - vgap + bh - 33, w / 2, y - 1, COLORS.umd, 1.6, 6);
-    box(ctx, pad + colW * 0.18, y, colW * 0.64, 28, COLORS.umd, 'command buffer', theme, {
-      px: 11,
+    label(ctx, w / 2 + 52, y - vgap + 4, 'append', theme.muted, 11, 'bold');
+    box(ctx, pad + colW * 0.16, y, colW * 0.68, 28, COLORS.umd, 'command buffer', theme, {
+      px: 12,
       alpha: 0.3,
     });
     y += 28;
@@ -121,7 +51,7 @@ export default function DrawCallPath() {
     // 경계
     const lineY = y + vgap / 2 + 2;
     drawArrow(ctx, w / 2, y + 1, w / 2, lineY - 9, COLORS.submit, 1.8, 7);
-    label(ctx, w / 2 + 48, y + 12, 'Flush', COLORS.submit, 9, 'bold');
+    label(ctx, w / 2 + 52, y + 12, 'Flush', COLORS.submit, 11, 'bold');
     ctx.strokeStyle = withAlpha(theme.text, 0.5);
     ctx.setLineDash([6, 5]);
     ctx.lineWidth = 1.2;
@@ -130,17 +60,17 @@ export default function DrawCallPath() {
     ctx.lineTo(w - pad, lineY);
     ctx.stroke();
     ctx.setLineDash([]);
-    ctx.font = monoFont(9, 'bold');
+    ctx.font = monoFont(11, 'bold');
     const tw = ctx.measureText('user / kernel').width + 10;
     ctx.fillStyle = theme.bg;
-    ctx.fillRect(pad, lineY - 7, tw, 14);
-    label(ctx, pad + tw / 2, lineY, 'user / kernel', theme.muted, 9, 'bold');
+    ctx.fillRect(pad, lineY - 8, tw, 16);
+    label(ctx, pad + tw / 2, lineY, 'user / kernel', theme.muted, 11, 'bold');
     y = lineY + vgap / 2 + 2;
 
-    label(ctx, w / 2, y - 4, '제출 시에만 — 분할 상환', theme.muted, 10, 'bold');
-    y += 12;
+    label(ctx, w / 2, y - 2, '제출 시에만 — 분할 상환', theme.muted, 12, 'bold');
+    y += 14;
     KERNEL_STEPS.forEach((b, i) => {
-      box(ctx, pad, y, colW, bh, b.c, b.t, theme, { px: 11 });
+      box(ctx, pad, y, colW, bh, b.c, b.t, theme, { px: 12 });
       if (i < KERNEL_STEPS.length - 1) {
         drawArrow(ctx, w / 2, y + bh + 1, w / 2, y + bh + vgap - 1, theme.muted, 1.6, 6);
       }
@@ -155,7 +85,7 @@ export default function DrawCallPath() {
       <canvas
         ref={ref}
         className="demo-canvas"
-        style={{ height: 'min(78vw, 560px)', maxHeight: 560, minHeight: 300, display: 'block' }}
+        style={{ width: '100%', maxWidth: 400, height: 520, display: 'block' }}
       />
       <figcaption>
         한 번의 <code>Draw()</code>가 GPU에 닿기까지. <strong>윗줄은 매 draw마다, 전부 user 모드에서</strong>{' '}
