@@ -47,20 +47,25 @@ export default function ShaderCompilePipeline() {
 
     STAGES.forEach((s, i) => {
       const isBackend = i === 3;
-      // 오프라인/런타임 경계
+      // 오프라인/런타임 경계 (파이프라인 컬럼 위에만)
       if (i === 3) {
+        const dy = y - gap / 2;
         ctx.strokeStyle = muted;
         ctx.setLineDash([5, 4]);
         ctx.lineWidth = 1;
         ctx.beginPath();
-        ctx.moveTo(8, y - gap / 2);
-        ctx.lineTo(W - 8, y - gap / 2);
+        ctx.moveTo(x, dy);
+        ctx.lineTo(x + bw, dy);
         ctx.stroke();
         ctx.setLineDash([]);
-        ctx.fillStyle = muted;
+        const lbl = '─ 오프라인 ↑ / 런타임 ↓ ─';
         ctx.font = '10px system-ui, sans-serif';
-        ctx.textAlign = 'right';
-        ctx.fillText('↑ 오프라인(빌드·배포 시)   ↓ 런타임(드라이버 안)', W - 10, y - gap / 2 - 8);
+        ctx.textAlign = 'center';
+        const tw = ctx.measureText(lbl).width;
+        ctx.fillStyle = cssVar('--surface', '#f0f2f7');
+        ctx.fillRect(x + bw / 2 - tw / 2 - 4, dy - 7, tw + 8, 14);
+        ctx.fillStyle = muted;
+        ctx.fillText(lbl, x + bw / 2, dy);
       }
 
       // 박스

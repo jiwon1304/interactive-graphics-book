@@ -1,0 +1,178 @@
+---
+layout: ../../layouts/ChapterLayout.astro
+title: "그래픽스 드라이버 — 하는 일과 역사"
+description: API 호출과 셰이더를 GPU가 이해하는 명령으로 바꾸는 소프트웨어 — UMD/KMD 분리, 셰이더 컴파일·PSO·캐시, 두꺼운 드라이버에서 얇은 드라이버로, Mesa/오픈소스, 그리고 진화의 역사
+---
+
+import DriverStackPath from '../../components/demos/graphics-driver/DriverStackPath.tsx';
+import ShaderCompilePipeline from '../../components/demos/graphics-driver/ShaderCompilePipeline.tsx';
+import DriverEvolutionTimeline from '../../components/demos/graphics-driver/DriverEvolutionTimeline.tsx';
+
+# 그래픽스 드라이버 — 하는 일과 역사
+
+`draw(36, ...)` 한 줄이 어떻게 GPU의 수천 코어를 움직일까요? 그 사이에는 거대한 통역사가 있습니다 —
+**그래픽스 드라이버**입니다. API 호출과 사람이 쓴 셰이더를, 그 특정 GPU가 이해하는 명령과 기계어로
+번역하는 소프트웨어죠. 이 챕터는 드라이버가 무슨 일을 어떻게 하는지, 그리고 25년간 그 일이 어떻게
+드라이버와 앱 사이를 오갔는지를 봅니다.
+
+> 이 챕터는 드라이버의 **큰 그림**(정체·역사·생태계)을 그립니다. 세부 메커니즘은 자매 챕터들이
+> 깊게 다루니 거기로 연결합니다 — 드로우콜이 GPU에 닿는 과정은 [드로우 콜의 일생](./draw-call-journey),
+> 상태·셰이더·PSO 변환은 [상태·셰이더·PSO](./pipeline-state-shaders), OS 디스플레이 모델은 [WDDM
+> 그래픽스 스택](./wddm-graphics-stack), API 변천은 [DX9→Vulkan](./dx-evolution-vulkan)에 있습니다.
+> 여기서는 그것들을 하나로 꿰고, **아직 다루지 않은 것**(셰이더 캐시·스터터, 오픈소스/리눅스 스택,
+> 드라이버의 역사)을 채웁니다.
+
+## UMD와 KMD — 드라이버는 두 조각이다
+
+현대 그래픽스 드라이버는 한 덩어리가 아니라 **둘로 쪼개져** 있습니다(Windows WDDM 기준).
+
+- **UMD(User-Mode Driver)** — 벤더가 제공하는 DLL로, **앱의 프로세스 안에** 로드됩니다. API 호출을
+  저수준 GPU 명령으로 **번역**하고, **셰이더를 컴파일**하고, **커맨드 버퍼를 작성**합니다. 앱 주소
+  공간에 있으니 빠르고, **크래시해도 앱만 죽지** OS는 멀쩡합니다.
+- **KMD(Kernel-Mode Driver)** — **커널 권한**으로 도는 미니포트 드라이버. 커맨드 버퍼를 **검증**하고
+  DMA 패킷으로 포맷해 **GPU에 제출**하며, GPU 스케줄러·메모리 매니저와 상호작용하고 모드 설정을
+  합니다. 커널에 있으니 **크래시하면 TDR/블루스크린**입니다.
+
+이 분리가 핵심 설계입니다. 결정적 하드웨어 로직만 위험한 커널에 남기고, 무거운 번역·컴파일은
+사용자 모드로 격리해 **안정성**을 얻었습니다(WDDM 이전 XPDM 시절엔 드라이버 버그가 곧 시스템
+다운이었습니다). 그래서 벤더는 UMD와 KMD를 **둘 다** 제공해야 합니다.
+
+드로우콜이 흐르는 길은 이렇습니다:
+
+```
+앱 API 호출 → D3D 런타임 → UMD(번역·셰이더 컴파일·커맨드 버퍼)
+            → Dxgkrnl(VidMm 메모리·VidSch 스케줄) → KMD(검증·DMA 패킷) → GPU 실행
+```
+
+아래에서 레이어를 눌러 각 층의 역할을 보고, 두꺼운/얇은 드라이버 토글로 무거운 일이 어디에
+얹히는지 확인하세요.
+
+<DriverStackPath client:visible />
+
+## 셰이더 캐시와 스터터 — 컴파일은 언제 비싸지나
+
+드라이버가 하는 가장 무거운 일이 **셰이더 컴파일**입니다. 짧게 복습하면(자세한 2단 컴파일·PSO는
+[상태·셰이더·PSO](./pipeline-state-shaders)에서) — 셰이더는 **오프라인**에서 소스(HLSL/GLSL)를
+**중간 표현(IR)**으로 컴파일해 배포하고, **런타임**에 드라이버가 그 IR을 그 GPU의 **실제 기계어
+(ISA)로 JIT 컴파일**합니다. IR은 벤더 중립이지만 ISA는 칩마다 달라, 이 마지막 변환은 **드라이버만**
+할 수 있기 때문입니다.
+
+> 정확히 짚자면 IR도 한 종류가 아닙니다. Direct3D의 **DXIL**(Shader Model 6+)은 **LLVM 3.7 IR의
+> 서브셋을 비트코드로** 인코딩한 것(`dxc`가 LLVM/Clang 포크)인 반면, 구형 SM 5.x의 **DXBC**는 LLVM
+> 기반이 아닌 자체 토큰 바이트코드로 별개입니다. Vulkan은 **SPIR-V**를 씁니다.
+
+이 런타임 JIT가 비싼 게 문제의 핵심입니다. 캐시에 **없는** 셰이더를 처음 쓰는 순간, 컴파일이 프레임
+한가운데서 일어나 GPU가 기다리며 **히치(stutter)**가 납니다 — 컴파일은 GPU가 아니라 **CPU 작업**이라
+그렇습니다. 두꺼운 DX11 드라이버는 이걸 백그라운드에서 알아서 해줬지만, explicit API(DX12/Vulkan)에선
+책임이 엔진으로 넘어와 "첫 실행 셰이더 스터터"가 흔해졌습니다.
+
+해법은 **미리 컴파일하고 캐시**하는 것입니다. **PSO(Pipeline State Object)**는 셰이더+상태를 묶어
+미리 불변 객체로 컴파일해 둬 드로우 시점 컴파일을 없앱니다(대신 PSO 생성 자체는 무거워 케이스에
+따라 수십~수백 ms). 그 결과는 **셰이더/파이프라인 캐시**로 재사용합니다 — Vulkan `VkPipelineCache`는
+디스크에 저장해 다음 실행 때 다시 쓰고, Valve의 **Fossilize**와 Steam은 GPU+드라이버 버전별 컴파일
+결과를 **미리 받아 둬** 게임 중 컴파일을 줄입니다. 엔진이 로딩 화면에서 셰이더를 워밍업하는 것도,
+NVIDIA의 Auto Shader Compilation이 드라이버 업데이트 후 유휴 시간에 재컴파일해 두는 것도 모두 이
+스터터를 겨냥한 것입니다.
+
+<ShaderCompilePipeline client:visible />
+
+## 두꺼운 드라이버에서 얇은 드라이버로
+
+옛 D3D11/OpenGL 드라이버는 **두꺼웠습니다.** 추상화가 높은 만큼 드라이버가 떠안는 일이 많았죠 —
+Microsoft가 분류한 CPU 오버헤드의 범주만 해도 **동기화·할당·검증·컴파일·버퍼 업데이트·바인딩**입니다.
+드로우콜마다 드라이버가 상태를 검증하고 레지스터를 패치하고 필요하면 셰이더를 컴파일했으니, GPU보다
+**CPU가 먼저 병목**이 됐습니다(드로우콜이 정확히 *어디서* 비싼지는 [드로우 콜의 일생](./draw-call-journey)에). 게다가 멀티스레딩·앱별 최적화("game ready" 프로파일)까지 드라이버
+몫이라, **같은 GPU도 드라이버 최적화에 따라 성능이 갈렸습니다.**
+
+explicit API(D3D12/Vulkan)는 이 일을 **앱으로 옮겼습니다.** 셰이더는 PSO로 미리 컴파일하고, 커맨드
+버퍼는 앱이 직접 기록하며, 검증은 개발용 검증 레이어로 분리했습니다. 그 결과 드라이버는 **얇아지고**
+드로우콜이 싸졌습니다 — 대신 메모리 레지던시·동기화 같은 책임이 앱으로 넘어왔습니다(["탈출
+조항"이 사라진 셈](./dx-evolution-vulkan)). OpenGL 시절에도 드로우콜을 배칭해 드라이버 오버헤드를
+줄이는 **AZDO(Approaching Zero Driver Overhead)** 기법이 같은 동기에서 나왔습니다.
+
+## 메모리 레지던시 — 무엇을 VRAM에 둘까
+
+드라이버는 어떤 리소스가 **VRAM에 상주(resident)**할지도 관리합니다. GPU 스케줄러가 커맨드 버퍼를
+제출하기 전, 그 버퍼가 쓰는 모든 리소스는 실제로 비디오 메모리에 있어야 합니다. 없으면 **VidMm(Video
+Memory Manager)**이 시스템 메모리에서 **페이지인**해 자리를 만듭니다. 이 메모리 관리는 [CPU↔GPU
+전송](./cpu-gpu-transfer)·[WDDM](./wddm-graphics-stack)과 맞물립니다 — 여기서는 "드라이버가 레지던시를
+책임진다"는 사실만 짚고 넘어갑니다.
+
+## 오픈소스 / 리눅스 생태계
+
+Windows의 프로프라이어터리 드라이버와 달리, 리눅스에는 풍부한 **오픈소스 드라이버 스택**이 있습니다.
+
+- **Mesa + Gallium3D**: Gallium은 관심사를 둘로 나눕니다 — **state tracker**(OpenGL 같은 API를 내부
+  IR로 번역)와 **pipe driver**(하드웨어별 실행). 덕분에 새 GPU를 추가할 때 API 번역을 다시 짤
+  필요가 없습니다.
+- **NIR**: Mesa의 보편 중간 표현. 모든 프론트엔드(GLSL·SPIR-V)와 백엔드가 만나는 수렴점으로, 공유
+  최적화를 제공합니다.
+- **ACO vs LLVM**: AMD용으로 Valve가 만든 **ACO** 백엔드는 NIR을 LLVM 없이 직접 AMD ISA로 컴파일해,
+  컴파일이 빠르고(벤더/게임에 따라 다르지만 LLVM의 ~2배라는 보고) **Mesa 20.2(2020)부터 RADV의
+  기본**이 됐습니다.
+- **드라이버들**: **RADV**(AMD)·**ANV**(Intel)·**NVK**(NVIDIA) Vulkan 드라이버, **Iris**(Intel
+  OpenGL). 커널 쪽은 **DRM(Direct Rendering Manager)**이 담당하며, 버퍼 객체 관리에 **GEM**(2008)과
+  **TTM**(2009)을 씁니다.
+- **번역 레이어**: **DXVK**(D3D9/10/11 → Vulkan), **VKD3D-Proton**(D3D12 → Vulkan), **Zink**(OpenGL →
+  Vulkan). 이들이 Valve의 **Proton**을 통해 수많은 Windows 게임을 리눅스에서 돌게 합니다 — D3D
+  게임의 명령이 런타임에 Vulkan으로 번역되어 위의 오픈소스 드라이버로 흘러가는 것이죠.
+
+## 역사 — 일은 어떻게 드라이버와 앱을 오갔나
+
+드라이버의 역할은 25년간 크게 출렁였습니다.
+
+- **~1995 고정 기능**: 셰이더가 없습니다. 드라이버는 고정 파이프라인 상태를 HW 레지스터로 매핑할
+  뿐이었습니다(Glide·초기 OpenGL/D3D).
+- **2000–2002 프로그래머블 셰이더**: DirectX 8(2000)·**GeForce 3**(2001)가 정점/픽셀 셰이더를
+  도입했고, DirectX 9(2002)가 **HLSL**을 가져왔습니다. 이때부터 드라이버가 **컴파일러를 품기**
+  시작합니다.
+- **2006 통합 셰이더 + WDDM**: DirectX 10·**GeForce 8800(G80)**이 통합 셰이더 코어를 도입하고, Windows
+  Vista의 **WDDM**이 메모리·스케줄링을 OS로 끌어올리며 UMD/KMD 분리를 공식화했습니다.
+- **DX9~11 "두꺼운 드라이버" 전성기**: 드라이버가 검증·패치·컴파일·최적화를 모두 떠안아 CPU
+  오버헤드가 정점을 찍었습니다.
+- **2013–2016 explicit API**: AMD **Mantle**(2013, GCN 특화 저수준 API)이 드로우콜 병목을 깨는 길을
+  열었고, 이것이 **DirectX 12와 Vulkan**(2015–16)의 토대가 됐습니다. 무거운 일이 앱으로 이동하며
+  드라이버가 다시 얇아집니다.
+- **2019+ 현대**: 메시 셰이더(DX12 2019 프리뷰 → DX12 Ultimate 2020 / Vulkan 2022), 레이트레이싱
+  파이프라인, 도처의 셰이더 캐시, 드라이버 측 업스케일링(DLSS/FSR), 성숙한 오픈소스 Mesa.
+
+<DriverEvolutionTimeline client:visible />
+
+## 정리
+
+- 그래픽스 드라이버는 **UMD(앱 프로세스, 번역·셰이더 컴파일)**와 **KMD(커널, 제출·메모리·스케줄)**로
+  나뉩니다 — 안정성을 위한 분리.
+- 셰이더는 **오프라인(소스→IR: DXIL/SPIR-V)** + **런타임(IR→GPU ISA, 드라이버 JIT)** 2단계. **PSO**로
+  미리 컴파일하고 **캐시**로 재사용하지 않으면 **컴파일 히치**가 난다.
+- 추상화 높은 **두꺼운 드라이버**(DX11)는 CPU 오버헤드가 컸고, **explicit API**가 그 일을 앱으로
+  옮겨 드라이버를 **얇게** 만들었다.
+- 리눅스에는 **Mesa/Gallium·NIR·ACO**와 RADV/ANV/NVK, 그리고 **DXVK/VKD3D-Proton/Zink** 번역
+  레이어로 Windows 게임까지 돌리는 오픈소스 스택이 있다.
+- 역사적으로 일은 **드라이버 ↔ 앱**을 오갔다 — 셰이더 도입으로 드라이버가 두꺼워졌다가, explicit
+  API로 다시 얇아졌다.
+
+## 참고 자료
+
+- Microsoft, *WDDM Architecture* (UMD/KMD 분리, 드로우콜 흐름):
+  https://learn.microsoft.com/en-us/windows-hardware/drivers/display/windows-vista-and-later-display-driver-model-architecture
+- Microsoft, *Video Memory Management and GPU Scheduling* / *Paging Video Memory* (VidMm 레지던시):
+  https://learn.microsoft.com/en-us/windows-hardware/drivers/display/video-memory-management-and-gpu-scheduling ·
+  https://learn.microsoft.com/en-us/windows-hardware/drivers/display/paging-video-memory-resources
+- DXIL 명세 (LLVM 3.7 IR 비트코드 서브셋), DirectX Shader Compiler:
+  https://github.com/microsoft/DirectXShaderCompiler/blob/main/docs/DXIL.rst ·
+  https://github.com/microsoft/DirectXShaderCompiler
+- *The Missing Guide — Pipeline State Objects* / Vulkan Pipeline Cache:
+  https://blog.mecheye.net/2021/06/the-missing-guide-to-modern-graphics-apis-2-psos/ ·
+  https://docs.vulkan.org/guide/latest/pipeline_cache.html
+- Valve Fossilize / Steam 셰이더 사전 캐시:
+  https://github.com/ValveSoftware/Fossilize · https://www.phoronix.com/news/Steam-Vulkan-Shader-Pre-Cache
+- Microsoft DirectX-Specs, *CPU Efficiency* (두꺼운 드라이버 오버헤드 범주):
+  https://microsoft.github.io/DirectX-Specs/d3d/CPUEfficiency.html
+- Mesa / NIR / RADV / ACO:
+  https://en.wikipedia.org/wiki/Mesa_(computer_graphics) · https://docs.mesa3d.org/nir/index.html ·
+  https://docs.mesa3d.org/drivers/radv.html
+- DXVK / VKD3D-Proton / Zink: https://en.wikipedia.org/wiki/DXVK ·
+  https://github.com/HansKristian-Work/vkd3d-proton
+- Direct Rendering Manager (GEM/TTM): https://en.wikipedia.org/wiki/Direct_Rendering_Manager
+- 역사: AMD Mantle https://en.wikipedia.org/wiki/Mantle_(API) · 메시 셰이더
+  https://devblogs.microsoft.com/directx/coming-to-directx-12-mesh-shaders-and-amplification-shaders-reinventing-the-geometry-pipeline/

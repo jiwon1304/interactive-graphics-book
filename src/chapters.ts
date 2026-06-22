@@ -117,6 +117,13 @@ export const chapters: Chapter[] = [
     description: '세대별로 무엇이·왜 바뀌었나 — hazard·residency·스레딩·draw call 오버헤드와 D3D12↔Vulkan 1:1 대응',
     section: '그래픽스 드라이버',
   },
+  {
+    slug: 'graphics-driver',
+    title: '그래픽스 드라이버 — 하는 일과 역사',
+    description:
+      'API·셰이더를 GPU 명령으로 바꾸는 소프트웨어 — UMD/KMD 분리, 셰이더 캐시·스터터, 두꺼운→얇은 드라이버, Mesa/오픈소스(DXVK·Proton), 그리고 진화의 역사',
+    section: '그래픽스 드라이버',
+  },
   // ── GPU 실행 모델 ──
   {
     slug: 'gpu-execution-model',
@@ -324,13 +331,15 @@ const RELATED: Record<string, string[]> = {
     'dx-evolution-vulkan',
     'graphics-pipeline-journey',
   ],
-  'pipeline-state-shaders': ['draw-call-journey', 'dx-evolution-vulkan'],
+  'pipeline-state-shaders': ['draw-call-journey', 'dx-evolution-vulkan', 'graphics-driver'],
   'dx-evolution-vulkan': [
     'pipeline-state-shaders',
     'draw-call-journey',
     'command-queues',
     'ue-gpu-crash-debugging',
+    'graphics-driver',
   ],
+  'graphics-driver': ['draw-call-journey', 'pipeline-state-shaders', 'wddm-graphics-stack', 'dx-evolution-vulkan'],
   'gpu-execution-model': ['warp-divergence-occupancy', 'rendering-execution-model', 'memory-bandwidth-roofline'],
   'warp-divergence-occupancy': ['gpu-execution-model', 'rendering-execution-model'],
   'graphics-pipeline-journey': ['rendering-execution-model', 'tile-based-rendering', 'draw-call-journey'],
