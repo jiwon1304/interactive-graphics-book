@@ -58,8 +58,8 @@ export default function CoarsePixel() {
     const draw = () => {
       const col = readColors(canvas);
       const dpr = Math.min(window.devicePixelRatio || 1, 2);
-      const cssW = canvas.clientWidth || 440;
-      const cssH = 280;
+      const cssW = Math.min(canvas.clientWidth || 360, 360);
+      const cssH = 240;
       canvas.width = Math.round(cssW * dpr);
       canvas.height = Math.round(cssH * dpr);
       ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -153,13 +153,13 @@ export default function CoarsePixel() {
       const pct = Math.round((invocations / full) * 100);
       const label = rate === '1x1' ? 'shade 100%' : `shade ≈ ${pct}%`;
       ctx.fillStyle = col.surface;
-      ctx.fillRect(6, 6, 96, 22);
+      ctx.fillRect(6, 6, 104, 24);
       ctx.strokeStyle = col.border;
       ctx.lineWidth = 1;
-      ctx.strokeRect(6, 6, 96, 22);
+      ctx.strokeRect(6, 6, 104, 24);
       ctx.fillStyle = col.text;
-      ctx.font = 'bold 12px system-ui, sans-serif';
-      ctx.fillText(label, 12, 21);
+      ctx.font = 'bold 13px system-ui, sans-serif';
+      ctx.fillText(label, 12, 23);
     };
 
     draw();
@@ -179,10 +179,12 @@ export default function CoarsePixel() {
         ref={ref}
         style={{
           width: '100%',
+          maxWidth: 360,
           borderRadius: 10,
           border: '1px solid var(--border)',
           touchAction: 'none',
           display: 'block',
+          margin: '0 auto',
         }}
       />
       <ControlPanel>
