@@ -135,8 +135,8 @@ export default function HazardChecker() {
     };
 
     // A는 옛 레이아웃, B는 (올바른 배리어 덕분에) 새 레이아웃.
-    drawCard(SPEC.a, aX, cardW, SPEC.oldLayout.replace('_OPTIMAL', ''));
-    drawCard(SPEC.b, bX, cardW, SPEC.newLayout.replace('_OPTIMAL', ''));
+    drawCard(SPEC.a, aX, cardW, 'COLOR_ATT');
+    drawCard(SPEC.b, bX, cardW, 'SHADER_RO');
 
     // 순서 화살표 A→B.
     drawArrow(ctx, gapX0 - 2, midY, gapX1 + 2, midY, withAlpha(theme.muted, 0.6), {

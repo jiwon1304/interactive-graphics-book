@@ -94,7 +94,7 @@ export default function InsightsFenceTimeline() {
     ctx.fillRect(0, 0, w, h);
 
     const padX = 14;
-    const labelW = 96;
+    const labelW = 80;
     const plotX = padX + labelW;
     const plotW = w - plotX - padX;
 
@@ -129,8 +129,8 @@ export default function InsightsFenceTimeline() {
         color: string;
         blocks: Block[];
       }> = [
-        { y: gfxY, queue: 'graphics', label: 'graphics 큐', color: UE_COLORS.graphics, blocks: gfx },
-        { y: cmpY, queue: 'compute', label: 'compute(async) 큐', color: UE_COLORS.compute, blocks: cmp },
+        { y: gfxY, queue: 'graphics', label: 'graphics', color: UE_COLORS.graphics, blocks: gfx },
+        { y: cmpY, queue: 'compute', label: 'compute', color: UE_COLORS.compute, blocks: cmp },
       ];
 
       // 레인 배경 + 라벨
