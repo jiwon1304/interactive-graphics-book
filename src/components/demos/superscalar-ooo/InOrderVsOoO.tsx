@@ -150,8 +150,8 @@ export default function InOrderVsOoO() {
       <canvas ref={ref} style={{ width: '100%', height: 'auto', display: 'block', maxWidth: 400, margin: '0 auto' }} />
       <figcaption>
         같은 네 명령(I1 load는 캐시 미스로 지연, I2는 그 값에 의존, I3·I4는 <strong>독립</strong>)을 두 방식으로
-        실행합니다. <strong>in-order</strong>는 I2가 load를 기다리느라 막히면, 정작 준비된 I3·I4까지 그 뒤에
-        줄 서서 같이 멈춥니다(빨강 대기). <strong>out-of-order</strong>는 load가 메모리에서 오는 동안 독립적인
+        실행합니다. <strong>in-order</strong>는 I2가 load를 기다리느라 막히면, 프로그램 순서를 어길 수 없어
+        정작 준비된 I3·I4도 그 뒤에서 함께 멈춥니다(빨강 대기). <strong>out-of-order</strong>는 load가 메모리에서 오는 동안 독립적인
         I3·I4를 <em>먼저</em> 실행해 그 지연을 메웁니다 — 더 일찍 끝납니다. 이것이 OoO의 본질입니다: 한 명령이
         막혀도 <strong>의존이 없는 다른 일을 찾아 실행</strong>해 빈 cycle을 메운다. (cycle 수는 도식용 예시.)
       </figcaption>

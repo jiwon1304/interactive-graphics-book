@@ -209,7 +209,7 @@ export default function BarrierStageScope() {
         }}
       />
       <figcaption>
-        배리어는 “전부 멈춰”라는 벽이 아니라 <strong>스테이지 범위(scope)</strong>입니다.{' '}
+        배리어는 모든 작업을 한 지점에서 전부 멈추는 것이 아니라 <strong>스테이지 범위(scope)</strong>를 지정합니다.{' '}
         <strong>srcStage</strong>는 “앞선 명령들이 이 스테이지까지 도달(완료)하기를 기다린다”는
         뜻이고(그보다 뒤 스테이지의 작업은 기다리지 않습니다 — “↑ 안 기다림”), <strong>dstStage</strong>는
         “뒤따르는 명령들을 이 스테이지부터 막는다”는 뜻입니다(그보다 앞 스테이지들은 먼저 진행됩니다 —
