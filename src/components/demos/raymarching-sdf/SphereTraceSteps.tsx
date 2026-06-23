@@ -144,7 +144,7 @@ export default function SphereTraceSteps() {
 
       // 번호
       if (isLast || i === 0) {
-        ctx.font = '11px ui-monospace, monospace';
+        ctx.font = '12px ui-monospace, monospace';
         ctx.fillStyle = theme.muted;
         ctx.fillText(`${i}`, c.x + 6, c.y - 6);
       }

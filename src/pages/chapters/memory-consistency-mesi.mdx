@@ -1,0 +1,178 @@
+---
+layout: ../../layouts/ChapterLayout.astro
+title: "메모리 일관성과 캐시 코히런시(MESI)"
+description: 왜 코히런시가 필요한가 — MESI 4상태 전이·false sharing 재등장·store buffer 재정렬·x86 TSO vs ARM weak·fence
+---
+
+import MesiStateMachine from '../../components/demos/memory-consistency-mesi/MesiStateMachine.tsx';
+import StoreBufferReorder from '../../components/demos/memory-consistency-mesi/StoreBufferReorder.tsx';
+import MemoryModelLadder from '../../components/demos/memory-consistency-mesi/MemoryModelLadder.tsx';
+
+# 메모리 일관성과 캐시 코히런시(MESI)
+
+## 두 코어가 같은 변수를 동시에 캐시하면?
+
+[`./cpu-memory-hierarchy`](./cpu-memory-hierarchy)에서 봤듯, 코어는 자주 쓰는 데이터를
+자기 캐시(L1/L2)에 붙들어 둡니다. 그런데 코어가 여럿이고 **같은 변수**를 여럿이 캐시하면
+문제가 생깁니다. 코어 0이 자기 L1에 있는 `flag = 1`로 바꿔도, 코어 1의 L1에는 여전히
+`flag = 0`이 남아 있을 수 있습니다. 코어 1은 멀쩡히 *틀린 값*을 읽습니다.
+
+이걸 막는 하드웨어 약속이 **캐시 코히런시(cache coherency)** 입니다. 약속의 핵심은 한
+문장입니다: *한 메모리 위치에 대한 쓰기는 결국 모든 코어에게 보이고, 같은 위치에 대한
+쓰기들은 모두가 같은 순서로 본다.* 이 챕터는 그 약속을 지키는 상태기계(**MESI**)와, 그
+약속만으로는 부족해서 따로 필요한 **메모리 일관성 모델(consistency model)** 을 다룹니다.
+
+> **코히런시 ≠ 일관성.** 둘은 다른 문제입니다. **코히런시(coherency)** 는 *하나의* 주소를
+> 여러 코어가 일관되게 보게 하는 것이고, **일관성(consistency)** 은 *여러* 주소에 대한
+> 연산들이 코어 사이에서 어떤 순서로 보이느냐의 문제입니다. MESI는 앞을, 메모리 모델은
+> 뒤를 다룹니다.
+
+## 코히런시를 지키는 법 — 스누핑과 무효화
+
+작은 시스템에서 가장 흔한 방식은 **버스 스누핑(bus snooping)** 입니다. 모든 코어가 공유
+버스(또는 그 역할을 하는 상호연결)를 엿듣다가, 누가 내가 캐시한 라인을 건드리는 요청을
+내면 반응합니다. 핵심 요청 두 가지:
+
+- **BusRd**: "이 라인을 *읽고* 싶다." — 다른 코어가 읽기만 하려는 신호.
+- **BusRdX**(read-for-ownership): "이 라인을 *쓰려고* 가져간다." — 다른 사본은 다 죽어야 한다.
+
+쓰기 정책으로는 **write-invalidate** 가 표준입니다: 한 코어가 쓰기 전에 BusRdX로 *다른
+코어의 사본을 전부 무효화(invalidate)* 하고 나서 씁니다. 그래야 그 순간 그 라인의 유효한
+사본은 하나뿐이 됩니다.
+
+## MESI — 라인 하나의 4가지 상태
+
+write-invalidate를 깔끔하게 구현하려면, 각 캐시가 자기가 가진 라인마다 "지금 이 라인이
+어떤 처지인가"를 4상태로 추적하면 됩니다. 이것이 **MESI** 프로토콜입니다(Illinois
+프로토콜). 한 라인은 한 코어의 캐시 안에서 다음 중 하나입니다:
+
+- **M (Modified)**: 내가 고쳤고(메모리보다 새 값), **나만** 가지고 있다. → 메모리에
+  되돌려 써야(writeback) 할 책임이 있다.
+- **E (Exclusive)**: 메모리와 같은 값을 **나만** 가지고 있다(깨끗함). 쓰면 버스 통신 없이
+  바로 M으로 갈 수 있다.
+- **S (Shared)**: 메모리와 같은 값을, **여러 코어가** 나눠 가지고 있다(깨끗함).
+- **I (Invalid)**: 이 라인은 쓸모없다(없는 것과 같음).
+
+핵심은 **E의 존재 이유** 입니다. 어떤 코어가 라인을 처음 읽었는데 아무도 그 라인을 안 갖고
+있다면, S가 아니라 **E**로 들여옵니다. 나중에 그 라인에 쓸 때, E라면 *버스에 아무것도
+쏘지 않고* 조용히 M으로 갑니다 — 어차피 나만 가지고 있으니 무효화할 사본이 없으니까요.
+싱글스레드 프로그램이 코히런시 비용을 거의 안 무는 비결이 이 E 상태입니다.
+
+<MesiStateMachine client:visible />
+
+전이를 두 종류로 나눠 보면 머릿속이 정리됩니다. **실선**은 *내 코어가* 하는 로컬 read/write,
+**점선**은 *다른 코어의* 요청을 스누프해서 내 라인이 강등·무효화되는 전이입니다. 예컨대
+내 라인이 M인데 다른 코어가 그 라인을 읽으려 하면(BusRd 스누프), 나는 최신값을 내려주고
+M→S로 강등됩니다. 다른 코어가 쓰려 하면(BusRdX 스누프), 내 라인은 무조건 I로 떨어집니다.
+
+> **MESI의 친척들.** 실무 CPU는 변형을 씁니다. **MESI + O(Owned)** = **MOESI**(AMD)는
+> dirty 라인을 메모리에 되쓰지 않고도 코어끼리 직접 공유하게 해 줍니다. Intel은 **MESIF**의
+> **F(Forward)** 로 "공유 라인 중 누가 응답할지"를 한 코어로 지정합니다. 큰 시스템은
+> 버스가 없어 스누핑 대신 **디렉터리 기반(directory-based)** 코히런시를 씁니다 — 어느
+> 코어가 어떤 라인을 갖고 있는지 디렉터리가 추적해 필요한 코어에게만 메시지를 보냅니다.
+
+## false sharing이 다시 나타난다
+
+[`./cpu-memory-hierarchy`](./cpu-memory-hierarchy)에서 예고한 **false sharing**의 정체가
+이제 보입니다. 두 스레드가 *서로 다른 변수*를 쓰는데 그 둘이 우연히 같은 64 B 라인에 있다면,
+한쪽이 쓸 때마다 BusRdX가 나가 상대 코어의 라인을 I로 떨어뜨립니다. 상대는 다음 접근에서
+미스가 나 라인을 다시 가져오고(S/E), 자기가 쓰면 또 BusRdX… 라인이 두 코어의 캐시를
+M↔I로 핑퐁하며 끝없이 오갑니다.
+
+데이터상으론 아무 의존이 없는데도 **코히런시 트래픽** 만으로 느려지는 것입니다. MESI의
+눈으로 보면 false sharing은 "같은 라인이 두 코어에서 번갈아 M이 되려고 싸우는" 현상입니다.
+해법은 변수를 `alignas(64)`로 라인 경계에 맞춰 **다른 라인으로 갈라놓는 것** — 그러면 두
+라인이 각자 독립적으로 M에 머뭅니다.
+
+## MESI가 다가 아니다 — store buffer
+
+여기까지면 멀티코어 프로그래밍이 직관대로 동작할 것 같습니다. 그런데 아닙니다. MESI는
+*한 주소*의 코히런시는 지키지만, 코어가 빨라지려고 두는 **store buffer** 때문에 *여러 주소*
+사이의 순서가 어긋납니다.
+
+코어가 store를 할 때 라인이 M 상태가 아니면 BusRdX로 소유권을 얻을 때까지 기다려야 합니다 —
+수십~수백 cycle입니다. 그동안 코어를 놀리기 아까우니, store를 **store buffer**(write buffer)에
+넣어 두고 다음 명령으로 넘어갑니다. store는 나중에 조용히 캐시로 빠져나갑니다(drain). 빨라지지만
+부작용이 있습니다: store가 버퍼에 머무는 동안, **뒤따르는 load가 그 store를 추월** 해 메모리를
+먼저 칠 수 있습니다.
+
+<StoreBufferReorder client:visible />
+
+위 그림이 그 유명한 "두 코어가 각자 store 직후 상대 변수를 load하면 둘 다 0을 볼 수 있다"
+시나리오입니다(Dekker/store-buffer litmus test). 순차 실행으로는 절대 r1=r2=0이 안 나오는데,
+store buffer가 끼면 나옵니다.
+
+## 메모리 일관성 모델 — 무엇을 재정렬해도 되는가
+
+그래서 아키텍처는 **메모리 일관성 모델** 로 "하드웨어가 같은 코어 안의 메모리 연산을 얼마나
+재정렬해도 되는가"를 명시합니다. 네 가지 짝(load→load, load→store, store→load, store→store)
+각각을 재정렬해도 되는지로 모델의 강함이 갈립니다.
+
+<MemoryModelLadder client:visible />
+
+- **x86(Intel/AMD) = TSO(Total Store Order)**: 거의 강합니다. 오직 **store→load** 하나만
+  재정렬됩니다(방금 본 store buffer 효과). store끼리는 프로그램 순서를 지키고, load는 앞으로
+  당겨지지 않습니다. 그래서 x86에서는 많은 동기화 코드가 명시적 배리어 없이도 우연히
+  동작합니다 — *우연히* 라는 게 함정이지만.
+- **ARM / POWER / RISC-V = weak**: 거의 모든 짝을 재정렬할 수 있습니다. 의존이 없는 두
+  load/store는 자유롭게 순서가 바뀐다고 봐야 합니다.
+
+이 차이가 실무에서 무는 곳: x86에서 멀쩡히 돌던 lock-free 자료구조를 ARM(예: Apple
+Silicon, AWS Graviton)으로 포팅하면 *데이터 레이스*가 드러나 깨집니다. x86의 강한 모델이
+버그를 가려 줬던 것뿐입니다.
+
+> **수치 주의.** 위 표의 "허용 재정렬"은 각 아키텍처 메모리 모델의 *대표적 정리*입니다.
+> ARM/POWER에는 더 미묘한 규칙(의존성에 의한 순서, multi-copy atomicity 여부 등)이 있어
+> 표 하나로 다 담기지 않습니다. 정확한 규칙은 각 아키텍처 매뉴얼과 형식 모델(x86-TSO 논문 등)을
+> 보세요.
+
+## 순서를 못 박는 도구 — fence / barrier
+
+재정렬을 막고 싶은 *그 지점*에 **메모리 배리어(memory barrier / fence)** 를 넣습니다. 배리어는
+"이 선을 넘어 메모리 연산을 재정렬하지 말라"는 명령입니다.
+
+- x86: `mfence`(load·store 모두 막는 전체 배리어), `sfence`, `lfence`. `lock` 접두사가 붙은
+  원자 연산(`lock xchg`, `lock cmpxchg`)도 전체 배리어 효과를 냅니다.
+- ARM: `DMB`(data memory barrier), `DSB`. 그리고 acquire/release 의미를 박은 전용 로드/스토어
+  명령 `LDAR`/`STLR`.
+
+배리어의 비용은 공짜가 아닙니다. 전체 배리어는 store buffer를 비울 때까지 코어를 멈추므로,
+hot loop에 함부로 넣으면 느려집니다. 그래서 *필요한 만큼만* 강한 배리어를 쓰는 게 중요합니다 —
+바로 다음의 acquire/release가 그 절제된 도구입니다.
+
+## acquire / release — 한 줄 정리
+
+전체 배리어는 과합니다. 보통 필요한 건 한쪽 방향뿐입니다. **release** store는 "이 store
+*이전의* 모든 메모리 연산이 이 store보다 먼저 보이게" 하고(앞쪽을 가둠), **acquire** load는
+"이 load *이후의* 모든 연산이 이 load보다 늦게 보이게" 합니다(뒤쪽을 가둠). 한 코어가
+release로 플래그를 세우고 다른 코어가 acquire로 그 플래그를 읽으면, release 이전의 모든
+쓰기가 acquire 이후 코드에 보입니다 — 이것이 락·lock-free 코드가 데이터를 안전하게 넘기는
+표준 짝입니다. 자세한 활용은 [`./atomics-locks`](./atomics-locks)에서 다룹니다.
+
+## 종합
+
+- **코히런시(MESI)** 는 *한 주소*를 여러 코어가 일관되게 보게 한다 — M/E/S/I와 BusRd/BusRdX로
+  무효화한다. E 덕에 싱글스레드는 코히런시 비용을 거의 안 문다.
+- **false sharing** 은 데이터 의존이 없는데도 라인이 코어 사이를 M↔I로 핑퐁하는 코히런시
+  트래픽 문제 — 라인을 갈라(`alignas`) 푼다.
+- **store buffer** 때문에 *여러 주소* 사이의 순서가 어긋난다(store→load 재정렬).
+- **메모리 모델** 이 무엇을 재정렬해도 되는지 정한다: x86 TSO(거의 강함) vs ARM/POWER(weak).
+- 순서가 필요한 곳엔 **fence**, 보통은 절제된 **acquire/release** 로 못 박는다.
+
+## 더 나아가기
+
+- **이 모든 것을 쓰는 곳:** 원자 연산·CAS·락·lock-free 자료구조 →
+  [`./atomics-locks`](./atomics-locks). MESI 트래픽이 spinlock 성능을 어떻게 좌우하는지도 거기서.
+- **배경이 된 캐시 구조:** 캐시라인·set-associative·false sharing의 토대 →
+  [`./cpu-memory-hierarchy`](./cpu-memory-hierarchy).
+- **형식 모델:** x86-TSO는 Sewell 등의 operational 모델로 엄밀히 정의됩니다. C/C++11 메모리
+  모델(`std::memory_order`)은 이 하드웨어 모델 위에 언어 차원의 추상을 얹은 것입니다.
+
+## 참고 자료
+
+- Paul E. McKenney, [*Is Parallel Programming Hard, And, If So, What Can You Do About It?* (perfbook)](https://mirrors.edge.kernel.org/pub/linux/kernel/people/paulmck/perfbook/perfbook.html) — 메모리 배리어·재정렬·코히런시의 정전.
+- Sorin, Hill & Wood, [*A Primer on Memory Consistency and Cache Coherence*](https://link.springer.com/book/10.1007/978-3-031-01764-3) — MESI/MOESI·일관성 모델 표준 교재.
+- Scott Owens, Susmit Sarkar, Peter Sewell, ["A Better x86 Memory Model: x86-TSO"](https://www.cl.cam.ac.uk/~pes20/weakmemory/x86tso-paper.tphols.pdf) — x86 TSO의 형식 모델.
+- Jeff Preshing, ["Weak vs. Strong Memory Models"](https://preshing.com/20120930/weak-vs-strong-memory-models/) — TSO/weak 직관.
+- [LWN, "Support for the TSO memory model on Arm CPUs"](https://lwn.net/Articles/970907/) — TSO vs ARM weak의 실무 영향.
+- Hennessy & Patterson, *Computer Architecture: A Quantitative Approach* — 스누핑·MESI·디렉터리 코히런시.

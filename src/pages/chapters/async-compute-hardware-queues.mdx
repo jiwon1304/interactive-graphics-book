@@ -1,0 +1,125 @@
+---
+layout: ../../layouts/ChapterLayout.astro
+title: "Async Compute와 하드웨어 큐"
+description: graphics/compute/copy 큐와 하드웨어 엔진·스케줄링 — 빈 유닛을 메우는 오버랩, AMD ACE·NVIDIA 큐, 그리고 의존성/배리어
+---
+
+import QueueOverlap from '../../components/demos/async-compute-hardware-queues/QueueOverlap.tsx';
+import HardwareQueues from '../../components/demos/async-compute-hardware-queues/HardwareQueues.tsx';
+import BarrierHazard from '../../components/demos/async-compute-hardware-queues/BarrierHazard.tsx';
+
+# Async Compute와 하드웨어 큐
+
+GPU는 수천 개의 ALU를 가졌지만, 어떤 작업도 그걸 **전부** 바쁘게 쓰지는 못합니다. 그림자 패스는
+래스터·깊이 테스트에 묶여 ALU가 한가하고, 후처리 패스는 ALU를 꽉 채우는 대신 메모리를 기다립니다.
+한 작업이 못 채운 빈틈을 **다른 작업으로 메우면** 같은 시간에 더 많은 일을 할 수 있습니다.
+
+그 메커니즘이 **async compute**입니다. 이 챕터는 GPU가 노출하는 여러 큐, 그 큐가 들어가는 하드웨어
+엔진, 작업을 겹쳐 유닛 점유를 채우는 원리, 그리고 그 대가로 신경 써야 하는 의존성·배리어를 봅니다.
+
+## 왜 한 작업으로는 GPU를 못 채우나
+
+GPU의 한 패스가 병목에 걸리는 지점은 제각각입니다.
+
+- **그림자 맵 렌더**: 정점·래스터·깊이 기록이 주된 일이라 ROP·rasterizer가 바쁘고 **ALU는 한가**합니다.
+- **SSAO·블러 같은 compute 후처리**: ALU·텍스처 샘플은 바쁘지만 고정기능 래스터는 안 씁니다.
+- **텍스처 업로드**: 연산은 거의 없고 **메모리 대역폭**만 씁니다.
+
+이들이 쓰는 자원이 겹치지 않으니, 직렬로 돌리면 매 순간 GPU의 일부만 일합니다. 같은 하드웨어 위에서
+이들을 **시간이 아니라 유닛 점유로 겹치면** 어떻게 될까요?
+
+<QueueOverlap client:visible />
+
+막대 길이의 합(=총 작업량)은 똑같지만 벽시계 시간이 줄어듭니다. 이것이 async의 전부입니다 — "남는
+유닛을 다른 작업으로 메운다". 핵심은 **시간 단축이 아니라 점유율(occupancy) 향상**이라는 점이며,
+그래서 작업끼리 **다른 자원을 쓸 때** 이득이 큽니다(둘 다 ALU만 쥐어짜면 겹쳐도 안 빨라집니다).
+
+## 세 가지 큐 — graphics / compute / copy
+
+현대 API(D3D12·Vulkan)는 작업을 제출하는 **여러 큐**를 노출합니다. 큐는 종류가 있고, 종류에 따라
+들어가는 하드웨어 엔진이 다릅니다.
+
+- **graphics 큐**: 렌더(정점·픽셀)와 compute, copy를 모두 받을 수 있는 만능 큐.
+- **compute 큐**: compute dispatch 전용. graphics와 **병행** 가능.
+- **copy(transfer) 큐**: 메모리 전송 전용. 전용 DMA 엔진으로 들어가 연산과 독립적으로 굴러갑니다.
+
+이 큐들이 실제 하드웨어로 어떻게 매핑되는지 봅시다.
+
+<HardwareQueues client:visible />
+
+AMD는 compute 큐를 **ACE(Asynchronous Compute Engine)**가 받습니다. GCN 3세대 이후 GPU는 셰이더
+실행을 스케줄하는 CU 스케줄러와, draw/compute 큐 실행을 스케줄하는 별도 스케줄러를 둡니다 — 후자가
+고정기능 파이프라인이나 대역폭에 막혀 CU가 놀 때 compute 작업을 끼워 넣어 점유를 채웁니다. Hawaii
+기반(R9 290X)은 ACE를 8개까지 두고 각 ACE가 큐 8개를 관리했습니다. NVIDIA도 별도 compute 큐로
+async를 지원하지만, 동시 실행을 다루는 방식은 세대마다(특히 Maxwell→Pascal에서) 달라졌습니다 —
+정밀한 동작은 아키텍처별로 다르므로 단정하지 않는 게 안전합니다.
+
+결정적으로, **graphics와 compute는 같은 CU/SM 풀을 공유**합니다. 그래서 한쪽이 비운 ALU를 다른
+쪽이 채울 수 있는 것입니다. copy는 별도 DMA 경로라 메모리 전송을 연산과 겹쳐 진행합니다.
+
+## 오버랩의 실제 — 그림자 패스 중 compute
+
+가장 흔한 패턴이 **그림자 맵을 그리는 동안 compute를 돌리는** 것입니다. 그림자 패스는 깊이만 쓰는
+가벼운 픽셀 작업이라 ALU가 텅 빕니다. 그 틈에 직전 프레임/이번 프레임의 SSAO, light culling,
+파티클 시뮬레이션 같은 compute를 async 큐로 밀어 넣으면, 그림자가 끝날 때쯤 compute도 거의
+끝나 있습니다 — 사실상 **공짜로** 얻는 시간입니다.
+
+이 아이디어는 [GPU-driven 컬링](./mesh-shaders-gpu-culling)과도 자연스럽게 맞물립니다. 다음 프레임의
+meshlet 컬링·indirect draw 인자 생성 compute를 이번 프레임 렌더와 겹쳐 돌릴 수 있죠.
+
+## 공짜가 아니다 — 의존성과 배리어
+
+오버랩은 작업끼리 **독립적일 때만** 안전합니다. 한 큐의 결과를 다른 큐가 읽는다면, 순서를 강제하지
+않으면 깨집니다.
+
+<BarrierHazard client:visible />
+
+두 종류의 동기화가 필요합니다.
+
+1. **실행 순서 (semaphore / fence)**: graphics 큐가 G-buffer를 다 쓴 뒤에 compute 큐가 읽기
+   시작하도록, 큐 간 신호로 묶습니다. Vulkan은 큐 간에 semaphore, Vulkan/D3D12 모두 CPU↔GPU·프레임
+   동기에 fence를 씁니다. 빠뜨리면 compute가 미완성 데이터를 읽는 **read-before-write 해저드**가
+   납니다.
+
+2. **메모리 가시성·레이아웃 (barrier)**: 한쪽의 쓰기가 다른 쪽에 *보이도록* 캐시를 flush/invalidate
+   하고, 리소스 상태를 전환(예: render target → shader resource)해야 합니다. D3D12의 resource
+   barrier, Vulkan의 pipeline barrier가 이 일을 합니다.
+
+이 비용 때문에 **의존성이 적은 작업을 골라 겹쳐야** 이득이 납니다. 매 패스가 직전 결과를 기다리면
+async 큐를 써도 사실상 직렬이 되고, 오히려 동기화 오버헤드만 늘 수 있습니다. 또 잘못 겹치면 두
+작업이 **같은 자원(예: L2·대역폭)을 두고 경합**해 둘 다 느려지기도 합니다 — async는 만능 가속기가
+아니라, 자원이 안 겹치는 작업을 맞물릴 때 쓰는 도구입니다.
+
+큐의 제출·동기화 자체의 생명주기는 [명령 큐와 동기화](./command-queues)에서, 한 GPU를 여러 컨텍스트가
+나눠 쓰는 스케줄링·우선순위는 [GPU 스케줄링과 프리엠션](./gpu-scheduling-preemption)에서 더 깊이
+다룹니다.
+
+## 정리
+
+- 한 패스는 GPU의 일부만 쓴다 — 그림자는 ROP, compute는 ALU, copy는 대역폭. **빈 유닛을 다른
+  작업으로 메우는** 것이 async compute.
+- 핵심 지표는 시간이 아니라 **점유율** — 자원이 안 겹치는 작업을 겹칠 때 이득.
+- API는 **graphics/compute/copy** 큐를 노출하고, 각각 다른 하드웨어 엔진으로 간다(AMD **ACE**,
+  전용 DMA). graphics·compute는 **같은 CU/SM 풀을 공유**해 서로의 빈틈을 채운다.
+- 오버랩은 **의존성·배리어**를 요구한다 — semaphore/fence로 순서, barrier로 메모리 가시성·전환.
+  독립적인 작업만 이득이 나고, 자원 경합 시 오히려 느려질 수 있다.
+
+## 더 나아가기
+
+async로 겹친 작업량은 결국 더 많은 ALU를 동시에 켭니다 — 그건 곧 더 큰 순간 전력이고,
+[전력·클럭(DVFS)](./gpu-power-dvfs-thermal)의 예산 안에서만 가능합니다. compute로 컬링·draw 인자를
+GPU가 채우는 흐름은 [Mesh/Amplification 셰이더와 GPU-driven 컬링](./mesh-shaders-gpu-culling)과
+이어집니다.
+
+## 참고 자료
+
+- AMD GPUOpen, *RDNA Performance Guide* (async 큐, 배리어 없으면 graphics↔compute 오버랩, 자원 경합 주의):
+  https://gpuopen.com/learn/rdna-performance-guide/
+- AMD GPUOpen, *Leveraging Asynchronous Queues for Concurrent Execution* (큐를 동시 실행, copy/compute 분리):
+  https://gpuopen.com/learn/concurrent-execution-asynchronous-queues/
+- *Graphics Core Next* (Wikipedia, 1차 자료 정리: ACE/큐 스케줄러, Hawaii 8 ACE × 8 큐, copy 큐):
+  https://en.wikipedia.org/wiki/Graphics_Core_Next
+- Chips and Cheese, *GCN, AMD's GPU Architecture Modernization* (ACE·커맨드 프로세서 구조 분석):
+  https://chipsandcheese.com/p/gcn-amds-gpu-architecture-modernization
+- Microsoft Learn / D3D12, command queue 종류(DIRECT/COMPUTE/COPY)와 동기화(fence) — `command-queues`
+  챕터 참고. NVIDIA/AMD의 세대별 async 동작 차이는 단정하지 않음(IHV 자료마다 갈림) — **낮은 신뢰도/주의**.

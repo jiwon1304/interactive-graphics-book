@@ -91,9 +91,9 @@ export default function ChannelPacking() {
         ctx.lineWidth = c.on ? 2 : 1;
         ctx.strokeRect(x + 0.5, topY + 0.5, small, small);
         ctx.fillStyle = c.on ? theme.text : theme.muted;
-        ctx.font = '600 11px system-ui, sans-serif';
+        ctx.font = '600 12px system-ui, sans-serif';
         ctx.textAlign = 'center';
-        ctx.fillText(c.label, x + small / 2, topY + small + 14);
+        ctx.fillText(c.label, x + small / 2, topY + small + 15);
       });
 
       // 아래 큰 패킹 텍스처
@@ -112,9 +112,9 @@ export default function ChannelPacking() {
       ctx.lineWidth = 1;
       ctx.strokeRect(bx + 0.5, bigY + 0.5, big, big);
       ctx.fillStyle = theme.muted;
-      ctx.font = '11px system-ui, sans-serif';
+      ctx.font = '12px system-ui, sans-serif';
       ctx.textAlign = 'center';
-      ctx.fillText('패킹된 ORM 텍스처 (한 장)', bx + big / 2, bigY + big + 14);
+      ctx.fillText('패킹된 ORM 텍스처 (한 장)', bx + big / 2, bigY + big + 15);
     };
 
     run();

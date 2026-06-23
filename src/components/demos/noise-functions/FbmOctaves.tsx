@@ -145,9 +145,9 @@ export default function FbmOctaves() {
         }
         // 라벨(진폭 = gain^o).
         ctx.fillStyle = active ? col.text : col.muted;
-        ctx.font = '11px system-ui, sans-serif';
+        ctx.font = '12px system-ui, sans-serif';
         const amp = Math.pow(gain, o);
-        ctx.fillText(`#${o} ×${amp.toFixed(2)}`, x0 + 2, cell + 13);
+        ctx.fillText(`#${o} ×${amp.toFixed(2)}`, x0 + 2, cell + 14);
       }
     };
     draw();

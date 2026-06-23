@@ -204,7 +204,7 @@ export default function RampEditor() {
 
     // 축 라벨
     ctx.fillStyle = text;
-    ctx.font = '11px ui-sans-serif, system-ui, sans-serif';
+    ctx.font = '12px ui-sans-serif, system-ui, sans-serif';
     ctx.fillText('어두움 (N·L=0)', padL, top + barH + 16);
     const rl = '밝음 (N·L=1)';
     ctx.fillText(rl, padL + barW - ctx.measureText(rl).width, top + barH + 16);

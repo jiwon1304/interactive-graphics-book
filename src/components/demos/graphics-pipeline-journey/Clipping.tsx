@@ -112,7 +112,7 @@ export default function Clipping() {
     ctx.strokeStyle = COLORS.clip;
     ctx.lineWidth = 1.6;
     ctx.strokeRect(L, T, R - L, B - T);
-    ctx.font = monoFont(11);
+    ctx.font = monoFont(12);
     ctx.fillStyle = COLORS.clip;
     ctx.textAlign = 'left';
     ctx.textBaseline = 'bottom';

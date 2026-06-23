@@ -109,7 +109,7 @@ export default function BackfaceCulling() {
     ctx.stroke();
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
-    ctx.font = monoFont(11);
+    ctx.font = monoFont(12);
     ctx.fillStyle = theme.muted;
     ctx.fillText(`2·면적 = ${(area2 / 1000).toFixed(1)}k`, ppx + 10, ppy + 16);
     ctx.fillText(`와인딩: ${cw ? 'CW (부호 +)' : 'CCW (부호 −)'}`, ppx + 10, ppy + 35);

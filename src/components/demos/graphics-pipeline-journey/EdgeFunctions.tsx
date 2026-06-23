@@ -87,7 +87,7 @@ export default function EdgeFunctions() {
       const mid = (u: Vec2, vv: Vec2): Vec2 => v2((u.x + vv.x) / 2, (u.y + vv.y) / 2);
       const drawEdgeLabel = (u: Vec2, vv: Vec2, name: string, color: string) => {
         const m = mid(u, vv);
-        ctx.font = monoFont(11);
+        ctx.font = monoFont(12);
         ctx.fillStyle = color;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';

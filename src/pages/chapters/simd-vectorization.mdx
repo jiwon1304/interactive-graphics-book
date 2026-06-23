@@ -1,0 +1,144 @@
+---
+layout: ../../layouts/ChapterLayout.astro
+title: "SIMD와 벡터화"
+description: 한 명령으로 여러 데이터 — SSE/AVX/AVX-512와 NEON, 레인, AoS vs SoA, 자동 벡터화 vs intrinsics, 정렬·마스킹·gather
+---
+
+import ScalarVsSimd from '../../components/demos/simd-vectorization/ScalarVsSimd.tsx';
+import AosVsSoa from '../../components/demos/simd-vectorization/AosVsSoa.tsx';
+import MaskGather from '../../components/demos/simd-vectorization/MaskGather.tsx';
+
+# SIMD와 벡터화
+
+배열 백만 개를 더하는 루프가 있습니다. 코어 하나가 1초에 수십억 번 덧셈을 할 수 있는데, 정말 한
+번에 **숫자 하나씩**만 더할까요? 아닙니다. 현대 CPU는 한 명령으로 4개, 8개, 16개를 동시에 더할 수
+있습니다 — **SIMD**(Single Instruction, Multiple Data)입니다. 이 챕터는 그 폭이 어디서 오고, 왜
+메모리 배치가 그걸 살리거나 죽이는지, 그리고 컴파일러와 우리가 각각 무엇을 할 수 있는지를 봅니다.
+
+## 한 명령, 여러 데이터 — lane
+
+보통의 산술 명령(스칼라)은 레지스터 하나에 값 하나를 담아 연산합니다. SIMD 명령은 **넓은
+레지스터**에 값을 여러 개 나란히 담고, **한 명령**으로 그 칸들을 동시에 같은 연산에 겁니다. 이
+칸 하나하나를 **lane**이라 부릅니다.
+
+<ScalarVsSimd client:visible />
+
+핵심은 "명령 흐름은 하나, 데이터는 여럿"이라는 점입니다. 디코드·발행은 한 번 일어나고, 실행
+유닛이 lane들을 병렬로 처리합니다. 그래서 같은 일을 lane 수만큼 적은 명령으로 끝냅니다 —
+**이론상 폭에 비례하는 속도 향상**입니다(메모리·의존성이 막지 않는다면).
+
+## 폭은 어디서 오나 — SSE / AVX / AVX-512, 그리고 NEON
+
+x86에서 SIMD 레지스터의 폭은 세대마다 두 배씩 넓어졌습니다.
+
+| 확장 | 레지스터 폭 | float(32b) lane | double(64b) lane | 레지스터 이름 |
+|---|---|---|---|---|
+| SSE | 128-bit | 4 | 2 | XMM0–15 |
+| AVX / AVX2 | 256-bit | 8 | 4 | YMM0–15 |
+| AVX-512 | 512-bit | 16 | 8 | ZMM0–31 |
+
+폭이 $128 \to 256 \to 512$로 가면 한 명령이 다루는 float lane도 $4 \to 8 \to 16$으로 늘어납니다.
+레지스터는 **별칭(alias)** 관계입니다 — `XMM`은 `YMM`의 아래 절반, `YMM`은 `ZMM`의 아래 절반.
+AVX-512는 레지스터 **개수도 16개에서 32개로** 늘렸습니다.
+
+$$
+\text{lane 수} = \frac{\text{레지스터 폭(bit)}}{\text{원소 폭(bit)}}
+\quad\Rightarrow\quad
+\frac{512}{32} = 16 \text{ (float)}, \quad \frac{512}{64} = 8 \text{ (double)}
+$$
+
+ARM 쪽은 **NEON**이 **128-bit 고정폭** 레지스터 32개(`V0`–`V31`)를 둡니다. 흥미로운 차이는
+**SVE**(Scalable Vector Extension)입니다 — SVE는 폭을 **128~2048-bit 범위에서 하드웨어가 정하게**
+두고, 코드는 폭을 모른 채(vector-length-agnostic) 작성합니다. "이 코드는 폭 N에서 돈다"가 아니라
+"어떤 폭이든 돈다"로 짜는 방식입니다.
+
+> SIMD의 사촌이 GPU의 **SIMT**입니다. CPU SIMD는 한 스레드가 넓은 레지스터의 lane들을 다루지만,
+> GPU는 수십 개 "스레드"를 묶어 락스텝으로 같은 명령을 실행합니다 — lane이 곧 스레드입니다.
+> 둘의 공통점·차이는 [GPU 실행 모델](./gpu-execution-model)에서 자세히 봅니다.
+
+## 메모리 배치가 폭을 살리거나 죽인다 — AoS vs SoA
+
+폭이 아무리 넓어도, 데이터가 메모리에 흩어져 있으면 lane을 채우는 데 시간을 다 씁니다. 입자
+시스템처럼 `{x, y, z}` 구조체가 많은 경우를 봅시다.
+
+<AosVsSoa client:visible />
+
+- **AoS** (Array of Structures): `[{x,y,z}, {x,y,z}, …]`. 한 입자가 메모리에서 붙어 있습니다.
+  하지만 "모든 입자의 x만" 모으려면 세 칸씩 건너뛰어야 합니다 — lane을 채우는 데 흩어진 접근이
+  필요합니다.
+- **SoA** (Structure of Arrays): `{x[], y[], z[]}`. 같은 필드가 한 줄로 연속입니다. SIMD
+  레지스터를 **연속 load 한 번**으로 채웁니다.
+
+SIMD는 보통 "여러 데이터에 같은 연산"이므로, 같은 필드끼리 연속인 **SoA가 벡터화에 거의 항상
+유리**합니다. 캐시 입장에서도 안 쓰는 필드를 끌어오지 않아 대역폭을 아낍니다([CPU 캐시와 메모리
+계층](./cpu-memory-hierarchy)에서 본 spatial locality와 같은 원리). 둘을 절충해 SIMD 폭만큼씩
+묶어 두는 **AoSoA**도 있습니다.
+
+## 정렬, 마스킹, gather/scatter
+
+벡터 load/store는 **정렬(alignment)**을 좋아합니다. 16/32/64-byte 경계에 맞춰진 주소는 한
+트랜잭션으로 읽히지만, 어긋난 주소는 두 캐시라인에 걸쳐 더 비쌀 수 있습니다(정렬 강제 명령은
+어긋나면 fault). 그래서 SoA 배열은 흔히 폭에 맞춰 정렬해 둡니다.
+
+루프가 폭의 배수로 딱 떨어지지 않으면(예: 원소 100개, 폭 16) 마지막 자투리가 남습니다. 또
+`if (cond) ...` 같은 조건은 lane마다 결과가 다릅니다. 이를 위한 두 도구가 **마스킹**과
+**gather/scatter**입니다.
+
+<MaskGather client:visible />
+
+- **마스킹**: AVX-512는 lane별 1/0인 **mask 레지스터** `k1`–`k7`을 둡니다(`k0`은 "마스크 없음"으로
+  예약). 1인 lane에만 결과를 쓰고 0인 lane은 그대로 둬서, **분기 없이** 조건 연산과 자투리
+  처리를 합니다.
+- **gather**: 인덱스 벡터가 가리키는, 메모리에 흩어진 값들을 한 명령으로 레지스터에 모읍니다
+  (반대 방향 저장이 **scatter**). AVX2는 gather만 있고, AVX-512는 gather·scatter 둘 다 있습니다.
+  연속 load보다 느리지만 AoS·불규칙 접근을 벡터화할 때 필요합니다 — 그래서 SoA로 gather 자체를
+  피하는 게 상책입니다.
+
+## 누가 벡터화하나 — 자동 벡터화 vs intrinsics
+
+벡터 명령을 쓰는 길은 둘입니다.
+
+1. **자동 벡터화(auto-vectorization)**: 컴파일러가 스칼라 루프를 보고 알아서 SIMD로 바꿉니다
+   (`-O2`/`-O3`, `-march=native` 등). 공짜에 가깝지만, 컴파일러가 **안전을 확신해야** 합니다.
+   막는 흔한 요인:
+   - **포인터 별칭(aliasing)**: 입력과 출력이 겹칠 수 있으면 순서를 못 바꿉니다(`restrict`로 약속).
+   - **자료 의존성**: `a[i] = a[i-1] + …`처럼 이전 결과에 의존하면 lane 병렬이 깨집니다.
+   - **제어 흐름·함수 호출**: 복잡한 분기나 인라인 안 되는 호출.
+   - **정렬·길이 미지**: 런타임에 정렬·길이를 모르면 보수적으로 스칼라 유지.
+2. **intrinsics**: `_mm256_add_ps` 같은 함수로 SIMD 명령을 **직접** 부릅니다. 어셈블리보다는
+   읽기 쉽지만 폭·확장에 묶입니다(SSE/AVX/NEON별 다른 코드). 컴파일러가 못 살리는 패턴을
+   사람이 강제할 때 씁니다.
+
+실무 순서는 보통: **SoA로 배치 + `restrict`/정렬로 컴파일러를 돕기 → 자동 벡터화 확인(리포트로
+점검) → 그래도 안 되는 핫스팟만 intrinsics**입니다. 즉 메모리 배치가 절반 이상의 일을 합니다.
+
+## 한 줄 주의 — AVX-512 다운클럭
+
+폭이 넓은 512-bit 명령, 특히 곱셈 같은 "heavy" 연산은 전력·발열이 커서, 일부 세대(특히
+Skylake-X)에서는 CPU가 그 코어의 **클럭을 낮춥니다**(license-based downclocking). 그래서 가벼운
+512-bit 코드는 256-bit보다 오히려 느려질 수도 있었습니다 — 다만 이 페널티는 Ice Lake 이후 세대에서
+크게 완화됐습니다. "더 넓다 = 항상 빠르다"가 아니라는 한 가지 예외로 기억해 두세요.
+
+## 정리
+
+- **SIMD**: 넓은 레지스터의 lane들에 한 명령으로 같은 연산. lane 수 = 레지스터 폭 ÷ 원소 폭.
+- **폭**: SSE 128 → AVX 256 → AVX-512 512-bit (float lane 4→8→16). ARM은 NEON 128 고정,
+  SVE는 가변폭.
+- **메모리 배치가 핵심**: SoA는 연속 load로 lane을 채워 벡터화에 유리, AoS는 gather를 부른다.
+- **정렬·마스킹·gather/scatter**로 자투리·조건·불규칙 접근을 다룬다.
+- **자동 벡터화**(컴파일러)를 우선하되 별칭·의존성·제어흐름이 막으면 **intrinsics**로 강제.
+- **AVX-512 다운클럭**: 폭이 넓다고 항상 빠른 건 아니다(세대 의존).
+
+## 참고 자료
+
+- AVX-512 폭·레지스터(ZMM 32개·별칭): https://en.wikipedia.org/wiki/AVX-512 ·
+  https://www.intel.com/content/www/us/en/developer/articles/technical/intel-avx-512-instructions.html ·
+  https://en.wikichip.org/wiki/x86/avx-512
+- ARM NEON 128-bit / SVE 가변폭(128–2048): https://developer.arm.com/Architectures/Scalable%20Vector%20Extensions ·
+  https://learn.arm.com/learning-paths/servers-and-cloud-computing/sve/sve_basics/
+- AoS vs SoA(+AoSoA): https://en.wikipedia.org/wiki/AoS_and_SoA ·
+  https://www.intel.com/content/www/us/en/developer/articles/technical/memory-layout-transformations.html
+- mask 레지스터·gather/scatter: https://travisdowns.github.io/blog/2019/12/05/kreg-facts.html ·
+  https://dynamorio.org/page_scatter_gather_emulation.html
+- AVX-512 다운클럭(세대 의존): https://travisdowns.github.io/blog/2020/01/17/avxfreq1.html ·
+  https://travisdowns.github.io/blog/2020/08/19/icl-avx512-freq.html

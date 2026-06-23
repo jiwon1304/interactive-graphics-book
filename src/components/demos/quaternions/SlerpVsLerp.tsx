@@ -216,7 +216,7 @@ export default function SlerpVsLerp() {
     // 격자 + 축
     ctx.strokeStyle = border;
     ctx.lineWidth = 1;
-    ctx.font = '11px ui-sans-serif, system-ui, sans-serif';
+    ctx.font = '12px ui-sans-serif, system-ui, sans-serif';
     ctx.fillStyle = muted;
     [0.6, 0.8, 1.0].forEach((v) => {
       const y = yToPx(v);

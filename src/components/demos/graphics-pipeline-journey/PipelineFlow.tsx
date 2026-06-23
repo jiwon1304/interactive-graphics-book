@@ -101,18 +101,24 @@ export default function PipelineFlow() {
       }
     }
 
-    // 영역 범례(상단)
+    // 영역 범례(상단). 좁은 화면에서 가로로 넘치지 않도록 한 줄에 최대한 담되
+    // 폭을 넘으면 다음 줄로 접는다(wrap).
     const legend: { label: string; c: string }[] = [
-      { label: '지오메트리 (정점 단위)', c: DOMAIN_COLOR.geo },
-      { label: '래스터 (삼각형→픽셀)', c: DOMAIN_COLOR.raster },
-      { label: '프래그먼트 (픽셀 단위)', c: DOMAIN_COLOR.frag },
+      { label: '지오메트리', c: DOMAIN_COLOR.geo },
+      { label: '래스터', c: DOMAIN_COLOR.raster },
+      { label: '프래그먼트', c: DOMAIN_COLOR.frag },
     ];
-    let lx = pad;
-    const ly = 30;
-    ctx.font = monoFont(11);
+    ctx.font = monoFont(12);
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
+    let lx = pad;
+    let ly = 22;
     for (const item of legend) {
+      const itemW = 20 + ctx.measureText(item.label).width + 16;
+      if (lx + itemW > w - pad) {
+        lx = pad;
+        ly += 20;
+      }
       roundRect(ctx, lx, ly - 7, 14, 14, 3);
       ctx.fillStyle = withAlpha(item.c, 0.3);
       ctx.fill();
@@ -121,11 +127,11 @@ export default function PipelineFlow() {
       ctx.stroke();
       ctx.fillStyle = theme.muted;
       ctx.fillText(item.label, lx + 20, ly);
-      lx += 20 + ctx.measureText(item.label).width + 18;
+      lx += itemW;
     }
 
     // 입력/출력 캡션 라벨
-    ctx.font = monoFont(11);
+    ctx.font = monoFont(12);
     ctx.fillStyle = theme.muted;
     ctx.textAlign = 'left';
     ctx.fillText('정점 버퍼 →', pad, topY - 12);

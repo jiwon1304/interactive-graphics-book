@@ -80,12 +80,12 @@ export default function QuadDerivatives() {
       const p = toPx(gx, gy);
       ctx.fillStyle = withAlpha(col, 0.85);
       ctx.fillRect(p.x + 1, p.y + 1, cell - 2, cell - 2);
-      ctx.font = monoFont(Math.max(9, cell * 0.26), 'bold');
+      ctx.font = monoFont(Math.max(10, cell * 0.26), 'bold');
       ctx.fillStyle = theme.bg;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText(`u=${val.toFixed(2)}`, p.x + cell / 2, p.y + cell / 2 - cell * 0.16);
-      ctx.font = monoFont(Math.max(8, cell * 0.22));
+      ctx.font = monoFont(Math.max(9, cell * 0.22));
       ctx.fillText(tag, p.x + cell / 2, p.y + cell / 2 + cell * 0.2);
       ctx.textBaseline = 'alphabetic';
       ctx.textAlign = 'start';
@@ -124,7 +124,7 @@ export default function QuadDerivatives() {
     arrow(pMe, pB, COLORS.front);
 
     // ddx/ddy 라벨(짧게, 화살표 옆)
-    ctx.font = monoFont(11, 'bold');
+    ctx.font = monoFont(12, 'bold');
     ctx.textAlign = 'center';
     const mx = mid(pMe, pR);
     ctx.fillStyle = COLORS.covered;

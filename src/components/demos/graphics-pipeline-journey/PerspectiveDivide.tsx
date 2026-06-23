@@ -76,7 +76,7 @@ export default function PerspectiveDivide() {
     ctx.setLineDash([4, 4]);
     ctx.strokeRect(padL, clipBoxY, clipBoxW, clipBoxH);
     ctx.setLineDash([]);
-    ctx.font = monoFont(11);
+    ctx.font = monoFont(12);
     ctx.fillStyle = theme.muted;
     ctx.textAlign = 'left';
     ctx.textBaseline = 'bottom';
@@ -94,7 +94,7 @@ export default function PerspectiveDivide() {
 
     // 정점 핸들 + w 라벨
     const labelW = (p: Vec2, ww: number) => {
-      ctx.font = monoFont(10);
+      ctx.font = monoFont(12);
       ctx.fillStyle = theme.muted;
       ctx.textAlign = 'center';
       ctx.fillText(`w=${ww.toFixed(1)}`, p.x, p.y + 20);
@@ -131,7 +131,7 @@ export default function PerspectiveDivide() {
     ctx.setLineDash([4, 4]);
     ctx.strokeRect(vpX, vpY, vpW, vpH);
     ctx.setLineDash([]);
-    ctx.font = monoFont(11);
+    ctx.font = monoFont(12);
     ctx.fillStyle = theme.muted;
     ctx.textAlign = 'left';
     ctx.textBaseline = 'bottom';
@@ -192,7 +192,7 @@ export default function PerspectiveDivide() {
       ctx.strokeStyle = '#fff';
       ctx.lineWidth = 1.2;
       ctx.stroke();
-      ctx.font = monoFont(10);
+      ctx.font = monoFont(12);
       ctx.fillStyle = theme.muted;
       ctx.textAlign = 'center';
       ctx.fillText(lab, p.x, p.y - 12);
@@ -204,7 +204,7 @@ export default function PerspectiveDivide() {
       vpX + vpW / 2,
       vpY + vpH + 22,
       perspCorrect ? COLORS.pass : COLORS.fail,
-      `bold ${monoFont(11)}`,
+      `bold ${monoFont(12)}`,
     );
 
     ctx.textAlign = 'left';
