@@ -143,7 +143,7 @@ export default function RopBlend() {
         style={{ height: CANVAS_H, display: 'block' }}
       />
       <figcaption>
-        픽셀 셰이더가 색을 다 계산해도, 그 색이 화면에 박힌다는 보장은 없습니다. 마지막 관문{' '}
+        픽셀 셰이더가 색을 다 계산해도, 그 색이 화면에 박힌다는 보장은 없습니다. 마지막 단계{' '}
         <strong>ROP</strong>(픽셀 백엔드)이 세 일을 차례로 합니다.{' '}
         <strong style={{ color: '#f97316' }}>① 깊이 테스트</strong>: 이 프래그먼트의 z가 그 픽셀에 이미
         기록된 깊이보다 가까운가? 멀면 — 색 계산을 다 했더라도 — 그냥 <span style={{ color: '#ef4444' }}>

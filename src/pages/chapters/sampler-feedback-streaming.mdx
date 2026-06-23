@@ -16,8 +16,8 @@ import StreamingLoop from '../../components/demos/sampler-feedback-streaming/Str
 코앞의 바닥은 고해상도 타일이 필요한데, 이걸 미리 짐작하면 너무 많이(낭비) 또는 너무 적게(흐릿함)
 올리게 됩니다.
 
-**Sampler Feedback**(DirectX 12)은 짐작 대신 GPU에게 직접 묻습니다: "방금 셰이딩하면서 실제로 어떤
-mip·어떤 영역을 샘플했니?" 그 답을 받아 **필요한 타일만** 스트리밍합니다. 이 챕터는 그 메커니즘입니다.
+**Sampler Feedback**(DirectX 12)은 짐작 대신, 셰이딩 과정에서 실제로 어떤 mip·어떤 영역이 샘플됐는지를
+하드웨어가 직접 기록하게 합니다. 그 기록을 읽어 **필요한 타일만** 스트리밍합니다. 이 챕터는 그 메커니즘입니다.
 
 [Texture Filtering과 Mipmap](./texture-filtering-mipmapping)에서 LOD가 어떻게 선택되는지 봤다면,
 여기서는 그 선택 결과를 **기록해 메모리 관리에 쓰는** 다음 단계입니다.

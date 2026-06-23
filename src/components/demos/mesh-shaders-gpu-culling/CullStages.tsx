@@ -111,7 +111,7 @@ export default function CullStages() {
         <canvas ref={ref} width={W} height={H} style={{ width: '100%', maxWidth: W, height: 'auto', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--surface)' }} />
       </div>
       <figcaption>
-        amplification(task) shader가 meshlet 후보를 단계별로 걸러내는 깔때기입니다(오른쪽 숫자는
+        amplification(task) shader가 meshlet 후보를 여러 단계로 점진적으로 걸러내는 과정입니다(오른쪽 숫자는
         도식용 대표값). 화면 밖(frustum), 카메라를 등진 클러스터(meshlet의 normal cone), 이미 가려진
         부분(Hi-Z occlusion)을 차례로 버리고, 남은 meshlet의 LOD(거리에 맞는 해상도)를 고른 뒤
         <em> 살아남은 것만</em> mesh shader 워크그룹으로 dispatch합니다. 컬링 판단이 전부 GPU 안에서
