@@ -12,7 +12,6 @@ function cssVar(n: string, fb: string) {
   return getComputedStyle(document.documentElement).getPropertyValue(n).trim() || fb;
 }
 
-const G = '#3b82f6'; // graphics (accent로 대체됨)
 const C = '#8b5cf6'; // compute
 const CP = '#2e9e5b'; // copy
 

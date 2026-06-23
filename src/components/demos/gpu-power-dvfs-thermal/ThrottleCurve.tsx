@@ -16,7 +16,6 @@ function cssVar(n: string, fb: string) {
 function clockAt(t: number) {
   // 부스트 피크 후 throttle로 하강해 sustained로 수렴
   const boost = 1.0;
-  const base = 0.78;
   const sustained = 0.86;
   if (t < 0.12) return boost; // 초반 부스트 유지
   // 0.12~0.45 사이에 온도 상승으로 하강

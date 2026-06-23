@@ -15,7 +15,6 @@ function draw(ctx: CanvasRenderingContext2D) {
   const text = cssVar('--text', '#222');
   const muted = cssVar('--muted', '#888');
   const accent = cssVar('--accent', '#3b82f6');
-  const border = cssVar('--border', '#ccc');
   const surface = cssVar('--surface', '#fff');
   const green = '#2e9e5b';
   ctx.clearRect(0, 0, W, H);

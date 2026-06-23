@@ -1,0 +1,117 @@
+---
+layout: ../../layouts/ChapterLayout.astro
+title: "GPU 가상화 — SR-IOV와 MIG"
+description: 한 GPU를 여러 VM/사용자에게 격리해 나눠 주기 — PCIe SR-IOV(PF/VF), NVIDIA MIG의 물리 분할, time-slicing vs 공간 분할, QoS
+---
+
+import PfVfTree from '../../components/demos/gpu-virtualization-sriov-mig/PfVfTree.tsx';
+import MigSlices from '../../components/demos/gpu-virtualization-sriov-mig/MigSlices.tsx';
+import TimeSliceVsMig from '../../components/demos/gpu-virtualization-sriov-mig/TimeSliceVsMig.tsx';
+
+# GPU 가상화 — SR-IOV와 MIG
+
+데이터센터 GPU 한 장은 수만 달러입니다. 그런데 추론 작업 하나가 그 GPU의 1/7도 안 쓴다면? 한 장을
+**여러 사용자/VM에게 나눠 주되, 서로 간섭하지 않게 격리**할 수 있다면 가동률이 올라갑니다. 이
+챕터는 그 방법 두 갈래 — PCIe **SR-IOV**(VM에게 가상 장치로 나눠 주기)와 NVIDIA **MIG**(GPU를 물리적으로
+쪼개기) — 와, "시간으로 나누기 vs 공간으로 나누기"의 차이를 봅니다.
+
+[GPU 스케줄링과 프리엠션](./gpu-scheduling-preemption)에서 한 GPU를 여러 앱이 시분할로 나눠 쓰는 걸
+봤다면, 여기서는 한 발 더 나아가 **VM 경계를 넘어 격리**해 나눠 주는 이야기입니다.
+
+## SR-IOV — 한 PCIe 장치를 여러 가상 장치로
+
+GPU는 PCIe 장치입니다. 가상화의 첫 문제는 "여러 VM이 어떻게 하나의 PCIe 장치를 직접 쓰느냐"입니다.
+하이퍼바이저가 모든 접근을 중계하면 느립니다. 그래서 PCI-SIG의 **SR-IOV**(Single Root I/O
+Virtualization)가 해법을 제공합니다 — 한 물리 장치가 버스 위에서 **여러 장치처럼** 보이게 합니다.
+
+<PfVfTree client:visible />
+
+핵심은 두 종류의 PCIe 기능입니다.
+
+- **PF (Physical Function)**: 장치의 전체 기능과 설정·관리를 갖춘 완전한 PCIe 기능. 호스트가 이걸로
+  VF들을 만들고 관리합니다.
+- **VF (Virtual Function)**: PF에서 파생된 **경량** PCIe 기능. 설정 리소스 일부가 빠져 있고, 물리
+  자원을 PF·다른 VF와 공유합니다. 하지만 **자체 PCI config space**를 가져 독립 장치처럼 동작합니다.
+
+각 VF를 한 VM에 직접(passthrough) 할당하면, VM은 하이퍼바이저를 매번 거치지 않고 GPU에 접근합니다.
+VF마다 자원이 분리돼 **VM 간 간섭 없이** I/O를 직접 씁니다. NVIDIA vGPU는 최근 데이터센터 GPU에서
+이 SR-IOV VF 위에 GPU 인스턴스를 얹습니다(다만 세대·하이퍼바이저·드라이버에 따라 mediated
+passthrough 등 다른 방식을 쓰기도 합니다 — 일률적이지 않습니다).
+
+## MIG — GPU를 물리적으로 쪼개다
+
+SR-IOV가 "버스에서 어떻게 나눠 보이게 하느냐"라면, **MIG**(Multi-Instance GPU)는 "GPU 내부를 어떻게
+실제로 나누느냐"입니다. MIG는 **공간 분할(spatial partitioning)** — GPU의 물리 자원을 잘라 여러
+독립 인스턴스를 만듭니다. 각 인스턴스는 자기 **SM·메모리·캐시**를 전용으로 갖습니다.
+
+A100을 예로 들면, compute는 **7 슬라이스**, 메모리는 **8 슬라이스(40GB)** 로 나뉩니다(둘의 개수가
+다른 점에 주의 — compute 7, memory 8). 이걸 조합해 다양한 크기의 인스턴스를 만듭니다.
+
+<MigSlices client:visible />
+
+대표 프로파일(A100 40GB):
+
+- **1g.5gb** — compute 1슬라이스·메모리 5GB. 최대 **7개**까지(가장 잘게).
+- **2g.10gb** — 최대 3개.
+- **3g.20gb** — 최대 2개.
+- **7g.40gb** — 전체를 한 인스턴스로(분할 안 함).
+
+인스턴스는 SM·메모리뿐 아니라 **NVDEC 같은 엔진까지** 자기 몫을 받습니다(예: H100은 NVDEC/NVJPG가
+슬라이스마다 하나씩). 정확한 개수·프로파일은 GPU 세대(A100/H100/…)마다 다르니 NVIDIA MIG User Guide를
+확인하세요. 여기 그린 7/8 슬라이스는 A100 대표값입니다.
+
+## 시간으로 나누기 vs 공간으로 나누기
+
+"GPU 공유"에는 성격이 다른 두 방식이 있고, 격리 수준이 결정적으로 갈립니다.
+
+<TimeSliceVsMig client:visible />
+
+- **Time-slicing(시분할)**: 여러 작업이 **전체 GPU를 시간으로 번갈아** 씁니다. 스케줄러가 타임슬라이스를
+  배분하죠. 유연하지만 **격리가 없습니다** — 한 작업이 길거나 공격적이면 그 시간 동안 이웃이 굶고,
+  성능이 예측 불가능해집니다.
+- **MIG(공간 분할)**: 각 인스턴스가 자기 슬라이스를 **전 시간 동안 동시에** 점유합니다. 결정적인 건
+  경로가 **하드웨어 수준에서 분리**된다는 점입니다 — on-chip crossbar 포트, L2 캐시 뱅크, 메모리
+  컨트롤러, DRAM 주소 버스까지 인스턴스별로 갈라집니다. 그래서 옆 인스턴스가 무엇을 하든 내 성능이
+  흔들리지 않습니다.
+
+이 하드웨어 분리가 **QoS(Quality of Service) 보장**의 근거입니다. time-sliced vGPU와 MIG-backed
+vGPU 둘 다 멀티테넌시를 주지만, **격리·QoS는 MIG가 월등**합니다. 둘을 합친 **MIG-backed time-sliced
+vGPU**(한 MIG 슬라이스 안에서 다시 시분할)도 있어, 격리와 유연성을 절충할 수 있습니다.
+
+## 격리는 왜 중요한가 — 클라우드/데이터센터 맥락
+
+클라우드에서 한 GPU에 서로 모르는 여러 테넌트가 올라갈 수 있습니다. 여기서 격리는 두 가지를 뜻합니다.
+
+- **성능 격리(QoS)**: 한 테넌트의 무거운 작업이 다른 테넌트의 지연·처리량을 망치면 안 됩니다. MIG의
+  공간 분할이 이를 하드웨어로 보장합니다 — 추론 서비스의 tail latency를 안정시키는 핵심입니다.
+- **보안 격리**: 서로 다른 테넌트의 메모리·연산이 새지 않아야 합니다. MIG는 메모리 경로까지 분리하고,
+  H100의 2세대 MIG는 "secure tenant"를 강조합니다.
+
+가동률 관점도 큽니다. 작은 추론 모델 7개를 한 A100에 1g.5gb로 올리면, GPU 한 장으로 7배의 동시 서비스를
+돌리면서 각자 안정적 성능을 보장할 수 있습니다 — 비싼 GPU의 낭비를 줄이는 직접적 방법입니다.
+
+## 정리
+
+- 한 GPU를 여러 VM/사용자에게 격리해 나눠 주는 두 축: 버스 가상화 **SR-IOV**(PF→VF, VM에 passthrough)와
+  GPU 내부 분할 **MIG**(공간 분할).
+- **SR-IOV**: PF는 전체 기능·관리, VF는 경량 PCIe 기능(자체 config space) → VM에 직접 할당.
+- **MIG**: GPU를 물리적으로 잘라(A100 = compute 7 / memory 8 슬라이스) 인스턴스마다 SM·메모리·캐시·
+  엔진을 전용 부여. 1g.5gb×7 ~ 7g.40gb×1.
+- **시간 분할 vs 공간 분할**: time-slicing은 유연하나 격리 없음, MIG는 HW 경로까지 분리해 **QoS 보장**.
+- 클라우드/데이터센터에서 **성능·보안 격리**와 **가동률**을 위해 쓰입니다.
+
+## 참고 자료
+
+- NVIDIA, *Multi-Instance GPU (MIG)*: https://www.nvidia.com/en-us/technologies/multi-instance-gpu/
+- NVIDIA, *MIG User Guide — Concepts / Supported Profiles*:
+  https://docs.nvidia.com/datacenter/tesla/mig-user-guide/concepts.html ·
+  https://docs.nvidia.com/datacenter/tesla/mig-user-guide/supported-mig-profiles.html
+- NVIDIA Technical Blog, *Getting the Most Out of the A100 with MIG* (7 compute / 8 memory 슬라이스):
+  https://developer.nvidia.com/blog/getting-the-most-out-of-the-a100-gpu-with-multi-instance-gpu/
+- NVIDIA, *Ampere Architecture Whitepaper* (MIG 최대 7 인스턴스):
+  https://images.nvidia.com/aem-dam/en-zz/Solutions/data-center/nvidia-ampere-architecture-whitepaper.pdf
+- NVIDIA, *SR-IOV / Virtual Functions* (PF/VF): https://docs.nvidia.com/doca/sdk/sr-iov/index.html
+- NVIDIA, *vGPU features* (time-slicing vs MIG QoS): https://docs.nvidia.com/vgpu/knowledge-base/latest/vgpu-features.html
+- Colfax Research, *Time-Sliced and MIG-Backed vGPUs*:
+  https://research.colfax-intl.com/sharing-nvidia-gpus-at-the-system-level-time-sliced-and-mig-backed-vgpus/
+- CloudRift, *GPU Virtualization (VFIO/vGPU/SR-IOV)*: https://www.cloudrift.ai/blog/gpu-virtualization-qemu-kvm-nvidia-amd

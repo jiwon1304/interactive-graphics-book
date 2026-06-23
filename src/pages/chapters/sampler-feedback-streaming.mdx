@@ -1,0 +1,112 @@
+---
+layout: ../../layouts/ChapterLayout.astro
+title: "Sampler Feedback와 텍스처 스트리밍"
+description: 실제로 샘플된 mip/타일만 기록하는 sampler feedback과, 그 정보로 tiled/sparse resource를 스트리밍해 VRAM을 아끼는 법
+---
+
+import FeedbackVsMinMip from '../../components/demos/sampler-feedback-streaming/FeedbackVsMinMip.tsx';
+import TileResidencyMap from '../../components/demos/sampler-feedback-streaming/TileResidencyMap.tsx';
+import StreamingLoop from '../../components/demos/sampler-feedback-streaming/StreamingLoop.tsx';
+
+# Sampler Feedback와 텍스처 스트리밍
+
+오픈월드 게임의 텍스처 자산은 수백 GB에 이르는데, GPU의 VRAM은 고작 수~수십 GB입니다. 그런데 어떻게
+다 들어갈까요? 답은 "다 안 올린다"입니다 — 카메라가 지금 실제로 보는 부분만 메모리에 둡니다. 문제는
+**"무엇이 실제로 보이는가"를 정확히 아는 것**입니다. 멀리 있는 벽은 거친 mip 한 조각이면 되고,
+코앞의 바닥은 고해상도 타일이 필요한데, 이걸 미리 짐작하면 너무 많이(낭비) 또는 너무 적게(흐릿함)
+올리게 됩니다.
+
+**Sampler Feedback**(DirectX 12)은 짐작 대신 GPU에게 직접 묻습니다: "방금 셰이딩하면서 실제로 어떤
+mip·어떤 영역을 샘플했니?" 그 답을 받아 **필요한 타일만** 스트리밍합니다. 이 챕터는 그 메커니즘입니다.
+
+[Texture Filtering과 Mipmap](./texture-filtering-mipmapping)에서 LOD가 어떻게 선택되는지 봤다면,
+여기서는 그 선택 결과를 **기록해 메모리 관리에 쓰는** 다음 단계입니다.
+
+## 문제 — 무엇을 올릴지 어떻게 아는가
+
+텍스처 스트리밍의 본질은 예측입니다. 전통적으로는 화면에서 거리·각도를 추정하거나, 미리 정의한
+영역(예: 카메라 근처)을 올리는 휴리스틱을 썼습니다. 하지만 이런 추정은 틀리기 쉽습니다 — 거울에
+비친 먼 물체, 좁은 틈으로 보이는 표면처럼 "보일지 안 보일지"를 화면 밖에서 정확히 알기 어렵습니다.
+
+가장 정확한 정보원은 **셰이더 자신**입니다. 픽셀 셰이더가 텍스처를 샘플하는 순간, 하드웨어는 이미
+어떤 mip·어떤 texel을 읽을지 계산합니다([텍스처 필터링](./texture-filtering-mipmapping)의 LOD 선택).
+그 정보를 버리지 말고 **기록**하면 됩니다.
+
+## Sampler Feedback — 샘플한 것을 기록한다
+
+Sampler Feedback은 HLSL intrinsic **`WriteSamplerFeedback`**(Shader Model 6.5)으로, 일반 샘플과
+**같은 좌표·같은 sampler**를 써서 "이 위치에서 무엇을 샘플했는가"를 별도의 작은 맵에 적습니다. 결과는
+**region(영역) 단위**로 양자화됩니다 — 픽셀 하나하나가 아니라, tiled resource의 타일 크기에 맞춘
+영역마다 "원하는 mip"이 기록됩니다(`SamplerFeedbackRegion`).
+
+여기서 두 개의 작은 맵이 등장합니다.
+
+<FeedbackVsMinMip client:visible />
+
+- **feedback map** = 셰이더가 기록한 **원하는 mip**(필요한 것).
+- **MinMip map** = 지금 메모리에 **실제로 로드된** 최소 mip(가진 것).
+
+둘을 비교하면, feedback이 MinMip보다 **더 고해상도(작은 mip)** 를 원하는 영역이 바로 "지금 부족해서
+채워야 할 곳"입니다. 반대로 더는 안 보게 된 영역은 비워(evict) VRAM을 회수합니다.
+
+## Tiled/Sparse Resource — 타일 단위로 부분 로드
+
+"필요한 영역만 채운다"가 가능하려면, 텍스처를 **부분적으로** 메모리에 올릴 수 있어야 합니다. 일반
+텍스처는 전부 아니면 전무지만, **tiled resource**(D3D12의 reserved resource, 흔히 sparse texture)는
+텍스처를 **64KB 타일**로 쪼개 타일마다 독립적으로 메모리에 매핑하거나 비울 수 있습니다.
+
+<TileResidencyMap client:visible />
+
+feedback이 가리킨, 실제로 보이는 타일만 resident로 두면 VRAM을 크게 아낍니다. Microsoft 샘플의 대표
+수치로는 전체 mip chain을 다 올릴 때 524,288 KB가 필요하던 텍스처가 tiled 방식에서 51,584 KB —
+약 **1/10**로 줄었습니다. 덕분에 수백 GB짜리 자산으로 구성된 장면을 훨씬 작은 물리 VRAM에서 그릴 수
+있습니다. (절감 배수는 콘텐츠·카메라·해상도에 따라 달라지는 대표값입니다.)
+
+타일을 올리고 내릴 때마다 **`UpdateTileMappings`** 로 매핑을 갱신하고, 그에 맞춰 MinMip map을 고쳐
+GPU가 아직 없는 타일에 접근하지 않도록 그 영역의 mip 접근을 clamp합니다.
+
+## 전체 루프 — 본 만큼만 채우는 자기조정
+
+이제 조각들을 하나의 루프로 잇습니다.
+
+<StreamingLoop client:visible />
+
+1. 셰이딩하며 샘플 → **feedback 기록**(`WriteSamplerFeedback`).
+2. feedback을 CPU가 읽을 수 있게 **resolve/decode**(`ResolveSubresourceRegion`,
+   `DECODE_SAMPLER_FEEDBACK` 모드).
+3. feedback과 MinMip을 비교해 부족한 타일을 골라 **스트리밍**.
+4. 타일 매핑·MinMip 갱신(`UpdateTileMappings`).
+5. 다음 프레임에서 다시 샘플.
+
+매 프레임 "본 만큼만" 채우는 **자기조정(self-tuning)** 루프입니다. 카메라가 다가가면 그 영역의 feedback이
+더 고해상도를 원하게 되고, 자연히 그 타일들이 채워집니다. 멀어지면 비워집니다.
+
+3번의 "스트리밍"은 디스크에서 VRAM으로 데이터를 옮기는 일입니다 — **DirectStorage**가 NVMe SSD에서
+GPU로 자산을 빠르게(드라이버·CPU 병목을 줄여) 나르는 경로를 제공해, 이 루프가 끊김 없이 돌도록 돕습니다.
+호스트↔디바이스 전송의 세부는 [CPU↔GPU 데이터 전송](./cpu-gpu-transfer)을 보세요.
+
+## 위치 — DX12 Ultimate
+
+Sampler Feedback은 2020년 Microsoft가 묶은 **DirectX 12 Ultimate** 4대 기능 중 하나입니다 — 나머지는
+DXR 1.1(레이트레이싱), Mesh Shaders, Variable Rate Shading입니다. Windows 10 20H1(2004, build 19041)
+이상과 지원 GPU가 필요합니다. 같은 시대에 등장한 Variable Rate Shading처럼, "필요한 곳에만 자원을
+쓴다"는 같은 철학의 연장입니다 — VRS는 셰이딩 연산을, Sampler Feedback은 텍스처 메모리를 아낍니다.
+
+## 정리
+
+- 텍스처 스트리밍의 핵심은 "무엇을 올릴지" 정확히 아는 것. **Sampler Feedback**은 짐작 대신 셰이더가
+  **실제로 샘플한 mip/영역**을 기록(`WriteSamplerFeedback`, SM 6.5).
+- 두 맵: **feedback map**(원하는 mip) vs **MinMip map**(가진 mip). 차이가 곧 채울 타일.
+- **Tiled/sparse resource**(64KB 타일)로 텍스처를 부분 로드 → VRAM 대폭 절약(대표 ~1/10).
+- 전체 루프: 샘플→feedback→resolve→스트리밍→매핑/MinMip 갱신 → 본 만큼만 채우는 자기조정.
+- **DirectStorage**가 디스크→VRAM 스트리밍을 가속. Sampler Feedback은 **DX12 Ultimate**(2020) 4대 기능 중 하나.
+
+## 참고 자료
+
+- Microsoft, *Sampler Feedback* (DirectX-Specs, 명세 원문): https://microsoft.github.io/DirectX-Specs/d3d/SamplerFeedback.html
+- Microsoft DirectX 블로그, *Coming to DirectX 12 — Sampler Feedback* (feedback/MinMip, ~1/10 절감):
+  https://devblogs.microsoft.com/directx/coming-to-directx-12-sampler-feedback-some-useful-once-hidden-data-unlocked/
+- Intel GameTechDev, *SamplerFeedbackStreaming* (샘플 + DirectStorage, 타일 residency):
+  https://github.com/GameTechDev/SamplerFeedbackStreaming
+- Microsoft DirectX 블로그, *Announcing DirectX 12 Ultimate* (4대 기능): https://devblogs.microsoft.com/directx/announcing-directx-12-ultimate/
+- AMD GPUOpen, *DirectX 12 Ultimate*: https://gpuopen.com/directx12-ultimate/

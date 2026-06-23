@@ -44,7 +44,6 @@ function draw(ctx: CanvasRenderingContext2D) {
 
   // 벽들
   walls.forEach((w) => {
-    const wy = w.limit ? topY : topY - 0; // power 벽은 화살표가 닿는 높이
     ctx.strokeStyle = w.color;
     ctx.lineWidth = w.limit ? 3 : 2;
     ctx.beginPath();

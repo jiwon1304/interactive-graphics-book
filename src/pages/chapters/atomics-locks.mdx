@@ -1,0 +1,169 @@
+---
+layout: ../../layouts/ChapterLayout.astro
+title: "원자적 연산과 락"
+description: atomicity·CAS·fetch-add·LL/SC·spinlock vs mutex·cache-line 경합·lock-free·ABA
+---
+
+import CasRetryLoop from '../../components/demos/atomics-locks/CasRetryLoop.tsx';
+import CacheLineBounce from '../../components/demos/atomics-locks/CacheLineBounce.tsx';
+import SpinVsMutex from '../../components/demos/atomics-locks/SpinVsMutex.tsx';
+
+# 원자적 연산과 락
+
+## counter++ 가 안전하지 않다?
+
+두 스레드가 공유 카운터를 각각 100만 번씩 1 증가시키면 결과는 200만일까요? 자주 *아닙니다*.
+이유는 `counter++` 가 하나의 동작처럼 보여도 실제로는 **세 단계**이기 때문입니다 — 메모리에서
+값을 읽고(load), 1을 더하고(add), 다시 쓴다(store). 두 스레드가 같은 옛 값을 읽어 둘 다
+같은 값을 써 버리면, 두 번 증가했어야 할 게 한 번만 반영됩니다(lost update).
+
+이 챕터는 이 틈을 막는 하드웨어 도구(**원자적 연산**)와, 그 위에 세운 **락**, 그리고 락을
+아예 안 쓰는 **lock-free** 까지 — "여러 스레드가 같은 데이터를 안전하게 건드리는 법"을
+다룹니다. 바로 앞 [`./memory-consistency-mesi`](./memory-consistency-mesi)의 코히런시와
+메모리 모델이 여기서 전부 쓰입니다.
+
+## atomicity — 쪼개지지 않는 연산
+
+**원자적(atomic)** 연산은 다른 코어의 눈에 "전부 일어났거나, 아예 안 일어났거나" 둘 중
+하나로만 보이는 연산입니다 — 중간 상태가 관측되지 않습니다. `counter++` 의 read-modify-write를
+*하나의 원자 단위* 로 만들면 위 lost update가 사라집니다.
+
+하드웨어는 이를 위한 전용 명령을 줍니다. 가장 단순한 건 **fetch-and-add**(옛 값을 돌려주며
+원자적으로 더함), **exchange**(원자적 교환) 같은 것입니다. x86에서는 `lock` 접두사가 붙은
+명령(`lock xadd`, `lock xchg`, `lock cmpxchg`)이 그 라인을 잠가 원자성을 보장합니다 —
+그리고 [`./memory-consistency-mesi`](./memory-consistency-mesi)에서 봤듯 `lock` 접두사는
+**전체 메모리 배리어** 역할도 겸합니다.
+
+## CAS — 모든 동기화의 토대
+
+가장 강력하고 범용적인 원자 연산은 **CAS(Compare-And-Swap)** 입니다(x86: `cmpxchg`):
+
+$$
+\textbf{CAS}(addr, expected, new) =
+\begin{cases}
+\ *addr \leftarrow new,\ \text{성공} & \text{if } *addr = expected \\[2pt]
+\ \text{아무것도 안 함, 실패} & \text{otherwise}
+\end{cases}
+$$
+
+"주소의 값이 *아직* `expected` 그대로면 `new` 로 바꿔라. 그 사이 누가 바꿨으면 실패를
+알려라." — 이 전부가 한 원자 연산입니다. CAS가 강력한 이유는 **임의의** read-modify-write를
+만들 수 있기 때문입니다. 값을 읽고, 원하는 계산을 하고, *값이 그대로일 때만* CAS로 커밋합니다.
+실패하면 누가 끼어든 것이니 새 값을 읽어 **다시 시도** 합니다.
+
+<CasRetryLoop client:visible />
+
+이 retry loop가 **낙관적 동시성(optimistic concurrency)** 의 본질입니다 — 락을 잡지 않고
+"일단 해 보고, 충돌하면 다시." 경쟁이 적으면 첫 시도에 성공하니 매우 빠르고, 경쟁이 심하면
+재시도가 늘어 느려집니다. `fetch-add` 같은 특수 원자 연산은 사실 CAS 루프로 만들 수
+있지만, 하드웨어가 직접 제공하면 경쟁 상황에서 *실패 없이* 한 번에 끝나 더 빠릅니다.
+
+## LL/SC — ARM의 다른 길
+
+x86이 CAS(`cmpxchg`)를 직접 주는 반면, ARM·RISC-V·POWER 같은 RISC는 **LL/SC(Load-Linked /
+Store-Conditional)** 라는 짝으로 같은 일을 합니다(ARM 구판: `LDREX`/`STREX`, ARMv8.1+:
+`LDAXR`/`STLXR` 또는 LSE 원자 명령):
+
+- **LL(load-linked)**: 주소를 읽으면서 "여기를 감시한다"고 표시(reservation).
+- **SC(store-conditional)**: *그 사이 아무도 그 주소에 안 썼으면* 저장 성공, 썼으면 실패.
+
+CAS와의 결정적 차이: LL/SC는 *값* 이 같은지가 아니라 *그 주소에 쓰기가 있었는지* 를 봅니다.
+그래서 값이 A→B→A로 돌아와도 중간의 쓰기를 감지해 SC가 실패합니다. 단, LL/SC는 **spurious
+failure** 가 있습니다 — 인터럽트·컨텍스트 전환·캐시라인 축출 등으로 *아무도 안 썼는데도* SC가
+실패할 수 있어, 코드는 **항상 실패 시 재시도** 하도록 짜야 합니다.
+
+## 락 — CAS로 만드는 상호 배제
+
+CAS 하나면 **락(lock)** 을 만들 수 있습니다. 가장 단순한 **spinlock**:
+
+```c
+// 잠금: 0(열림)을 1(잠금)로 바꾸는 데 성공할 때까지 반복
+while (!CAS(&lock, 0, 1)) { /* 계속 시도 */ }
+// ... 임계구역 ...
+store(&lock, 0);            // 해제 (release)
+```
+
+`lock` 을 0→1로 바꾸는 데 성공한 스레드만 임계구역에 들어가고, 나머지는 CAS가 계속 실패하며
+**돕니다(spin)**. 해제는 release store로 0을 쓰는 것 — 여기서 [`memory-consistency-mesi`](./memory-consistency-mesi)의
+**acquire/release** 가 정확히 쓰입니다: 잠금은 acquire, 해제는 release여야 임계구역의 읽기·쓰기가
+락 밖으로 새지 않습니다.
+
+## spin은 공짜가 아니다 — 캐시라인 경합
+
+spinlock의 함정은 "도는 동안 무슨 일이 벌어지나" 입니다. 여러 코어가 같은 락을 두고 spin하면,
+그 락 변수가 든 **하나의 캐시라인** 을 모두가 원자 쓰기로 건드리려 합니다. 원자 쓰기는 라인을
+M(Modified)로 소유해야 하니 매번 **BusRdX** 가 나가 다른 코어 사본을 무효화합니다.
+
+<CacheLineBounce client:visible />
+
+라인이 코어 사이를 끝없이 핑퐁하며(**cache-line bouncing**) 코히런시 트래픽이 폭증합니다.
+이게 [`./cpu-memory-hierarchy`](./cpu-memory-hierarchy)의 false sharing과 *같은 메커니즘*
+입니다 — 다만 여기선 우연이 아니라 *진짜* 같은 변수를 공유하는 것이죠. 그래서 단순 spinlock은
+코어를 늘릴수록 오히려 느려질 수 있습니다.
+
+완화책들: **test-and-test-and-set**(원자 쓰기 전에 일반 읽기로 먼저 확인해 BusRdX를 줄임),
+경쟁이 보이면 잠시 쉬는 **exponential backoff**, 그리고 각 코어가 *자기만의* 노드에서
+spin하게 해 라인 핑퐁을 없애는 **MCS lock**(큐 기반).
+
+## spinlock vs mutex — 돌까, 잘까
+
+spin이 항상 답은 아닙니다. 락이 *오래* 잡혀 있으면, 그동안 코어를 태우며 도는 것은 순수
+낭비입니다. **mutex** 는 락을 못 잡으면 OS에 CPU를 양보하고 **잠듭니다(blocking)** — 락이
+풀릴 때 OS가 깨워 줍니다. 깨우기에는 컨텍스트 전환 비용이 들지만, 그동안 CPU는 다른 일을
+합니다.
+
+<SpinVsMutex client:visible />
+
+경험칙: 임계구역이 **컨텍스트 전환 비용보다 짧으면 spin**, **길면 mutex**. 실무 구현은 둘을
+섞습니다 — glibc의 adaptive mutex처럼 *잠깐 spin해 보고 안 되면 양보* 합니다. 양보 후의
+전환 비용은 [`./os-scheduling-context-switch`](./os-scheduling-context-switch)에서 다룹니다.
+
+## lock-free — 락을 아예 없애기
+
+락에는 본질적 약점이 있습니다: 락을 쥔 스레드가 죽거나 멈추면(스케줄아웃·page fault) 나머지
+전부가 막힙니다. **lock-free** 자료구조는 락 대신 CAS 루프만으로 진행해 이 의존을 끊습니다 —
+정의상 *어떤* 스레드가 멈춰도 *다른* 스레드는 유한 단계 안에 진행합니다(시스템 전체의 진행
+보장). 가장 강한 **wait-free** 는 *모든* 스레드의 개별 진행까지 보장합니다.
+
+대표 패턴이 **CAS로 갈아끼우는** lock-free stack/queue입니다: 새 노드를 준비하고, head를
+`CAS(&head, old_head, new_node)` 로 교체하되 실패하면 새 head를 읽어 재시도. 락은 없지만
+경쟁이 심하면 재시도가 늘어, "lock-free가 항상 빠르다"는 오해입니다 — 진행 보장과 처리량은
+다른 축입니다.
+
+## ABA 문제 — 값이 같다고 안 바뀐 게 아니다 (한 줄)
+
+CAS의 함정 하나. 스레드가 head로 A를 읽고 CAS를 준비하는 사이, 다른 스레드가 A를 떼고(→B)
+다시 A를 *붙여* 놓으면(주소 재사용), 첫 스레드의 `CAS(&head, A, ...)` 는 *값이 A로 같으니
+성공* 합니다 — 그 사이 구조가 통째로 바뀌었는데도요. 이것이 **ABA 문제** 입니다. 해법:
+포인터에 버전 카운터를 붙이는 **tagged pointer**(A를 재사용해도 태그가 달라 CAS 실패),
+또는 안전한 메모리 회수(**hazard pointer**, epoch-based reclamation). LL/SC는 *값* 이 아니라
+*쓰기* 를 보므로 ABA에 본질적으로 강합니다.
+
+## 종합
+
+- `counter++` 의 read-modify-write 틈을 **atomicity** 로 막는다.
+- **CAS** 는 임의의 원자 갱신을 만드는 토대 — 실패하면 재시도(낙관적 동시성). ARM은 같은
+  일을 **LL/SC** 로(값이 아니라 쓰기를 감지 → ABA에 강함, 단 spurious failure 재시도 필수).
+- 락은 CAS로 만든다. **acquire/release** 로 임계구역을 가둔다.
+- 여러 코어의 spin은 **캐시라인 경합**(코히런시 핑퐁)을 부른다 — TTAS·backoff·MCS로 완화.
+- 짧으면 **spinlock**, 길면 **mutex**(blocking). 실무는 adaptive로 섞는다.
+- **lock-free** 는 락 의존을 끊어 진행을 보장하지만 항상 빠른 건 아니다. **ABA** 를 조심.
+
+## 더 나아가기
+
+- **왜 이게 다 필요한가:** 코히런시(MESI)·메모리 모델(TSO/weak)·acquire/release의 토대 →
+  [`./memory-consistency-mesi`](./memory-consistency-mesi).
+- **경합의 비용:** 캐시라인 핑퐁의 배경(라인·MESI) → [`./cpu-memory-hierarchy`](./cpu-memory-hierarchy).
+- **블로킹의 비용:** mutex가 잠들 때의 컨텍스트 전환 →
+  [`./os-scheduling-context-switch`](./os-scheduling-context-switch).
+- **언어 모델:** C/C++11 `std::atomic`·`memory_order`, Java `AtomicInteger`/VarHandle —
+  하드웨어 원자 연산에 언어 추상을 얹은 것.
+
+## 참고 자료
+
+- Paul E. McKenney, [*Is Parallel Programming Hard...?* (perfbook)](https://mirrors.edge.kernel.org/pub/linux/kernel/people/paulmck/perfbook/perfbook.html) — 원자 연산·락·lock-free·메모리 배리어의 정전.
+- Maurice Herlihy & Nir Shavit, *The Art of Multiprocessor Programming* — CAS·spinlock(TTAS/backoff/MCS)·lock-free·wait-free·ABA.
+- [memzero, "CAS, ABA and LL/SC"](https://blog.memzero.de/cas-llsc-aba/) — CAS vs LL/SC와 ABA의 관계.
+- ["ABA problem" 개관](https://en.wikipedia.org/wiki/ABA_problem) — tagged pointer·hazard pointer 해법.
+- ARM, *Architecture Reference Manual* — LDREX/STREX·LDAXR/STLXR·LSE 원자 명령·exclusive monitor.
+- Intel, *64 and IA-32 SDM* Vol.3 §8 — `lock` 접두사·`cmpxchg`·원자성과 메모리 순서.

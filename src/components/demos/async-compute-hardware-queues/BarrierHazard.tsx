@@ -14,7 +14,6 @@ function cssVar(n: string, fb: string) {
 }
 
 function lane(ctx: CanvasRenderingContext2D, baseX: number, baseY: number, ok: boolean) {
-  const text = cssVar('--text', '#222');
   const muted = cssVar('--muted', '#888');
   const accent = cssVar('--accent', '#3b82f6');
   const C = '#8b5cf6';

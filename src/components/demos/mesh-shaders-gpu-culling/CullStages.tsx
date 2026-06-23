@@ -25,8 +25,6 @@ function draw(ctx: CanvasRenderingContext2D) {
   const text = cssVar('--text', '#222');
   const muted = cssVar('--muted', '#888');
   const accent = cssVar('--accent', '#3b82f6');
-  const surface = cssVar('--surface', '#fff');
-  const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
   ctx.clearRect(0, 0, W, H);
   ctx.textBaseline = 'middle';
 

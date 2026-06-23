@@ -1,0 +1,129 @@
+---
+layout: ../../layouts/ChapterLayout.astro
+title: "GPU 전력·클럭(DVFS)과 thermal throttling"
+description: power/thermal/voltage 한계와 DVFS·가변 부스트 클럭·thermal throttling — 전력이 곧 성능 한계인 이유 (TDP/TGP·P-state)
+---
+
+import ThreeWalls from '../../components/demos/gpu-power-dvfs-thermal/ThreeWalls.tsx';
+import PowerClockCurve from '../../components/demos/gpu-power-dvfs-thermal/PowerClockCurve.tsx';
+import ThrottleCurve from '../../components/demos/gpu-power-dvfs-thermal/ThrottleCurve.tsx';
+
+# GPU 전력·클럭(DVFS)과 thermal throttling
+
+같은 RTX 4090이라도, 벤치마크 첫 5초의 점수와 30분 뒤의 점수가 다릅니다. 작은 케이스에 넣으면 또
+다르고, 노트북에 든 같은 칩은 데스크톱의 절반밖에 못 냅니다. 트랜지스터 수도, 아키텍처도 똑같은데
+말이죠. 차이를 만드는 건 **전력과 열**입니다.
+
+현대 GPU에서 클럭은 스펙 시트에 박힌 고정값이 아니라, 전력·온도·전압 한계 안에서 **매 순간 변하는
+값**입니다. 이 챕터는 그 한계가 무엇인지, GPU가 어떻게 클럭·전압을 조정(DVFS)하는지, 부스트와
+throttling이 왜 일어나는지, 그리고 왜 결국 **전력이 성능의 천장**인지를 봅니다.
+
+## 클럭을 막는 세 개의 벽
+
+GPU는 가능한 한 클럭을 높이려 합니다(높을수록 빠르니까). 하지만 세 가지 한계에 막힙니다.
+
+<ThreeWalls client:visible />
+
+- **power 벽**: 카드가 끌어 쓸 수 있는 전력의 상한. 데스크톱은 **TGP/TBP**(Total Graphics/Board
+  Power), 더 넓게는 **TDP**로 부릅니다 — 예를 들어 RTX 4090은 TBP **450W**, AMD RX 7900 XTX는
+  **355W**입니다. 노트북 GPU는 제조사가 정한 **TGP 구성**에 따라 같은 칩이 35~115W 식으로 크게
+  달라지고, 그게 곧 성능 차이입니다.
+- **thermal 벽**: 칩 온도(보통 junction 온도)가 한계에 닿으면 더 못 올립니다.
+- **voltage 벽**: 어떤 클럭을 안정적으로 돌리려면 최소 전압이 필요한데, 전압에도 상한이 있어
+  거기서 클럭도 막힙니다.
+
+핵심은 셋 중 **가장 먼저 닿는 벽**이 그 순간의 병목이라는 점입니다. 데스크톱 고성능 카드는 보통
+power나 thermal 벽에 먼저 걸립니다. 어느 벽인지는 워크로드·냉각·실리콘 품질에 따라 매 순간 바뀝니다.
+
+## 왜 전력이 천장인가 — P ∝ V² f
+
+전력이 왜 그렇게 강한 제약인지는 동적 전력 공식에서 나옵니다. CMOS 회로의 스위칭 전력은
+
+$$
+P_{\text{dyn}} = \alpha \, C \, V^2 f
+$$
+
+입니다 — $\alpha$는 활동률(스위칭 비율), $C$는 스위칭되는 정전용량, $V$는 공급 전압, $f$는 클럭
+주파수입니다. 두 가지가 결정적입니다.
+
+1. **전력은 전압의 제곱에 비례**($V^2$)합니다. 전압을 조금만 낮춰도 전력이 크게 줄어듭니다.
+2. **높은 클럭은 더 높은 전압을 요구**합니다. 트랜지스터가 더 빨리 스위칭하려면 더 큰 전압이
+   필요하기 때문이죠(대략 $f \propto V^{\,\alpha_c - 1}$, $\alpha_c \approx 1\text{–}2$).
+
+이 둘이 합쳐지면, 클럭을 높일 때 전력이 **선형보다 훨씬 빠르게** 늡니다($f$도 오르고 그걸 위한
+$V$도 올라 $V^2$까지 커지니까).
+
+<PowerClockCurve client:visible />
+
+그래서 막판 몇 %의 클럭을 짜내는 데 전력은 훨씬 많이 듭니다 — **마지막 한 방울의 성능이 제일
+비쌉니다.** 반대로 클럭을 살짝만 낮추면(언더볼트·파워리밋) 성능은 조금 잃고 전력은 크게 아낍니다.
+데이터센터·노트북이 정점이 아니라 약간 낮은, 효율 좋은 동작점에서 도는 이유입니다. (이 전력 천장은
+연산뿐 아니라 메모리에도 적용됩니다 — [타일 기반 렌더링](./tile-based-rendering)에서 본 것처럼
+DRAM 대역폭은 곧 전력이고, 모바일이 타일링으로 대역폭을 줄이는 것도 결국 전력 절약입니다.)
+
+## DVFS — 한계 안에서 끊임없이 조정하기
+
+GPU는 이 한계들을 고정 클럭으로 멀찍이 피하는 대신, **실시간으로 전압·주파수를 조절**해 한계
+바로 아래까지 성능을 끌어올립니다. 이것이 **DVFS**(Dynamic Voltage and Frequency Scaling)입니다.
+
+전력 컨트롤러가 온도·소비 전력·부하를 수 ms 단위로 측정하면서, 미리 정의된 **P-state**(전압·주파수
+조합의 단계들) 사이를 오갑니다. 부하가 가벼우면 낮은 P-state로 내려 전력을 아끼고, 무거우면 한계가
+허락하는 가장 높은 P-state로 올립니다. NVIDIA의 **GPU Boost**, AMD의 동적 클럭이 모두 이
+메커니즘입니다 — 스펙의 "boost clock"은 보장값이 아니라 *한계가 허락할 때 도달하는* 가변 상한입니다.
+
+## 부스트와 throttling — 시간에 따른 클럭
+
+DVFS를 시간축에서 보면 부스트와 throttling이 한 그림으로 이어집니다.
+
+<ThrottleCurve client:visible />
+
+부하가 막 걸린 처음 몇 초는 칩이 차갑고 전력 예산도 순간적으로 여유가 있어, GPU가 **boost** 클럭으로
+base 위로 치솟습니다. 하지만 연산이 곧 열을 내고, 온도가 thermal 한계에 닿으면 GPU는 손상을 막기
+위해 클럭·전압을 끌어내립니다 — **thermal throttling**입니다. 결국 클럭은 냉각이 감당할 수 있는
+**sustained(정상상태)** 값으로 수렴합니다.
+
+그래서 "벤치 첫 5초 vs 30분 뒤"의 차이가 생깁니다. 냉각이 약할수록(노트북·작은 케이스·먼지 낀
+쿨러) sustained가 base 쪽으로 더 내려갑니다. 같은 칩이라도 **얼마나 오래 부스트를 유지하느냐**가
+체감 성능을 가릅니다. throttling은 power 한계에서도 일어납니다 — 온도가 괜찮아도 전력 예산을
+넘으면 클럭을 내립니다(power throttling).
+
+이건 [GPU 스케줄링·프리엠션](./gpu-scheduling-preemption)에서 본 "GPU를 멈추는" 메커니즘과는
+다릅니다 — throttling은 작업을 멈추지 않고 **속도만 늦춥니다**. 하지만 둘 다 "GPU를 무한정 전속력으로
+돌릴 수는 없다"는 같은 물리적 현실의 두 얼굴입니다.
+
+## 정리
+
+- 현대 GPU의 클럭은 고정값이 아니라 **power·thermal·voltage** 세 한계 안에서 변하는 값. 셋 중
+  **가장 먼저 닿는 벽**이 그 순간의 병목.
+- 동적 전력 $P \propto V^2 f$ + "고클럭엔 고전압 필요" → 클럭을 올릴수록 전력이 **superlinear**하게
+  증가. 막판 성능이 가장 비싸다. → **전력이 성능의 천장**.
+- **TDP/TGP/TBP**가 power 예산(RTX 4090 450W, RX 7900 XTX 355W; 노트북은 TGP 구성에 따라 35~115W
+  식으로 가변).
+- **DVFS**: 전력 컨트롤러가 P-state 사이를 오가며 한계 바로 아래까지 클럭·전압 조정(NVIDIA GPU
+  Boost·AMD 동적 클럭). boost clock은 보장이 아닌 가변 상한.
+- **throttling**: 온도(thermal) 또는 전력(power) 한계에 닿으면 클럭을 내려 보호. 초반 boost →
+  sustained로 수렴. 냉각이 약할수록 sustained가 낮다.
+
+## 더 나아가기
+
+전력 천장은 [메모리 대역폭과 Roofline](./tile-based-rendering)의 대역폭 한계와 한 몸입니다 — 데이터
+이동도 전력을 먹으니까요. async로 더 많은 유닛을 동시에 켜면([Async Compute와 하드웨어 큐](./async-compute-hardware-queues))
+순간 전력이 커져 더 빨리 power 벽에 닿습니다. GPU를 시간으로 나눠 쓰는 스케줄링·프리엠션은
+[GPU 스케줄링과 프리엠션](./gpu-scheduling-preemption)에서 다룹니다.
+
+## 참고 자료
+
+- NVIDIA, *Grace Performance Tuning Guide — Power and Thermals* (DVFS로 V/f 조정해 TDP 안 유지,
+  세 한계): https://docs.nvidia.com/dccpu/grace-perf-tuning-guide/power-thermals.html
+- NVIDIA, *GPU Boost* 개요 (TDP 근처로 코어 주파수 스케일, 가변 부스트): NVIDIA GeForce/whitepaper
+  자료 — 구체 동작은 카드/세대마다 다름.
+- Tom's Hardware, *RX 7900 XTX/XT Review* (TBP 355W) · RTX 4090 TBP 450W 교차확인:
+  https://www.tomshardware.com/reviews/amd-radeon-rx-7900-xtx-and-xt-review-shooting-for-the-top
+- arXiv, *A Survey of Methods For Analyzing and Improving GPU Energy Efficiency* (P = αCV²f, DVFS,
+  $f \propto V^{\alpha_c-1}$): https://arxiv.org/pdf/1404.4629
+- arXiv, *Optimizing performance per watt on GPUs in HPC: temperature, frequency and voltage effects*
+  (온도/주파수/전압의 상호작용, 효율 곡선): https://arxiv.org/pdf/1407.8116
+- Lambda Docs, *Set lower power limits (TDPs) for NVIDIA GPUs* (파워리밋으로 효율 동작점):
+  https://docs.lambda.ai/hardware/servers/set-lower-gpu-power-limits/
+- 주의: 정확한 throttle 온도(보통 ~83~90℃대)·sustained 클럭·부스트 유지 시간은 카드·BIOS·냉각·실리콘
+  품질에 따라 크게 달라짐 — 본문/도식의 구체 수치는 **대표값**(낮은 신뢰도/주의).
