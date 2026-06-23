@@ -156,7 +156,7 @@ export default function OccupancyLimiters() {
       </div>
       <figcaption>
         점유율이 <em>왜</em> 그 값으로 정해지는지를 보여줍니다. SM에 동시에 걸 수 있는 워프 수는 네
-        자원이 각자 “나는 이만큼까지 허용한다”고 내건 한계 중 <strong>가장 작은 것</strong>이 정합니다 —
+        자원이 각각 허용하는 워프 수의 한계 중 <strong>가장 작은 것</strong>이 정합니다 —
         막대가 짧은 자원이 <strong>구속 제약(binding constraint)</strong>입니다. <strong>워프 슬롯</strong>은
         하드웨어가 SM당 걸 수 있는 절대 상한(여기 64). <strong>레지스터</strong>는 레지스터 파일을
         스레드 수로 나눈 값 — 스레드가 레지스터를 많이 쓰면(여기 80 reg/스레드) 걸 수 있는 워프가 확
@@ -164,9 +164,9 @@ export default function OccupancyLimiters() {
         줄고, <strong>블록 슬롯</strong>은 SM당 블록 수 상한입니다. 이 예에선 <strong>레지스터가 24
         워프</strong>로 가장 빡빡해, 다른 자원이 아무리 여유로워도 점유율은{' '}
         <strong>24/64 ≈ 38%</strong>에서 막힙니다(점선). 그래서 튜닝의 첫 질문은 늘 “지금 무엇이
-        binding인가?”입니다 — 레지스터가 범인이면 레지스터 사용을 줄여야지(예: 변수 재활용,{' '}
-        <code>__launch_bounds__</code>), 공유 메모리를 줄여도 소용없습니다. 엉뚱한 자원을 깎는 건 막대가
-        이미 긴 쪽을 더 늘이는 헛수고일 뿐입니다.
+        binding인가?”입니다 — 레지스터가 binding이면 레지스터 사용을 줄여야지(예: 변수 재활용,{' '}
+        <code>__launch_bounds__</code>), 공유 메모리를 줄여도 소용없습니다. binding이 아닌 자원을 줄이면
+        그 자원의 한계만 더 커질 뿐 활성 워프 수는 그대로입니다.
       </figcaption>
     </figure>
   );

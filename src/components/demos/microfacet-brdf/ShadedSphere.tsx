@@ -170,7 +170,7 @@ export default function ShadedSphere() {
       </ControlPanel>
 
       <figcaption>
-        <strong>직접 해보세요:</strong> 이제 모든 손잡이를 자유롭게. 거칠기를 키우면 하이라이트가
+        <strong>직접 해보세요:</strong> 이제 모든 파라미터를 자유롭게 조정하세요. 거칠기를 키우면 하이라이트가
         번지고(D), 가장자리가 덜 타며(G), 금속성을 올리면 디퓨즈가 사라지고 반사가 기본색으로
         물듭니다(F). 표시 모드를 <code>D·G·F</code>로 바꾸면 각 항이 구 표면에서 어떻게 분포하는지
         흑백으로 보입니다.

@@ -123,7 +123,7 @@ export default function DrawCostBreakdown() {
         드라이버가 매 draw마다 바인딩을 검사하고 위험(같은 리소스를 쓰며 읽기 등)을 추적하는 비용,{' '}
         <span style={{ color: COLORS.descriptor }}>디스크립터 패치</span>는 바인딩을 그 하드웨어의 디스크립터
         형식으로 변환하는 비용, <span style={{ color: COLORS.umd }}>기록</span>은 변환된 명령을 command
-        buffer에 적는 비용입니다. 이 합이 한 draw의 “무게”입니다. 아래 막대는 이 무게를 프레임당{' '}
+        buffer에 적는 비용입니다. 이 합이 한 draw의 user CPU 총비용입니다. 아래 막대는 이 비용을 프레임당{' '}
         <strong>{(DRAWS / 1000).toFixed(0)}k draws</strong>에 곱한 합으로, 이미{' '}
         <span style={{ color: COLORS.submit }}>16.6ms 예산</span>을 넘습니다 — GPU가 놀고 있는데도 CPU가
         병목이 되는 지점입니다. 4편·5편은 바로 이 윗줄 범주들을 어떻게 깎아 내는지를 다룹니다.

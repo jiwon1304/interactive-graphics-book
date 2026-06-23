@@ -145,9 +145,9 @@ export default function SmoothMinBlend() {
         부드럽게 녹습니다.
         <br />
         <strong>직접 해보세요:</strong> 두 원(<span style={{ color: 'var(--accent)' }}>A</span>·
-        <span style={{ color: '#c84e2e' }}>B</span>)을 드래그해 가까이 붙이고 k를 올려 보세요. 메타볼처럼
-        <em> 용접</em>되는 모습이 보입니다. 교집합·차집합으로 바꿔 같은 k가 어떻게 작용하는지도 비교해
-        보세요.
+        <span style={{ color: '#c84e2e' }}>B</span>)을 드래그해 가까이 붙이고 k를 올려 보세요. 두 경계가
+        폭 k의 영역에서 <em>부드럽게 이어져 하나로 합쳐지는</em> 모습이 보입니다. 교집합·차집합으로 바꿔
+        같은 k가 어떻게 작용하는지도 비교해 보세요.
       </figcaption>
     </figure>
   );

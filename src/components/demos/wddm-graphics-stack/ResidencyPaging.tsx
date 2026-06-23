@@ -134,7 +134,7 @@ export default function ResidencyPaging() {
         넘은 상태입니다: VidMm이 Tex A·Tex B·RT는 올렸지만 <strong>Shadow</strong>는 자리가 없어 못
         올립니다. 참조 수가 예산을 넘으면 한 프레임에 다 못 올려, 매 프레임 page-in/out이 반복되는
         <strong> paging thrash</strong>(분홍 양방향 화살표)가 일어납니다 — 대형 씬의 hitch 원인입니다.
-        DX12의 <code>MakeResident</code>/<code>Evict</code>는 이 결정을 앱이 직접 쥐려는 API입니다.
+        DX12의 <code>MakeResident</code>/<code>Evict</code>는 이 결정을 앱이 직접 내리도록 하는 API입니다.
       </figcaption>
     </figure>
   );

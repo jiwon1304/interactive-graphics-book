@@ -301,9 +301,9 @@ export default function AsyncOverlapTimeline() {
         makespan(초록 자)이 직렬보다 짧아진 만큼이 오버랩 <em>절감</em>입니다. 하지만 교차 큐 의존이
         생기면(여기서는 라이팅이 SSAO 결과를 필요로 함) <strong>세마포어</strong>로 기다려야 하고, 그
         대기가 <strong>스톨</strong>(주황 구간)이라는 동기화 비용을 만들어 makespan을 도로 늘립니다.
-        SSAO가 길어질수록 이 스톨이 절감을 갉아먹어, 결국 <em>오버랩이 더는 이득이 아닌</em> 지점이
-        옵니다. async 컴퓨트는 마법이 아니라, <strong>독립적인 일</strong>이 있고{' '}
-        <strong>의존이 가벼울 때만</strong> 갚는 거래입니다.
+        SSAO가 길어질수록 이 스톨이 절감을 상쇄해, 결국 <em>오버랩이 더는 이득이 아닌</em> 지점이
+        옵니다. async 컴퓨트는 <strong>독립적인 작업</strong>이 있고{' '}
+        <strong>교차 큐 의존이 적을 때만</strong> 순이득이 됩니다.
       </figcaption>
     </figure>
   );

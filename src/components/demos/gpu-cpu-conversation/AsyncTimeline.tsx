@@ -129,7 +129,7 @@ export default function AsyncTimeline() {
         (<span style={{ color: COLORS.present }}>▲ = present</span>). 이 그림은{' '}
         <strong>frames in flight = 1</strong>인 경우입니다: CPU는 프레임 N을 제출한 뒤 GPU가 그 프레임을
         끝낼 때까지 다음 프레임 기록을 시작하지 못해 <span style={{ color: COLORS.fence }}>wait</span>{' '}
-        구간이 생깁니다 — CPU와 GPU가 번갈아 놀죠. frames in flight를 2~3으로 늘리면 CPU가 GPU보다
+        구간이 생깁니다 — CPU와 GPU가 번갈아 유휴 상태가 됩니다. frames in flight를 2~3으로 늘리면 CPU가 GPU보다
         한두 프레임 앞서 달릴 수 있어 두 레인이 겹치고, 빈 구간이 사라져 처리량이 올라갑니다. 이것이
         double/triple buffering의 정체입니다: GPU가 N을 그리는 동안 CPU가 N+1을 기록합니다. 공짜는
         아닙니다 — F가 클수록 입력 지연(latency)이 커지고, 프레임마다 별도의 버퍼·자원이 필요해집니다.

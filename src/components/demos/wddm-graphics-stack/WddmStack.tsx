@@ -167,7 +167,7 @@ export default function WddmStack() {
         <span style={{ color: COLORS.kernel }}> Dxgkrnl</span>로 내려가는데, <strong>VidMm</strong>이
         참조 allocation의 residency를 보장하고 <strong>VidSch</strong>가 GPU 엔진의 ring buffer에
         스케줄합니다. <span style={{ color: COLORS.gpu }}>KMD</span>(display miniport)가 실제 레지스터·
-        doorbell을 건드려 GPU를 깨웁니다. <strong>이 구조는 DX9·11·12가 공유</strong>하며, 뒤에서 보듯
+        doorbell을 써서 GPU에 work 실행을 개시시킵니다. <strong>이 구조는 DX9·11·12가 공유</strong>하며, 뒤에서 보듯
         Windows Vulkan도 같은 커널 위에서 돕니다.
       </figcaption>
     </figure>

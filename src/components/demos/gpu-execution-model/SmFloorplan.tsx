@@ -218,13 +218,13 @@ export default function SmFloorplan() {
         한 <strong>SM</strong>(Streaming Multiprocessor, AMD에선 CU)의 평면도입니다. 흔한 오해는
         SM을 “하나의 큰 코어”로 보는 것인데, 실제로는 <strong>4개의 스케줄러 파티션</strong>(processing
         block)으로 쪼개져 있습니다. 각 파티션은 <em>자기만의</em> 워프 스케줄러·레지스터 파일·실행
-        유닛을 가진 작은 독립 공장입니다. 그 안의 파란 칸 하나하나 — <strong>FP32 ALU 레인</strong> —
+        유닛을 가진 독립적인 실행 블록입니다. 그 안의 파란 칸 하나하나 — <strong>FP32 ALU 레인</strong> —
         가 바로 마케팅이 말하는 “CUDA 코어”입니다. 코어는 거창한 CPU 코어가 아니라{' '}
         <em>32비트 부동소수점 곱셈-덧셈을 하나 처리하는 산술 레인</em>일 뿐입니다. INT는 정수 연산,{' '}
         <strong>SFU</strong>는 sin·exp·rsqrt 같은 초월함수, <strong>LSU</strong>는 메모리 로드/스토어,{' '}
         <strong>텐서 코어</strong>는 작은 행렬 곱(딥러닝·DLSS)을 담당합니다. 파티션 넷이 끝나는
         아래쪽 <strong>공유 메모리/L1</strong>과 텍스처 유닛은 SM 전체가 함께 씁니다 — 같은 블록의
-        스레드들이 데이터를 주고받는 “작업대”가 여기입니다. (숫자는 Ada/Ampere 세대의 대표값이며 세대마다 다릅니다.)
+        스레드들이 데이터를 주고받는 통로가 여기입니다. (숫자는 Ada/Ampere 세대의 대표값이며 세대마다 다릅니다.)
       </figcaption>
     </figure>
   );

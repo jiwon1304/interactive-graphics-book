@@ -138,7 +138,7 @@ export default function IcdVsUmd() {
         레지스트리에서 ICD manifest를 찾아 DLL을 로드). 그 아래는 <strong>똑같은</strong>
         <span style={{ color: COLORS.kernel }}> Dxgkrnl/VidMm/VidSch</span>와 KMD·GPU입니다 — 같은
         D3DKMT* 제출 경로, 같은 GPUVA, 같은 residency 보장. 가장 큰 차이는 위쪽에 있습니다: Vulkan은
-        <strong> VkDeviceMemory</strong>로 메모리 할당·배치를 앱이 직접 쥐는 반면, D3D11은 그 결정을
+        <strong> VkDeviceMemory</strong>로 메모리 할당·배치를 앱이 직접 결정하는 반면, D3D11은 그 결정을
         runtime/드라이버가 더 많이 대신합니다.
       </figcaption>
     </figure>

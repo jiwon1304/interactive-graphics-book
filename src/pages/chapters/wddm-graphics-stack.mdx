@@ -19,8 +19,8 @@ import IcdVsUmd from '../../components/demos/wddm-graphics-stack/IcdVsUmd.tsx';
 꽂습니다. 한 번의 `Draw`가 통과하는 레이어가 최소 다섯 겹입니다.
 
 이 레이어 구조는 그래픽스 API가 "빠르다/느리다"를 가르는 곳이고, 드라이버 크래시가 user 모드
-앱을 안 죽이고 화면만 잠깐 깜빡이게 만드는 이유이며, 같은 GPU에서 D3D와 Vulkan이 평화롭게
-공존하는 이유이기도 합니다. 이 구조의 이름이 **WDDM**(Windows Display Driver Model)입니다.
+앱을 종료시키지 않고 화면만 잠깐 깜빡이게 만드는 이유이며, 같은 GPU에서 D3D와 Vulkan이 같은
+커널 스택을 공유하며 동작하는 이유이기도 합니다. 이 구조의 이름이 **WDDM**(Windows Display Driver Model)입니다.
 
 이번 글은 "그래픽스 드라이버" 5부작의 2편입니다. 1편이 *DX9·11·12가 같은 스택 위에서 책임을
 어떻게 다르게 나누는가*였다면, 이번 편은 그 **스택 자체를 한 겹씩 분해**합니다. 무엇이 user
@@ -51,7 +51,8 @@ system memory 사이를 어떻게 오가는지(**residency·paging**), 그리고
   manager)은 GPU 메모리의 할당·해제·residency·paging을 책임지고, **VidSch**(video scheduler)는
   제출된 work를 GPU 엔진의 ring buffer에 큐잉합니다.
 - **KMD** (kernel-mode display miniport driver, 예: `nvlddmkm.sys`) — IHV가 제공하는 커널
-  드라이버입니다. Dxgkrnl과 통신하며 실제 하드웨어 레지스터와 doorbell을 건드려 GPU를 깨웁니다.
+  드라이버입니다. Dxgkrnl과 통신하며 실제 하드웨어 레지스터와 doorbell을 써서 GPU에 제출된
+  work의 실행을 개시시킵니다.
 
 왜 굳이 드라이버를 **user/kernel 둘로 쪼갰을까요?** WDDM 이전(Windows XP의 XPDM)에서는
 드라이버가 통째로 커널에 있어서, 드라이버 버그 하나가 곧 블루스크린이었습니다. WDDM은 무거운
@@ -75,7 +76,7 @@ GPU는 자기 주소공간에서 메모리를 DMA로 읽습니다. UMD가 쌓는
 
 ## 2. DDI — 호출이 레이어 사이를 넘는 법
 
-레이어들이 어떻게 *대화*할까요? 위에서 아래로 내려갈 때 쓰는 인터페이스가 **DDI**(device
+레이어들은 어떤 인터페이스로 서로를 호출할까요? 위에서 아래로 내려갈 때 쓰는 인터페이스가 **DDI**(device
 driver interface)입니다. runtime이 UMD를 부를 때, 그리고 Dxgkrnl이 KMD를 부를 때 모두 DDI를
 씁니다 — 구체적으로는 **함수 포인터 테이블**입니다. runtime은 UMD가 노출한 `pfnXxx` 함수
 포인터들을 통해 UMD로 진입하고, UMD는 runtime이 준 콜백(`pfnXxxCb`, `Cb`=callback)을 통해

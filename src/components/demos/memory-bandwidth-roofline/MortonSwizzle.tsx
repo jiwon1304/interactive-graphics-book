@@ -122,8 +122,9 @@ export default function MortonSwizzle() {
       </div>
       <figcaption>
         같은 8×8 텍셀과 같은 3×3 footprint(굵은 사각형)를 두 주소 배치에 올린 비교입니다. 가는 회색
-        선은 메모리에 텍셀이 놓인 순서(주소 순)로, <strong>linear</strong>는 한 행씩 훑는 뱀,{' '}
-        <strong>Morton</strong>은 ㄹ자(Z)가 재귀로 접히는 곡선입니다. footprint 안 텍셀은 자신이 속한{' '}
+        선은 메모리에 텍셀이 놓인 순서(주소 순)로, <strong>linear</strong>는 한 행을 끝까지 훑고 다음
+        행으로 내려가고, <strong>Morton</strong>은 작은 블록을 Z 모양으로 돈 뒤 그 블록 단위로 다시 Z
+        모양을 재귀로 그립니다. footprint 안 텍셀은 자신이 속한{' '}
         <strong>캐시 라인</strong>(연속 {LINE}개 주소 = 한 색)으로 칠해집니다. 3×3={BLK * BLK}개
         텍셀은 이상적으로 {ideal}개 라인이면 충분한데, linear에서는 세로로 이웃한 텍셀이 주소상 한
         행({GRID}칸)만큼 떨어져{' '}
