@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react';
 
 // 정적 도식 — amplification(task) shader가 거르는 컬링 단계 파이프라인.
 // 입력 meshlet들이 frustum → cluster backface(원뿔) → occlusion(Hi-Z) → LOD 선택을 거쳐
-// 살아남은 것만 mesh shader 워크그룹으로 dispatch된다. 단계마다 통과 개수가 줄어드는 깔때기.
+// 살아남은 것만 mesh shader 워크그룹으로 dispatch된다. 단계마다 통과 개수가 줄어든다.
 
 const W = 380;
 const H = 360;
@@ -33,7 +33,7 @@ function draw(ctx: CanvasRenderingContext2D) {
   ctx.fillStyle = text;
   ctx.font = 'bold 14px system-ui, sans-serif';
   ctx.textAlign = 'left';
-  ctx.fillText('GPU-driven 컬링 깔때기 (task/amp shader)', 12, 16);
+  ctx.fillText('GPU-driven 컬링 단계 (task/amp shader)', 12, 16);
 
   const top = 36;
   const rowH = 50;
