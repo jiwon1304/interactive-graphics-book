@@ -21,8 +21,8 @@ import HamiltonProductSandbox from '../../components/demos/quaternions/HamiltonP
 ## 1. 오일러 각의 함정: 짐벌 락
 
 세 개의 각으로 회전을 표현하면, 세 회전축이 한 줄로 겹쳐버리는 자세가 존재합니다.
-그 순간 세 손잡이 중 하나가 **무용지물**이 되어 자유도(degree of freedom) 하나를 잃습니다.
-이것이 **짐벌 락(gimbal lock)** 입니다.
+그 순간 세 회전축 중 두 축이 같은 방향이 되어 서로 독립이 아니게 되고, 자유도(degree of freedom)
+하나를 잃습니다. 이것이 **짐벌 락(gimbal lock)** 입니다.
 
 아래 데모에서 가운데 링(피치)을 **±90°** 로 돌려 보세요. 바깥 링(요)과 안쪽 링(롤)의
 회전축이 같은 방향으로 정렬되어 빨갛게 강조됩니다. 그 상태에서 요와 롤 슬라이더를

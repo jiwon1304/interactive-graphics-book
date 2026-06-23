@@ -149,7 +149,7 @@ export default function MatcapRimToon() {
       </ControlPanel>
 
       <figcaption>
-        <strong>직접 해보세요:</strong> matcap이 재질의 큰 그림(밝기 분포·질감)을 한 번에 주고, 그 위에
+        <strong>직접 해보세요:</strong> matcap이 재질의 전체 인상(밝기 분포·질감)을 한 번에 주고, 그 위에
         역광 림이 윤곽을 분리합니다. base는 조명과 무관(뷰공간)하고 림만 광원을 따르므로, 방위각을
         돌리면 재질감은 고정된 채 가장자리 빛만 이동합니다 — 캐릭터 셰이딩에서 흔한 레이어링입니다.
       </figcaption>
