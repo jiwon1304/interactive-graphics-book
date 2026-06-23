@@ -214,8 +214,8 @@ export default function StatGpuDiagnoser() {
         "같은 막대, 다른 결론"을 한눈에 보여 줍니다. ①과 ②는 <em>똑같은 양의 Wait</em>이지만, ①처럼{' '}
         <strong>그래픽스 큐에 있으면 문제</strong>(메인 큐가 펜스·리소스를 기다리며 멈춤)이고 ②처럼{' '}
         <strong>컴퓨트 큐에 있으면 정상</strong>입니다(AsyncCompute는 그래픽스 결과를 기다리도록
-        설계됐으니까요). ③처럼 어느 큐든 <strong>Idle &gt; 0이면 CPU bound</strong> — GPU가 다
-        처리했는데 CPU가 다음 일감을 못 만들어 GPU가 굶고 있는 상황이라, GPU를 아무리 최적화해도
+        설계됐기 때문입니다). ③처럼 어느 큐든 <strong>Idle &gt; 0이면 CPU bound</strong> — GPU가 큐의
+        작업을 모두 처리했는데 CPU가 다음 작업을 공급하지 못해 GPU가 유휴 상태로 남는 상황이라, GPU를 아무리 최적화해도
         프레임이 빨라지지 않습니다. 각 패널 아래의 <em>판정 라벨</em>이 이 규칙의 결론입니다.
       </figcaption>
     </figure>

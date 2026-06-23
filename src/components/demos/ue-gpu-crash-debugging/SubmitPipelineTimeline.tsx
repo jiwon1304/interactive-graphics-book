@@ -315,7 +315,7 @@ export default function SubmitPipelineTimeline() {
       <figcaption>
         새로운 RHI <strong>Submit Pipeline</strong> (Luke Thatcher (Epic) 발표). 같은{' '}
         {N_LISTS}개 커맨드 리스트를 두 모델로 처리한 간트 차트입니다. <strong>위쪽 기존 모델</strong>은
-        단일 RHI 스레드가 변환·제출·동기화를 <em>혼자 직렬로</em> 처리합니다. 게다가 GPU 펜스를{' '}
+        단일 RHI 스레드가 변환·제출·동기화를 <em>한 스레드에서 직렬로</em> 처리합니다. 게다가 GPU 펜스를{' '}
         <strong>polling</strong>으로 확인해, 펜스가 신호된 뒤에도 다음 polling까지 기다리는{' '}
         <strong>버블</strong>(빗금 친 주황 유휴 구간)이 매번 생겨 makespan을 부풀립니다.{' '}
         <strong>아래 신규 모델</strong>은 역할을 셋으로 쪼갭니다 — <strong>변환</strong>은 여러 워커

@@ -201,13 +201,13 @@ export default function CrashReportPipeline() {
         }}
       />
       <figcaption>
-        크래시가 쏟아지면 전부 사람이 볼 수 없습니다. 발표가 소개한 자동화는 세 단계입니다(위 흐름):
+        크래시 리포트가 대량으로 들어오면 사람이 전부 확인할 수 없습니다. 발표가 소개한 자동화는 세 단계입니다(위 흐름):
         먼저 전체 로그가 아니라 <strong>active 상태였던 콜스택만</strong> 수집하고, 그 콜스택을{' '}
         <strong>해시</strong>해서 상황을 고유하게 식별한 뒤, dedup 테이블에서 조회해 처음 보는
         해시면 새 행으로 넣고 이미 본 해시면 <strong>count를 1 올립니다</strong>. 아래 테이블이 여러
         보고를 dedup한 결과입니다 — 같은 크래시가 자주 들어온 행일수록 count가 크고{' '}
         <strong>Jira 우선순위</strong>가 높습니다(예: ×6 BasePass hang = Blocker). 해싱+중복 제거가
-        핵심인 이유: 똑같은 콜스택의 홍수를 <em>한 줄</em>로 접고 빈도로 정렬하면, 수천 건의 리포트가
+        핵심인 이유: 동일한 콜스택의 대량 보고를 <em>한 행</em>으로 합치고 빈도로 정렬하면, 수천 건의 리포트가
         "무엇부터 고쳐야 하는지" 순위가 매겨진 백로그로 바뀝니다 — Minor → Major → Critical → Blocker.
         (출처: Luke Thatcher (Epic) 발표.)
       </figcaption>
