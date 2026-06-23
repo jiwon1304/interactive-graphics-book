@@ -2,7 +2,7 @@ import { useCanvas2d, type DrawCtx } from './useCanvas2d';
 import { COLORS, roundRect, withAlpha, monoFont, centerText, drawArrow } from './gpj2d';
 
 // ---------------------------------------------------------------------------
-// 정적 도식: ROP(Raster Operations / 픽셀 백엔드)의 마지막 세 관문.
+// 정적 도식: ROP(Raster Operations / 픽셀 백엔드)의 마지막 세 단계.
 //   들어온 프래그먼트 → 깊이 테스트 → 블렌딩 → 프레임버퍼 쓰기.
 // 깊이 테스트에서 떨어지면 색 계산이 끝났어도 버려진다. 통과하면 기존 프레임버퍼
 // 색과 src·α + dst·(1−α)로 섞은 뒤 깊이/색을 갱신해 쓴다.

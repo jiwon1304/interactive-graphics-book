@@ -60,7 +60,7 @@ const SCENARIOS: ReadonlyArray<ScenarioFig> = [
       { name: '그래픽스', busy: 55, wait: 10, idle: 35, waitIsBad: true },
       { name: '컴퓨트', busy: 55, wait: 15, idle: 30, waitIsBad: false },
     ],
-    verdict: 'CPU bound: CPU가 일감을 못 대줘 GPU가 굶음',
+    verdict: 'CPU bound: CPU가 작업을 못 대줘 GPU가 유휴',
     verdictColor: UE_COLORS.stall,
   },
 ];

@@ -178,7 +178,7 @@ export default function BackfaceCulling() {
         <em>E_AB(C)</em>와 같고, 그 <strong>부호가 회전 방향(시계 CW / 반시계 CCW)</strong>을 가릅니다.
         화살표는 A→B→C 순회 방향을 보여줍니다. GPU는 “정면은 어느 와인딩” 하나를 정해 두고, 반대
         와인딩이면 그 삼각형을 셰이딩도 하기 전에 <span style={{ color: '#ef4444' }}>버립니다</span>{' '}
-        — 닫힌 메시에서 뒤통수를 향한 삼각형은 어차피 안 보이니, 평균 절반을 공짜로 쳐냅니다.
+        — 닫힌 메시에서 뒷면을 향한 삼각형은 어차피 안 보이니, 평균 절반을 공짜로 쳐냅니다.
         <br />
         <strong>직접 해보세요:</strong> 정점 <span style={{ color: '#22c55e' }}>C</span>를 변 AB의
         반대편으로 끌고 넘어가 보세요. 순회가 뒤집히는 순간 면적의 부호가 <em>0을 지나</em> 반대로

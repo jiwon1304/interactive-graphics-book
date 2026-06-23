@@ -126,7 +126,7 @@ export default function CoreCountBuilder() {
         <canvas ref={ref} style={{ width: '100%', height: CANVAS_H, display: 'block' }} />
       </div>
       <figcaption>
-        스펙시트의 거대한 “코어 수”는 마법의 숫자가 아니라 <strong>곱셈 한 줄</strong>입니다. 파티션
+        스펙시트의 거대한 “코어 수”는 특별한 숫자가 아니라 <strong>곱셈 한 줄</strong>입니다. 파티션
         하나에 FP32 레인 <strong>32</strong>개, SM 하나에 파티션 <strong>4</strong>개(= SM당 128
         코어), 카드 하나에 SM <strong>128</strong>개 — 셋을 곱하면{' '}
         <strong>{TOTAL.toLocaleString('en-US')}</strong>개의 FP32 코어가 됩니다(RTX 4090).
