@@ -1,0 +1,169 @@
+---
+layout: ../../layouts/ChapterLayout.astro
+title: "슈퍼스칼라와 비순차 실행"
+description: 한 cycle에 여러 명령을, 그리고 순서를 어기며 — multiple issue, in-order vs OoO, register renaming(WAR/WAW 제거), reservation station, ROB(in-order retire), speculation, 그리고 ILP의 한계
+---
+
+import InOrderVsOoO from '../../components/demos/superscalar-ooo/InOrderVsOoO.tsx';
+import RegisterRenaming from '../../components/demos/superscalar-ooo/RegisterRenaming.tsx';
+import OoODataflow from '../../components/demos/superscalar-ooo/OoODataflow.tsx';
+
+# 슈퍼스칼라와 비순차 실행
+
+## 매 cycle 명령 하나면 충분한가
+
+앞서 [`./cpu-pipeline-hazards`](./cpu-pipeline-hazards)에서 파이프라이닝이 throughput을 명령
+1개/cycle까지 끌어올리는 걸 봤습니다. 이론상의 천장은 IPC(instructions per cycle) = 1입니다.
+
+그런데 코어 안에는 산술기(ALU)도, load/store 유닛도, 곱셈기도 여럿입니다. 매 cycle 명령을 딱
+하나만 흘리면 이 유닛 대부분이 놀게 됩니다. 그렇다면 **한 cycle에 여러 명령을 동시에** 흘려
+보내면 IPC > 1이 되지 않을까요? 이것이 **슈퍼스칼라(superscalar)** — *multiple issue*입니다.
+
+하지만 여러 명령을 동시에 보내려면, 그것들이 *서로 독립적*이어야 합니다. 그리고 프로그램이 적어
+놓은 순서대로만 실행하면, 한 명령이 막힐 때 그 뒤가 전부 같이 막힙니다 — 정작 막힌 명령과 아무
+상관 없는 명령까지요. 이 두 문제를 푸는 것이 이 장의 주제입니다.
+
+## 순서를 지킬 이유가 있을까 — in-order vs OoO
+
+가장 흔한 정체 원인은 메모리입니다. load가 캐시 미스면 결과가 수백 cycle 뒤에 옵니다
+([`./cpu-memory-hierarchy`](./cpu-memory-hierarchy)). 그 값을 쓰는 다음 명령은 당연히 기다려야
+하죠 — 진짜 의존이니까요. 문제는, 그 뒤에 *그 값과 무관한* 독립적인 명령이 있어도 **in-order**
+실행은 순서를 못 어겨 같이 멈춘다는 점입니다.
+
+<InOrderVsOoO client:visible />
+
+**out-of-order(OoO, 비순차)** 실행의 아이디어는 단순합니다: *피연산자가 준비된 명령부터* 실행한다
+(이것이 **dataflow** 순서입니다). 위 그림처럼 load가 메모리에서 오는 동안, 독립적인 곱셈·뺄셈을
+먼저 실행해 빈 cycle을 메웁니다. 한 명령이 막혀도 코어는 멈추지 않고 *할 수 있는 다른 일을 찾아*
+합니다.
+
+여기서 결정적인 원칙 하나: **실행은 순서를 어겨도, 결과를 확정(commit/retire)하는 것은 프로그램
+순서대로** 해야 합니다. 안 그러면 예외·인터럽트가 났을 때 "어디까지 진짜 실행됐는지"가 뒤죽박죽이
+되어 프로그램 상태가 깨집니다. "execute out of order, retire in order" — 이 두 문장이 OoO 엔진의
+헌법입니다.
+
+## 가짜 의존을 걷어내기 — register renaming
+
+OoO를 하려면 명령들 사이의 의존을 정확히 알아야 합니다. 의존에는 세 종류가 있습니다:
+
+- **RAW**(read-after-write, 진짜/flow 의존): 앞 명령이 쓴 값을 뒤 명령이 읽는다. **없앨 수 없다** —
+  데이터가 실제로 흘러야 하니까.
+- **WAR**(write-after-read, anti 의존): 뒤 명령이 어떤 레지스터에 쓰는데, 그 전에 앞 명령이 그
+  레지스터를 *읽어야* 한다.
+- **WAW**(write-after-write, output 의존): 두 명령이 *같은 레지스터*에 쓴다 — 나중 값이 살아남아야.
+
+WAR와 WAW는 **진짜 데이터 의존이 아닙니다.** 단지 ISA가 노출하는 레지스터 이름(x86-64라면 고작
+16개)이 모자라 같은 이름을 *재활용*하다 생긴 **이름(name) 의존**일 뿐입니다. 컴파일러가 r1을 두
+번 쓴 게 우연히 겹쳤을 뿐, 두 r1은 사실 서로 다른 값이죠.
+
+해법은 **register renaming(레지스터 이름 바꾸기)** 입니다. 코어는 ISA가 보는 적은 수의
+**architectural register**(이름)를, 훨씬 많은 **physical register**(실제 저장소)에 동적으로
+매핑합니다. 같은 이름에 쓸 때마다 *새 물리 레지스터*를 배정하면, 이름 충돌이 사라집니다.
+
+<RegisterRenaming client:visible />
+
+이 기법의 원조가 1967년 IBM System/360 Model 91의 부동소수점 유닛을 위한 **Tomasulo 알고리즘**
+입니다. 핵심 통찰 — *"이름을 재활용해서 생긴 의존은, 이름을 늘리면 사라진다"* — 은 60년 가까이
+지난 지금도 모든 OoO 코어의 토대입니다. 그래서 현대 코어는 물리 레지스터를 아주 많이 둡니다 —
+예컨대 Intel Skylake는 정수 180개·벡터 168개의 physical register file을 갖춥니다(WikiChip).
+
+## 깨어날 때를 기다리기 — reservation station
+
+rename을 마친 명령은 곧장 실행되지 못할 수 있습니다 — 아직 피연산자가 안 왔을 수 있으니까요.
+그래서 명령은 **reservation station(RS, 예약 스테이션)** 또는 스케줄러라 부르는 버퍼에서 대기합니다.
+
+RS의 작동은 우아합니다. 어떤 실행 유닛이 결과를 내면, 그 값을 **공통 버스(Tomasulo의 common data
+bus, CDB)** 에 *태그와 함께* 방송합니다. RS의 모든 항목이 이 방송을 엿듣다가, 자기가 기다리던
+태그가 보이면 그 값을 낚아채 "깨어납니다(wake up)". 피연산자가 다 모인 명령은 그 cycle에 실행
+유닛으로 보내집니다(issue). 누가 먼저 준비되느냐에 따라 — 즉 *프로그램 순서와 무관하게* —
+실행됩니다.
+
+> **두 독자를 위한 메모.** RS 구조는 코어마다 다릅니다. Intel Skylake은 모든 포트가 공유하는
+> **unified scheduler**(논리적으로 최대 97 entry), AMD Zen·원조 Tomasulo는 유닛/타입별로 나뉜
+> **distributed** 구조입니다. "RS = 깨어나길 기다리는 대기실"이라는 본질은 같습니다.
+
+## 순서를 되돌리는 장부 — ROB
+
+실행은 뒤죽박죽으로 끝나는데, retire는 프로그램 순서대로여야 합니다. 이 모순을 잇는 장치가
+**ROB(reorder buffer, 재정렬 버퍼)** 입니다. 명령이 rename될 때 ROB 끝에 *프로그램 순서대로*
+한 자리씩 들어가고, 실행이 끝나면 "완료" 표시만 됩니다. 실제 architectural state(레지스터·메모리)
+갱신은 **ROB의 맨 앞(head)부터 순서대로만** 일어납니다.
+
+<OoODataflow client:visible />
+
+ROB가 있어 가능해지는 세 가지가 있습니다:
+
+- **in-order retire:** 비순차로 실행됐어도 결과는 제 순서대로 확정된다.
+- **precise exception(정확한 예외):** 어떤 명령이 예외를 일으키면, ROB에서 그 명령보다 *뒤*에
+  있는(아직 retire 안 된) 모든 명령을 버리면 됩니다 — 마치 거기서 딱 멈춘 것처럼 깔끔히.
+- **speculation 복구:** 분기 예측이 틀리면, 그 분기 뒤 ROB 항목을 전부 **squash(폐기)** 합니다.
+
+## 예측을 믿고 미리 달리기 — speculation
+
+ROB 덕분에 코어는 과감해질 수 있습니다. 분기 예측([`./branch-prediction`](./branch-prediction))이
+"이쪽으로 갈 것"이라 말하면, 코어는 그 확정을 *기다리지 않고* 예측된 경로의 명령을 미리
+실행합니다 — **speculative execution(투기 실행)** 입니다.
+
+투기적으로 실행한 결과는 ROB에 *보류* 상태로 머뭅니다. 분기가 맞다고 판명되면 정상 retire되고,
+틀리면 그 뒤 항목들이 squash되어 architectural state에는 흔적도 안 남습니다(겉으로는). 분기
+예측의 높은 정확도가 빛을 발하는 곳이 바로 여기입니다 — 예측이 맞는 한, 코어는 분기를 사실상
+무시하고 쭉 달립니다.
+
+> **두 독자를 위한 메모.** "겉으로는 흔적도 안 남는다"가 정확히 [`./branch-prediction`](./branch-prediction)에서
+> 언급한 **Spectre**의 빈틈입니다. squash된 투기 실행이 architectural state는 안 바꿔도, *캐시 같은
+> 마이크로아키텍처 상태*에는 흔적을 남길 수 있고, 그걸 side channel로 읽어낼 수 있죠.
+
+## 한계 — ILP는 공짜가 아니다
+
+그렇다면 코어를 무한정 넓게(더 많은 issue·더 큰 ROB·더 많은 물리 레지스터) 만들면 IPC가 계속
+오를까요? 아닙니다. 코어가 한 번에 끌어낼 수 있는 병렬성 — **ILP(instruction-level parallelism)** —
+은 *프로그램 자체*에 의해 제한됩니다.
+
+진짜 RAW 의존, 분기, 메모리 의존이 명령들을 사슬로 묶습니다. 평균적인 basic block(분기 사이의
+직선 코드)은 명령 대여섯 개에 불과해, 그 안에서 뽑을 병렬성도 한계가 있습니다. David Wall의 고전
+연구 "Limits of Instruction-Level Parallelism"(1990s, DEC WRL)이 이 천장을 정량화했습니다 —
+현실적인 가정에서 ILP는 생각보다 빨리 포화합니다. 그래서 아주 넓은 머신에서도 일반 정수
+워크로드의 지속 IPC는 흔히 **1~2 수준**에 머뭅니다(H&P).
+
+그래서 현대 설계는 "코어 하나를 무한히 넓히기"의 수확 체감을 인정하고, 대신 **여러 코어**(스레드
+수준 병렬성)나 **SIMD**(데이터 수준 병렬성, [`./simd-vectorization`](./simd-vectorization))로 방향을
+틀었습니다. 그럼에도 단일 코어 폭은 꾸준히 넓어져 왔습니다 — Skylake은 ~4-wide(decode/retire, ROB
+224 entry), Apple M1의 P-core(Firestorm)는 무려 ~8-wide decode에 ROB ~600+로 알려져 있습니다.
+
+> **두 독자를 위한 메모.** Apple M1의 내부 수치(8-wide, ROB ~600+, 물리 레지스터 ~350)는 Apple이
+> 공개한 게 아니라 Dougall Johnson·AnandTech의 **리버스 엔지니어링 추정**입니다. 게다가 M1의
+> "ROB"는 전통적 단일 ROB가 아니라 retire queue + reclaim table에 가까운 비표준 구조라, "~600+"는
+> 느슨한 어림수로 받아들이세요. Skylake 수치(4-wide, ROB 224, PRF 180/168)는 벤더 기반으로 더 단단합니다.
+
+## 종합 — 순서를 어기되 들키지 않기
+
+슈퍼스칼라·OoO 코어는 "프로그램이 적은 순서"라는 겉모습은 그대로 지키면서, 속으로는 최대한
+많은 일을 병렬·비순차로 처리하는 정교한 기계입니다:
+
+- **multiple issue** — 한 cycle에 여러 명령, IPC > 1.
+- **register renaming** — 가짜 의존(WAR·WAW)을 물리 레지스터로 제거(RAW는 못 없앰).
+- **reservation station** — 피연산자가 준비된 명령부터 깨어나 실행.
+- **ROB** — 비순차 실행을 in-order retire로 봉합, precise exception·speculation 복구.
+- **speculation** — 분기 예측을 믿고 미리 실행, 틀리면 squash.
+
+그리고 이 모든 정교함의 천장은 **프로그램의 ILP**입니다 — 그래서 멀티코어·SIMD가 등장합니다.
+
+## 더 나아가기
+
+- **무엇이 막히게 하나:** OoO가 메우는 그 stall의 정체 — 파이프라인 해저드 →
+  [`./cpu-pipeline-hazards`](./cpu-pipeline-hazards).
+- **speculation의 연료:** 분기를 미리 맞히는 예측기 → [`./branch-prediction`](./branch-prediction).
+- **가장 큰 지연원:** load가 막히는 이유 — 캐시·메모리 계층 →
+  [`./cpu-memory-hierarchy`](./cpu-memory-hierarchy).
+- **ILP 너머:** 데이터 수준 병렬성 → [`./simd-vectorization`](./simd-vectorization),
+  스레드 수준 병렬성과 코어 간 일관성 → [`./memory-consistency-mesi`](./memory-consistency-mesi).
+- **memory disambiguation:** load/store의 메모리 의존을 추측·검증하는 OoO의 또 다른 축(이 장 범위 밖).
+
+## 참고 자료
+
+- John L. Hennessy & David A. Patterson, *Computer Architecture: A Quantitative Approach* Ch.3 — ILP·Tomasulo·speculation·ROB의 표준 출처.
+- [Wikipedia: Tomasulo's algorithm](https://en.wikipedia.org/wiki/Tomasulo%27s_algorithm) 및 [Register renaming](https://en.wikipedia.org/wiki/Register_renaming) — WAR/WAW 제거·CDB·IBM 360/91.
+- [Wikipedia: Reorder buffer](https://en.wikipedia.org/wiki/Re-order_buffer) — in-order retire·precise exception.
+- David W. Wall, ["Limits of Instruction-Level Parallelism," DEC WRL (1990/1993)](https://www.eecs.harvard.edu/cs146-246/wall-ilp.pdf) — ILP의 천장.
+- [WikiChip: Intel Skylake (client)](https://en.wikichip.org/wiki/intel/microarchitectures/skylake_(client)) — 4-wide·ROB 224·PRF 180/168·unified scheduler.
+- Dougall Johnson, [Apple M1 Firestorm](https://dougallj.github.io/applecpu/firestorm.html) 및 [AnandTech M1 deep dive](https://www.anandtech.com/show/16226/apple-silicon-m1-a14-deep-dive/2) — M1 폭(리버스 엔지니어링 추정).
