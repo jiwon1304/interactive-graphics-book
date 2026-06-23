@@ -200,7 +200,7 @@ export default function TdrCountdown() {
         주소를 참조해 큰 수로 루프를 돌다 끝나지 않고 길어지다가, 정확히 <strong>t=2.0초</strong>에서
         OS가 드라이버를 리셋하며 <strong>프로세스를 강제 종료</strong>합니다. 발표의 예시 #1이 바로 이
         경우였습니다. 중요한 점은 GPU 크래시를 CPU가 인식하는 건 보통 <strong>약 2초 뒤</strong>라는
-        것 — 그래서 GPU hang은 마치 "2초 늦게 터지는 크래시"처럼 보입니다. (출처: Luke Thatcher (Epic)
+        것 — 따라서 GPU hang은 발생 시점보다 약 2초 늦게 크래시로 보고됩니다. (출처: Luke Thatcher (Epic)
         발표.)
       </figcaption>
     </figure>
