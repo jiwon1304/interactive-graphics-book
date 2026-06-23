@@ -1,0 +1,167 @@
+---
+layout: ../../layouts/ChapterLayout.astro
+title: "분기 예측"
+description: 분기 결과를 미리 맞혀 flush를 피하는 법 — static vs dynamic, 2-bit counter, BHT/BTB, global/local history, gshare, TAGE, misprediction penalty, branchless·cmov, Spectre
+---
+
+import TwoBitFSM from '../../components/demos/branch-prediction/TwoBitFSM.tsx';
+import BhtBtb from '../../components/demos/branch-prediction/BhtBtb.tsx';
+import GshareIndex from '../../components/demos/branch-prediction/GshareIndex.tsx';
+
+# 분기 예측
+
+## 답을 모르는데 어떻게 계속 달리나
+
+앞 장 [`./cpu-pipeline-hazards`](./cpu-pipeline-hazards)에서 본 control hazard를 다시 떠올려
+봅시다. 조건 분기를 만나면 CPU는 *다음에 어느 주소를 fetch할지* 알아야 파이프를 멈추지 않습니다.
+그런데 그 답은 분기가 파이프 깊숙이 들어가 해소될 때까지 나오지 않습니다.
+
+선택지가 둘이었죠. 매 분기마다 멈춰 답을 기다리거나(stall), 일단 한 방향을 가정해 계속 달리거나.
+프로그램에서 분기는 보통 명령 대여섯 개마다 하나씩 나옵니다 — 매번 멈추면 깊은 파이프는 거의
+달리지 못합니다. 그러니 답은 분명합니다: **가정하고 달리되, 잘 가정한다.** "잘 가정하기"가 바로
+**분기 예측(branch prediction)** 입니다.
+
+예측이 맞으면 분기는 사실상 공짜로 지나갑니다. 틀리면 잘못된 경로의 명령을 전부 flush하고
+penalty(현대 x86 ~15~20 cycle)를 뭅니다. 그래서 예측 정확도 1%의 차이가 성능에서 크게 벌어집니다.
+
+## 가장 단순한 전략 — static prediction
+
+하드웨어가 아무 이력도 안 보고 *고정 규칙*으로 예측하는 것이 **static prediction**입니다.
+
+- **always-not-taken / always-taken:** 늘 한 방향으로 가정. 단순하지만 정확도가 낮습니다.
+- **BTFNT(backward-taken, forward-not-taken):** *뒤로* 가는 분기(주소가 작아짐)는 taken으로,
+  *앞으로* 가는 분기는 not-taken으로 가정. 근거는 명확합니다 — 루프의 back-edge는 뒤로 점프하고
+  대부분 반복(taken)되니까요. 흔한 컴파일러·ISA 힌트의 바탕입니다.
+
+단순 static 휴리스틱은 대략 60~70% 정확도에 그칩니다(워크로드·출처마다 편차). 깊은 파이프에는
+턱없이 부족합니다 — 그래서 실제 코어는 **실행하며 배우는** dynamic prediction을 씁니다.
+
+## 실행하며 배우기 — 2-bit saturating counter
+
+가장 기본적인 dynamic 예측기는 분기마다 작은 카운터를 두고, 결과를 보며 그 카운터를 갱신합니다.
+1-bit("지난번 그대로")은 너무 변덕스럽습니다 — 루프를 빠져나가는 마지막 한 번 때문에, *다음에 그
+루프에 다시 들어올 때* 첫 판단까지 틀려 한 번의 예외가 두 번의 misprediction을 부릅니다.
+
+해법은 **2-bit saturating counter**(bimodal 예측기, J. E. Smith 1981)입니다. 상태가 넷
+(강하게 Taken / 약하게 Taken / 약하게 Not / 강하게 Not)이고, taken이면 한 칸 위로, not-taken이면
+한 칸 아래로, 양 끝에서 포화합니다. 예측은 위 두 상태에서 T, 아래 두 상태에서 N입니다.
+
+<TwoBitFSM client:visible />
+
+핵심은 **hysteresis(이력 효과)** 입니다. "강하게 Taken"에 있을 때 한 번 빗나가도 "약하게 Taken"으로만
+내려가 예측은 그대로 T를 유지합니다. 방향을 뒤집으려면 *연속 두 번* 빗나가야 하죠. 그래서 거의 늘
+taken이지만 가끔 어긋나는 분기(루프의 마지막 반복 같은)를 1-bit보다 훨씬 잘 견딥니다.
+
+## 표 두 장 — BHT와 BTB
+
+분기마다 카운터를 둔다는 건, 그 카운터들을 어딘가에 표로 저장한다는 뜻입니다. PC로 인덱싱하는
+방향 카운터 표가 **BHT(branch history table)** 또는 **PHT(pattern history table)** 입니다.
+
+그런데 "taken이다"만 알아서는 부족합니다. taken이면 *어느 주소로* 점프하는지도 알아야 그 주소를
+다음에 fetch하니까요. 문제는 fetch 단계에서는 명령을 아직 해독조차 안 해 목적지를 모른다는 점입니다.
+그래서 별도의 표 **BTB(branch target buffer)** 가 PC로 인덱싱되어 *목적지 주소*(와 tag)를 저장합니다.
+
+<BhtBtb client:visible />
+
+두 답("taken?"과 "어디로?")이 모두 **IF 단계에서 즉시** 나와야 다음 fetch가 한 cycle도 쉬지
+않습니다. 그래서 이 표들은 빠르고 작은 전용 하드웨어로 만들어집니다.
+
+## 분기들끼리의 상관관계 — history와 gshare
+
+bimodal 예측기는 각 분기를 *독립적으로* 봅니다. 하지만 실제 코드의 분기는 서로 얽혀 있습니다 —
+`if (x > 0)`가 참이면 바로 뒤 `if (x > 10)`의 결과가 그에 좌우되는 식이죠. 이 상관관계를 학습하려면
+"최근 분기들이 어떻게 풀렸는가"라는 **이력(history)** 을 봐야 합니다.
+
+Yeh & Patt(1991)의 **two-level 예측기**가 이 이력을 도입했습니다. 이력에는 두 종류가 있습니다:
+
+- **global history:** *모든* 분기의 최근 결과를 한 시프트 레지스터(**GHR**)에 모은다 — 분기 사이
+  상관관계를 잡는다.
+- **local history:** *각 분기별로* 자기 자신의 최근 결과를 따로 기록한다 — "이 분기는 TNTNTN…"
+  같은 자기 패턴을 잡는다.
+
+McFarling(1993)의 **gshare** 는 global history를 쓰는 대표적 설계입니다. PHT를 인덱싱할 때
+분기 PC와 GHR을 그냥 따로 쓰는 대신 **XOR**해서 섞습니다.
+
+<GshareIndex client:visible />
+
+XOR로 섞으면 *같은 분기*라도 그 앞의 전역 분기 문맥이 다르면 다른 PHT 칸을 보게 됩니다 — 상관관계를
+구분해 학습할 수 있죠. 그리고 PC만·GHR만 쓰거나 단순히 이어 붙이는(gselect) 것보다, 같은 표
+크기에서 서로 다른 분기들이 같은 칸을 다투는 **aliasing(별칭 충돌)** 을 줄여 줍니다.
+
+## 최신 — TAGE와 99%의 벽
+
+history를 얼마나 길게 봐야 할까요? 짧은 history는 단순한 분기에, 긴 history는 깊은 상관관계가 있는
+분기에 좋습니다 — 하나로는 못 잡습니다. **TAGE**(TAgged GEometric history length, Seznec & Michaud)는
+**여러 길이의 history**(기하급수적으로 늘어나는)로 인덱싱한 표를 여러 장 두고, 각 항목에 **tag**를
+붙여 "이 항목이 정말 이 분기·이 history의 것인가"를 검증합니다. 예측은 *맞는 tag를 가진 가장 긴
+history* 표에서 가져옵니다.
+
+TAGE는 오늘날 분기 예측 연구(Championship Branch Prediction)의 사실상 표준이고, TAGE-SC-L(통계
+보정기 + 루프 예측기 추가)이 CBP-5(2016)에서 우승했습니다. 정확도는 워크로드에 따라 다르지만,
+좋은 예측기는 흔히 **MPKI(misprediction per 1K instructions) 한 자릿수**(대략 2~4) — 많은
+워크로드에서 분기당 **99%를 넘는** 정확도입니다. 다만 "풀린 문제"는 아닙니다 — 데이터 의존적
+(거의 무작위) 분기는 여전히 어렵습니다.
+
+> **두 독자를 위한 메모.** 정확도는 % 하나로 외우지 마세요. 같은 99%라도 분기가 잦은 코드에서는
+> MPKI가 다릅니다. 그래서 연구는 정확도(%)보다 **MPKI**로 비교합니다. 그리고 절대 penalty cycle은
+> 마이크로아키텍처 의존이라(Agner Fog 측정 ~15~20 cycle 범위), 도식·암산용 대표값으로만 쓰세요.
+
+## 예측이 안 되면 — branchless와 cmov
+
+아무리 좋은 예측기도 *진짜로 예측 불가능한* 분기 — 예컨대 정렬되지 않은 데이터를 임계값과 비교하는
+분기 — 앞에서는 무력합니다. 정확도가 50%에 가까우면 매번 절반은 flush입니다.
+
+이럴 때의 대안이 **branchless 코드**입니다. 조건 분기를 아예 없애고, 대신 **conditional move**
+(x86 `cmov`, ARM `csel`)나 산술 트릭으로 두 결과를 모두 계산한 뒤 *조건에 따라 고릅니다*. 이는
+**control dependency를 data dependency로 바꾸는** 것입니다 — 분기가 사라지니 misprediction도
+사라집니다.
+
+공짜는 아닙니다. `cmov`는 양쪽 입력을 *항상* 계산하고 의존 사슬을 길게 만들어, **잘 예측되는**
+분기보다 오히려 느릴 수 있습니다. 대략 예측 정확도가 낮을 때(흔히 인용되는 경험칙 ~75% 미만)
+branchless가 이깁니다 — 절대 기준이 아니라 임계 경로 상황에 달린 휴리스틱입니다.
+
+> **두 독자를 위한 메모.** "정렬된 배열이 정렬 안 된 것보다 빠르다"는 유명한 Stack Overflow 질문이
+> 바로 이 현상입니다. 같은 연산인데 정렬된 데이터는 임계값 비교 분기가 잘 예측되고(거의 한 방향),
+> 정렬 안 된 데이터는 예측이 무너져 flush가 쏟아집니다. `cmov`로 짜면 둘이 비슷해집니다.
+
+## 예측의 그림자 — Spectre 한 줄
+
+분기 예측은 명령을 **투기적으로(speculatively)** 미리 실행하게 합니다 — 분기가 확정되기 전에 예측된
+경로를 달리는 것이죠. **Spectre**(variant 1, bounds check bypass)는 이 점을 악용합니다: 예측기를
+훈련시켜 CPU가 *경계 검사를 투기적으로 지나쳐* 범위 밖 메모리를 읽게 만들고, 그 결과는 나중에
+squash되지만 **캐시에 남긴 흔적**을 타이밍 side channel로 읽어 비밀을 새게 합니다. 투기 실행의 성능
+이득이 보안 구멍이 된, 마이크로아키텍처 설계의 뼈아픈 교훈입니다. (자세한 메커니즘은 이 책 범위
+밖입니다.)
+
+## 종합 — 잘 가정하는 기계
+
+분기 예측은 "답을 모른 채 멈추지 않고 달리되, 틀릴 확률을 최대한 줄인다"는 한 가지 목표를 위한
+점점 정교해진 장치들입니다:
+
+- **static**(BTFNT) → 이력 없이 고정 규칙, 60~70%.
+- **2-bit counter**(bimodal) → 분기별로 hysteresis 있는 학습.
+- **BHT + BTB** → 방향과 목적지를 따로, IF에서 즉시.
+- **history(global/local) + gshare** → 분기 사이 상관관계 학습, aliasing 줄이기.
+- **TAGE** → 여러 history 길이를 tag로 골라, MPKI 한 자릿수.
+
+그래도 안 되는 분기는 **branchless·cmov**로 분기 자체를 없앱니다. 그리고 이 투기 실행의 어두운 면이
+**Spectre**입니다.
+
+## 더 나아가기
+
+- **왜 penalty가 깊이에 비례하나:** 그 토대인 파이프라인 flush →
+  [`./cpu-pipeline-hazards`](./cpu-pipeline-hazards).
+- **투기 실행의 본체:** 예측을 믿고 명령을 미리 실행·보류·취소하는 ROB·speculation →
+  [`./superscalar-ooo`](./superscalar-ooo).
+- **간접 분기 예측:** `switch`·가상 함수·함수 포인터의 목적지를 맞히는 indirect target 예측기(ITTAGE).
+- **return address stack(RAS):** 함수 복귀 주소를 스택으로 따로 예측.
+
+## 참고 자료
+
+- J. E. Smith, "A Study of Branch Prediction Strategies," ISCA 1981 — 2-bit saturating counter의 원전.
+- Tse-Yu Yeh & Yale Patt, "Alternative Implementations of Two-Level Adaptive Branch Prediction," [ISCA 1992](https://dl.acm.org/doi/10.1145/146628.139709) — global/local history 분류.
+- Scott McFarling, ["Combining Branch Predictors," DEC WRL TN-36, 1993](https://american.cs.ucdavis.edu/academic/readings/papers/mcfarling.pdf) — gshare(PC ⊕ GHR).
+- André Seznec, ["A New Case for the TAGE Branch Predictor," MICRO 2011](https://www.cs.cmu.edu/~18742/papers/Seznec2011.pdf) 및 [TAGE-SC-L (CBP)](https://jilp.org/cbp2014/paper/AndreSeznec.pdf).
+- Agner Fog, [*The Microarchitecture of Intel, AMD and VIA CPUs*](https://www.agner.org/optimize/microarchitecture.pdf) — misprediction penalty 측정(~15~20 cycle).
+- Kocher et al., ["Spectre Attacks: Exploiting Speculative Execution," IEEE S&P 2019](https://spectreattack.com/spectre.pdf).
+- [Wikipedia: Branch predictor](https://en.wikipedia.org/wiki/Branch_predictor) — static/dynamic·BHT/BTB·gshare 개관.

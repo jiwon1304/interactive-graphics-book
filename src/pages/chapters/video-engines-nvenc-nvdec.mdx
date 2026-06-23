@@ -1,0 +1,132 @@
+---
+layout: ../../layouts/ChapterLayout.astro
+title: "비디오 엔진 — NVENC/NVDEC와 디스플레이 엔진"
+description: 셰이더와 분리된 고정기능 인/디코드 블록, 코덱(H.264/HEVC/AV1), 인코드 파이프라인, 그리고 디스플레이 엔진의 스캔아웃·합성
+---
+
+import BlockDataflow from '../../components/demos/video-engines-nvenc-nvdec/BlockDataflow.tsx';
+import EncodePipeline from '../../components/demos/video-engines-nvenc-nvdec/EncodePipeline.tsx';
+import DecodeDisplayPath from '../../components/demos/video-engines-nvenc-nvdec/DecodeDisplayPath.tsx';
+
+# 비디오 엔진 — NVENC/NVDEC와 디스플레이 엔진
+
+게임을 풀프레임으로 돌리면서, 동시에 그 화면을 1080p60으로 인코딩해 인터넷으로 송출합니다. 그런데
+게임 프레임레이트는 거의 안 떨어집니다. GPU가 그만큼 한가했던 걸까요? 아닙니다 — 인코딩을 한 건
+셰이더 코어가 아니라, **그 일만 하도록 칩에 박힌 별도의 블록**입니다.
+
+이 챕터는 GPU 안의 "비디오 엔진" — **NVENC**(인코더)와 **NVDEC**(디코더) — 그리고 그 결과를 화면에
+올리는 **디스플레이 엔진**을 봅니다. 셰이더 코어와 무엇이 다른지, 왜 굳이 전용 블록인지, 어떤 코덱을
+다루는지가 핵심입니다.
+
+## 고정기능 블록 — 셰이더 코어와 분리돼 있다
+
+GPU의 SM(셰이더 코어)은 **범용·프로그래머블**합니다. 정점·픽셀·컴퓨트 셰이더 등 무엇이든 돌릴 수
+있죠. 그 유연함의 대가로, 특정 작업에 대해선 전용 회로보다 비효율적입니다.
+
+비디오 인/디코딩은 정반대 성격의 일입니다. 코덱은 표준으로 **고정**돼 있고(H.264·HEVC·AV1), 같은
+연산(움직임 추정·변환·엔트로피 코딩)을 막대한 양으로 반복합니다. 이런 일은 **고정기능 ASIC**으로
+박아 두는 편이 압도적으로 유리합니다. 그래서 NVENC/NVDEC는 셰이더 코어와 **같은 칩에 있지만 완전히
+분리된 블록**입니다 — 셰이더가 렌더를 도는 동안 NVENC가 동시에 인코딩할 수 있는 이유입니다.
+
+<BlockDataflow client:visible />
+
+두 블록은 **공유 VRAM**을 통해 데이터를 주고받습니다. 셰이더가 그린 프레임을 VRAM에 쓰면, NVENC가
+그 프레임을 읽어 압축 비트스트림으로 내보냅니다. 반대로 영상 재생 때는 NVDEC가 비트스트림을 읽어
+프레임으로 풀어 VRAM에 씁니다.
+
+## 왜 전용 블록인가 — 전력과 지연
+
+"셰이더 코어가 그렇게 많은데, 그냥 거기서 인코딩하면 안 되나?" 됩니다 — CPU/GPU의 소프트웨어
+인코더가 실제로 그렇게 합니다. 하지만 고정기능 블록을 두는 이유는 둘입니다.
+
+- **전력**: 고정기능 인코더는 같은 화질을 **수십 분의 1 전력**으로 냅니다. 회로가 그 연산만 하도록
+  깎여 있어, 범용 코어가 명령을 해석·스케줄하며 쓰는 오버헤드가 없습니다. 노트북·휴대폰의 배터리
+  스트리밍, 데이터센터의 대량 트랜스코딩이 이 효율 위에서 돕니다.
+- **지연**: 전용 파이프라인은 프레임이 들어오면 곧장 흘려보내, 실시간(라이브 방송·게임 스트리밍·
+  화상회의)에 필요한 **낮은 지연**을 냅니다. 셰이더 코어를 인코딩에 쓰면 렌더와 자원을 다투지만,
+  별도 블록이면 렌더와 **병렬**입니다.
+
+대신 트레이드오프가 있습니다. 면적·복잡도 제약 때문에 HW 인코더는 SW 인코더가 쓰는 정교한 탐색
+(많은 B-frame, rate-distortion optimization 등)을 일부 생략·단순화합니다. 그래서 **같은 비트레이트
+최고 화질**은 보통 잘 튜닝한 SW 인코더가, **전력·속도·지연**은 HW 인코더가 가져갑니다. 어느 쪽이
+나은지는 용도에 달렸습니다.
+
+## 인코드 파이프라인 개요
+
+인코더 안에서 프레임은 대략 이런 단계를 거칩니다.
+
+<EncodePipeline client:visible />
+
+가장 비싼 단계는 **움직임 추정(motion estimation)** 입니다. 비디오는 연속된 프레임이 대개 비슷하니,
+"이 블록이 이전 프레임의 어디서 왔나"를 찾아 차이만 저장하면 크게 줄어듭니다. 이 탐색이 인코딩
+비용의 큰 부분이라, 고정기능 블록은 바로 이걸 하드와이어로 가속합니다. 이어 변환·양자화로 화질을
+비트레이트와 맞바꾸고(여기서 손실 압축), 엔트로피 코딩(CABAC/CAVLC)이 남은 통계적 중복을 무손실로
+짜냅니다.
+
+## 코덱 — H.264 · HEVC · AV1
+
+비디오 엔진이 다루는 코덱은 세대에 따라 늘어났습니다. 큰 흐름만 보면(정확한 세대별 매트릭스는 SKU·
+드라이버·SDK 버전에 따라 다르니 NVIDIA Video Codec SDK 문서를 확인하세요):
+
+- **H.264 (AVC)**: 가장 보편적·호환성 최고. 오래된 NVENC도 지원.
+- **HEVC (H.265)**: Maxwell 세대부터 인코딩 지원, Pascal에서 10-bit(Main10)·8K로 확장. H.264보다
+  같은 화질에서 더 적은 비트.
+- **AV1**: 로열티-프리 최신 코덱. **디코딩**은 Ampere 세대 NVDEC부터, **인코딩**은 **Ada Lovelace**
+  (2022) 세대 NVENC부터 도입됐습니다. 디코드와 인코드 지원 시점이 다른 점에 유의하세요.
+
+Ada 세대는 GPU당 NVENC 엔진을 여럿 두기도 합니다(소비자 최대 2개, 프로/서버 최대 3개). 4K를 넘는
+해상도는 여러 인코더가 한 프레임을 나눠 처리하는 **split-frame encoding**으로 8K60까지 인코딩합니다.
+
+> 주의: NVENC "세대 번호"는 NVIDIA가 일관되게 매기지 않아 자료마다 카운트가 다릅니다. 이 책은 세대
+> 숫자 대신 아키텍처 이름(Kepler/Maxwell/Pascal/Turing/Ampere/Ada)으로 표기합니다.
+
+## 디스플레이 엔진 — 스캔아웃과 합성
+
+프레임을 그렸거나 디코드했다고 끝이 아닙니다. 그 픽셀을 **모니터로 내보내는** 또 다른 고정기능 블록이
+있습니다 — **디스플레이 엔진**(디스플레이 컨트롤러). 이 역시 셰이더 코어와 별개입니다.
+
+<DecodeDisplayPath client:visible />
+
+디스플레이 엔진은 VRAM의 프레임버퍼를 주기적으로 읽어(스캔아웃) 디스플레이 인터페이스로 송출하고,
+색공간 변환·스케일·회전을 처리합니다. 더 흥미로운 건 **여러 평면(plane)의 합성**입니다. 게임 화면,
+그 위의 UI 오버레이, 마우스 커서, 재생 중인 비디오 — 이런 레이어를 셰이더로 합치는 대신, 디스플레이
+엔진이 **고정기능으로** 겹쳐 출력할 수 있습니다(**Multiplane Overlay, MPO**). 합성에 셰이더를 안
+쓰니 GPU 파이프라인이 저전력 상태로 쉴 수 있어 전력이 절약됩니다.
+
+스캔아웃 이후 — VBlank·테어링·VSync·VRR로 이어지는 이야기는 [디스플레이 출력](./display-pipeline)
+챕터에서 자세히 다룹니다. 여기서는 "스캔아웃·합성도 셰이더가 아닌 전용 블록의 일"이라는 점이 핵심입니다.
+
+## 사용례 — 스트리밍과 녹화
+
+이 분리 구조가 실제로 빛나는 곳들입니다.
+
+- **게임 스트리밍·녹화**: 셰이더는 게임을 렌더하고, NVENC가 동시에 그 화면을 인코딩해 송출(또는
+  디스크에 녹화)합니다. 둘이 병렬이라 게임 성능 손실이 작습니다.
+- **클라우드 게이밍**: 서버 GPU가 렌더 → NVENC로 인코딩 → 네트워크 전송 → 클라이언트 NVDEC로 디코드.
+  지연이 생명이라 고정기능의 낮은 지연이 핵심입니다.
+- **화상회의·트랜스코딩**: 데이터센터가 대량의 영상을 NVENC/NVDEC로 트랜스코딩 — 전력당 처리량이
+  관건이라 ASIC 효율이 결정적입니다.
+
+## 정리
+
+- NVENC(인코드)·NVDEC(디코드)는 셰이더 코어와 **같은 칩의 별도 고정기능 블록**이라, 렌더와 인/디코드가
+  **동시에** 진행됩니다. 공유 VRAM으로 데이터를 주고받습니다.
+- 전용 블록을 두는 이유는 **전력**(수십 분의 1)과 **지연**(실시간). 대신 면적 제약으로 SW 인코더의
+  정교한 도구 일부를 생략 — 최고 화질은 SW, 효율·속도·지연은 HW.
+- 인코드 파이프라인의 핵심 비용은 **움직임 추정**. 코덱은 H.264 → HEVC → AV1로 확장(AV1 인코딩은 Ada부터).
+- **디스플레이 엔진**도 별도 블록 — 스캔아웃·색공간·**평면 합성(MPO)** 을 고정기능으로 처리.
+
+## 참고 자료
+
+- NVIDIA, *Video Codec SDK* (NVENC/NVDEC 코덱·세대): https://developer.nvidia.com/video-codec-sdk
+- NVIDIA, *Improving Video Quality and Performance with AV1 and Ada Lovelace* (AV1 인코딩 도입):
+  https://developer.nvidia.com/blog/improving-video-quality-and-performance-with-av1-and-nvidia-ada-lovelace-architecture/
+- NVIDIA, *8K60 with Split-Frame Encoding* (다중 NVENC, SFE):
+  https://developer.nvidia.com/blog/video-encoding-at-8k60-with-split-frame-encoding-and-nvidia-ada-lovelace-architecture/
+- Wikipedia, *NVENC* (세대별·코덱 매트릭스): https://en.wikipedia.org/wiki/NVENC
+- EmergentMind, *Hardware-Accelerated Video Encoders* / *NVENC* (고정기능 전력·지연 이점):
+  https://www.emergentmind.com/topics/hardware-accelerated-video-encoders
+- Linux Kernel, *Multiplane Overlay (MPO)* (디스플레이 엔진 평면 합성):
+  https://docs.kernel.org/gpu/amdgpu/display/mpo-overview.html
+- Wikipedia, *Direct Rendering Manager* (display engine as separate engine):
+  https://en.wikipedia.org/wiki/Direct_Rendering_Manager
