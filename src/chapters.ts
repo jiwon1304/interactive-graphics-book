@@ -269,42 +269,36 @@ export const chapters: Chapter[] = [
     title: 'Mesh/Amplification 셰이더와 GPU-driven 컬링',
     description: 'meshlet·amplification·GPU가 직접 LOD/컬링을 결정하는 파이프라인',
     section: 'GPU 하드웨어',
-    draft: true,
   },
   {
     slug: 'async-compute-hardware-queues',
     title: 'Async Compute와 하드웨어 큐',
     description: '여러 큐(graphics/compute/copy)와 작업 오버랩으로 유닛 점유 메우기',
     section: 'GPU 하드웨어',
-    draft: true,
   },
   {
     slug: 'gpu-power-dvfs-thermal',
     title: 'GPU 전력·클럭(DVFS)과 thermal throttling',
     description: 'power/thermal/전류 한계와 부스트 클럭·throttling',
     section: 'GPU 하드웨어',
-    draft: true,
   },
   {
     slug: 'video-engines-nvenc-nvdec',
     title: '비디오 엔진 — NVENC/NVDEC와 디스플레이 엔진',
     description: '고정기능 인/디코드 블록과 스캔아웃 합성',
     section: 'GPU 하드웨어',
-    draft: true,
   },
   {
     slug: 'gpu-virtualization-sriov-mig',
     title: 'GPU 가상화 — SR-IOV와 MIG',
     description: '한 GPU를 격리해 나눠 쓰기',
     section: 'GPU 하드웨어',
-    draft: true,
   },
   {
     slug: 'sampler-feedback-streaming',
     title: 'Sampler Feedback와 텍스처 스트리밍',
     description: '실제로 샘플된 타일만 기록해 mip/타일 스트리밍',
     section: 'GPU 하드웨어',
-    draft: true,
   },
   // ── CPU 아키텍처 (코어 안에서) ──
   {
@@ -318,56 +312,48 @@ export const chapters: Chapter[] = [
     title: '파이프라인과 해저드',
     description: 'fetch·decode·execute 겹치기·forwarding·stall·왜 분기가 비싼가',
     section: 'CPU 아키텍처',
-    draft: true,
   },
   {
     slug: 'branch-prediction',
     title: '분기 예측',
     description: '2-bit counter·BHT/BTB·gshare/TAGE·misprediction penalty·branchless',
     section: 'CPU 아키텍처',
-    draft: true,
   },
   {
     slug: 'superscalar-ooo',
     title: '슈퍼스칼라와 비순차 실행',
     description: 'register renaming·reservation station·ROB·speculation',
     section: 'CPU 아키텍처',
-    draft: true,
   },
   {
     slug: 'memory-consistency-mesi',
     title: '메모리 일관성과 캐시 코히런시(MESI)',
     description: 'MESI 상태기계·store buffer 재정렬·x86 TSO vs ARM weak·fence',
     section: 'CPU 아키텍처',
-    draft: true,
   },
   {
     slug: 'virtual-memory-tlb',
     title: '가상 메모리와 TLB',
     description: '페이지 테이블·다단계 walk·TLB·page fault·huge page·VIPT',
     section: 'CPU 아키텍처',
-    draft: true,
   },
   {
     slug: 'simd-vectorization',
     title: 'SIMD와 벡터화',
     description: 'AVX/NEON·AoS vs SoA·자동 벡터화·gather/scatter',
     section: 'CPU 아키텍처',
-    draft: true,
   },
   {
     slug: 'os-scheduling-context-switch',
     title: 'OS 스케줄링과 컨텍스트 전환',
     description: '타임슬라이스·선점·전환 비용·CFS/EEVDF·affinity·NUMA',
     section: 'CPU 아키텍처',
-    draft: true,
   },
   {
     slug: 'atomics-locks',
     title: '원자적 연산과 락',
     description: 'CAS·LL/SC·spinlock vs mutex·lock-free·cache-line 경합',
     section: 'CPU 아키텍처',
-    draft: true,
   },
 ];
 
@@ -516,6 +502,23 @@ const RELATED: Record<string, string[]> = {
   'gpu-memory-hierarchy': ['memory-bandwidth-roofline', 'warp-divergence-occupancy', 'texture-filtering-mipmapping'],
   'display-pipeline': ['command-queues', 'gpu-cpu-conversation', 'rendering-execution-model'],
   'ue-gpu-crash-debugging': ['dx-evolution-vulkan', 'command-queues', 'draw-call-journey'],
+  // GPU 하드웨어
+  'mesh-shaders-gpu-culling': ['graphics-pipeline-journey', 'gpu-execution-model', 'tile-based-rendering'],
+  'async-compute-hardware-queues': ['command-queues', 'gpu-scheduling-preemption', 'warp-divergence-occupancy'],
+  'gpu-power-dvfs-thermal': ['tile-based-rendering', 'memory-bandwidth-roofline'],
+  'video-engines-nvenc-nvdec': ['display-pipeline', 'texture-compression'],
+  'gpu-virtualization-sriov-mig': ['gpu-scheduling-preemption', 'cpu-gpu-transfer'],
+  'sampler-feedback-streaming': ['texture-filtering-mipmapping', 'cpu-gpu-transfer', 'texture-compression'],
+  // CPU 아키텍처
+  'cpu-memory-hierarchy': ['gpu-memory-hierarchy', 'memory-consistency-mesi', 'cpu-pipeline-hazards'],
+  'cpu-pipeline-hazards': ['branch-prediction', 'superscalar-ooo', 'gpu-execution-model'],
+  'branch-prediction': ['cpu-pipeline-hazards', 'superscalar-ooo', 'warp-divergence-occupancy'],
+  'superscalar-ooo': ['cpu-pipeline-hazards', 'branch-prediction', 'simd-vectorization'],
+  'memory-consistency-mesi': ['cpu-memory-hierarchy', 'atomics-locks', 'virtual-memory-tlb'],
+  'virtual-memory-tlb': ['cpu-memory-hierarchy', 'cpu-gpu-transfer'],
+  'simd-vectorization': ['gpu-execution-model', 'superscalar-ooo'],
+  'os-scheduling-context-switch': ['gpu-scheduling-preemption', 'atomics-locks'],
+  'atomics-locks': ['memory-consistency-mesi', 'os-scheduling-context-switch'],
 };
 
 /** slug → Chapter 빠른 조회(라이브 챕터만). */
