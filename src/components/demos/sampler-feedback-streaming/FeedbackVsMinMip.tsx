@@ -22,9 +22,7 @@ function draw(ctx: CanvasRenderingContext2D) {
   ctx.clearRect(0, 0, W, H);
   ctx.textBaseline = 'middle';
 
-  // desired mip(작을수록 고해상도). 화면 아래쪽(카메라에 가까움) = mip 0~1, 위쪽(멀리) = mip 3~4.
-  const desired = (r: number) => Math.round((r / (ROWS - 1)) * 3); // 0(아래/가까움 아님)..
-  // 실제로: r=0 위쪽(멀다)=mip3, r=ROWS-1 아래(가깝다)=mip0
+  // desired mip(작을수록 고해상도). r=0 위쪽(멀다)=mip3, r=ROWS-1 아래(가깝다)=mip0.
   const desiredMip = (r: number) => 3 - Math.round((r / (ROWS - 1)) * 3);
 
   const gridW = 150;

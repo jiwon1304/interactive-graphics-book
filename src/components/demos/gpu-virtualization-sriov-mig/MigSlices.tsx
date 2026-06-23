@@ -25,7 +25,6 @@ function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: numbe
 function draw(ctx: CanvasRenderingContext2D) {
   const text = cssVar('--text', '#222');
   const muted = cssVar('--muted', '#888');
-  const accent = cssVar('--accent', '#3b82f6');
   const border = cssVar('--border', '#ccc');
   ctx.clearRect(0, 0, W, H);
   ctx.textBaseline = 'middle';
