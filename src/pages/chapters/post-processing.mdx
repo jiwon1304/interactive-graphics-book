@@ -1,0 +1,165 @@
+---
+layout: ../../layouts/ChapterLayout.astro
+title: "포스트 프로세싱 — 톤매핑·블룸·노출"
+description: 1.0을 넘는 HDR 빛을 디스플레이의 [0,1]로 접는 톤매핑(Reinhard·ACES)과 노출, 밝은 부분을 추출·번지게 하는 블룸, 감마/sRGB, 그리고 이 패스들의 올바른 순서
+---
+
+import ToneMapCompare from '../../components/demos/post-processing/ToneMapCompare.tsx';
+import ToneCurveChart from '../../components/demos/post-processing/ToneCurveChart.tsx';
+import BloomDiagram from '../../components/demos/post-processing/BloomDiagram.tsx';
+
+# 포스트 프로세싱 — 톤매핑·블룸·노출
+
+## 1.0을 넘는 빛은 어디로 가는가
+
+물리 기반 렌더링은 선형 공간에서 빛을 더합니다. 태양은 하늘보다 수만 배 밝고, 자기발광 표면이나
+거울 반사 하이라이트는 표면 albedo의 몇 배가 나옵니다. 그래서 셰이딩 결과는 $[0,1]$에 갇히지 않은
+**HDR**(high dynamic range) 값입니다 — 휘도가 0.6일 수도, 8.0일 수도 있습니다.
+
+그런데 디스플레이는 채널당 $[0,1]$만 표시합니다. 8.0짜리 휘도를 그냥 출력하면? 1.0에서 잘려
+(clip) 1.0보다 밝은 모든 것이 똑같은 흰색으로 뭉칩니다. 디테일이 통째로 사라집니다.
+
+아래 장면의 구들은 왼쪽에서 오른쪽으로 휘도가 0.6에서 8.0으로 커집니다. 톤매핑을 **None**에 두면
+밝은 구 셋이 구분 없는 흰 덩어리가 됩니다. **Reinhard**와 **ACES**로 바꿔 보세요 — 같은 HDR 입력이
+전혀 다르게 디스플레이에 담깁니다.
+
+<ToneMapCompare client:visible />
+
+이 "HDR을 디스플레이의 $[0,1]$로 접는" 변환이 **톤매핑**입니다. 이번 챕터는 톤매핑 곡선들을 식으로
+유도하고, 노출이 그 곡선의 어디를 쓰는지, 블룸이 밝은 부분을 어떻게 번지게 하는지, 그리고 이 패스들이
+선형·감마 공간에서 어떤 순서로 와야 하는지를 봅니다.
+
+## 톤매핑 — HDR → LDR
+
+### Reinhard: 가장 단순한 압축
+
+$[0,\infty)$를 $[0,1)$로 단조롭게 보내는 가장 간단한 식은 Reinhard 연산자입니다.
+
+$$
+L_{out} = \frac{L}{1+L}
+$$
+
+성질을 확인합시다. $L=0$이면 0, $L=1$이면 $0.5$, $L\to\infty$이면 1로 수렴하되 절대 1에 닿지
+않습니다. 도함수 $\frac{d}{dL}\frac{L}{1+L} = \frac{1}{(1+L)^2}$는 항상 양수이므로 단조 증가 —
+밝기 순서가 보존됩니다. 어두운 영역($L\ll1$)에서는 $\frac{L}{1+L}\approx L$로 거의 선형이라
+그림자 디테일을 잘 살리고, 밝은 영역일수록 점점 더 세게 눌러 무한대를 1 아래로 가둡니다.
+
+단점은 *절대 흰색에 도달하지 못한다*는 것입니다. 가장 밝은 부분도 1 미만이라 전체가 약간 바래
+보입니다. 이를 고치려고 **white point** $L_{white}$를 도입한 확장형이 있습니다.
+
+$$
+L_{out} = \frac{L\left(1 + \dfrac{L}{L_{white}^2}\right)}{1+L}
+$$
+
+$L = L_{white}$를 넣으면 분자가 $L_{white}(1 + 1/L_{white}) = L_{white}+1$이 되어
+$L_{out} = \frac{L_{white}+1}{L_{white}+1}\cdot\frac{?}{}$... 정리하면 $L=L_{white}$에서 정확히
+$L_{out}=1$이 됩니다. 즉 "이 휘도부터는 흰색"이라고 지정한 값에서 곡선이 1에 닿게 만든 것입니다.
+$L_{white}\to\infty$면 단순 Reinhard로 돌아갑니다.
+
+### ACES: toe와 shoulder를 가진 S-curve
+
+Reinhard는 밝은 쪽 대비를 너무 빨리 잃습니다. 영화 필름의 응답을 흉내 낸 **filmic** 곡선들은 S자
+형태로 이를 개선합니다: 어두운 끝에 완만한 **toe**(발), 밝은 끝에 완만한 **shoulder**(어깨), 그
+사이에 가파른 선형 구간. 업계 표준인 ACES(Academy Color Encoding System)의 톤 곡선을 한 줄 유리식으로
+맞춘 Narkowicz의 근사가 널리 쓰입니다.
+
+$$
+\text{ACES}(L) = \operatorname{clamp}\!\left(\frac{L(2.51\,L + 0.03)}{L(2.43\,L + 0.59) + 0.14},\;0,\;1\right)
+$$
+
+분자·분모 모두 2차식이라 작은 $L$에서는 분자의 $0.03L$ 항이 toe를 만들고, 큰 $L$에서는 분자·분모의
+$L^2$ 계수 비 $2.51/2.43\approx1.03$로 수렴하며 clamp가 shoulder를 닫습니다. 결과적으로 어두운
+곳은 Reinhard처럼 거의 그대로 두면서 밝은 곳만 천천히 접어 하이라이트 대비가 더 살아 있습니다.
+three.js의 `ACESFilmicToneMapping`이 바로 이 계열입니다(역사적으로는 Hejl/Hable의 Uncharted 2
+filmic 곡선이 같은 toe/shoulder 아이디어의 선구입니다).
+
+세 곡선을 직접 겹쳐 봅시다. 입력 휘도(가로축, HDR 영역까지)가 출력 $[0,1]$로 어떻게 매핑되는지:
+
+<ToneCurveChart client:visible />
+
+None은 1에서 수평으로 잘리고(그 위는 전부 흰색), Reinhard는 어떤 값도 1에 닿지 못하며, ACES는
+S자로 밝은 쪽을 접습니다. 이 차이가 앞 3D 위젯에서 본 그대로입니다.
+
+### 노출 — 곡선의 어디를 쓸지 고른다
+
+**노출**(exposure)은 톤매핑 *직전에* 선형 HDR 색에 곱하는 배율 $E$입니다.
+
+$$
+L_{out} = f\big(E \cdot L\big)
+$$
+
+여기서 $f$는 위의 톤매핑 함수입니다. $E$를 키우면 같은 장면 휘도가 곡선의 더 오른쪽(더 쉽게 포화되는
+구간)에 놓여 전체가 밝아지고, 줄이면 왼쪽으로 당겨져 어두워집니다. 카메라의 조리개/셔터에 해당하는
+손잡이로, 같은 HDR 장면을 밝게도 어둡게도 노출할 수 있습니다. 위 차트의 노출 슬라이더는 입력축에
+곱하는 $E$이고, 3D 위젯의 노출 슬라이더는 three의 `toneMappingExposure`(톤매핑 전에 곱해지는 값)와
+정확히 같습니다.
+
+## 블룸 — 밝은 부분이 번진다
+
+아주 밝은 빛은 실제 렌즈·눈에서 주변으로 번집니다(산란·회절). 이를 흉내 내는 후처리가 **블룸**입니다.
+세 단계로 나뉩니다.
+
+1. **bright-pass**: 휘도가 임계(threshold)를 넘는 부분만 추출한다. $\max(0,\,L - \text{threshold})$.
+2. **blur**: 추출한 밝은 부분을 가우시안으로 번지게 한다(보통 여러 해상도로 다운샘플해 넓게 퍼뜨림).
+3. **composite**: 원본에 번진 결과를 세기(intensity)만큼 곱해 **가산**한다.
+
+아래 1D 도식이 이 과정을 그대로 보여줍니다. 입력 신호에 약한 봉우리와 강한 봉우리가 있는데, 임계를
+내리면 약한 봉우리도 추출되기 시작하고, 세기를 올리면 합성에서 더 강하게 번집니다.
+
+<BloomDiagram client:visible />
+
+여기서 순서가 중요합니다. bright-pass는 **톤매핑 전, 선형 HDR**에서 해야 합니다. 톤매핑은 1.0을 넘는
+값을 이미 1 근처로 눌러 버리므로, 톤매핑 *후*에 임계를 걸면 무엇이 "원래 밝았는지" 구별할 수 없습니다.
+밝은 부분을 HDR에서 추출·번지게 한 뒤, 원본에 더하고, *그 합*을 톤매핑에 넣어야 번진 빛까지 곡선에
+자연스럽게 담깁니다. (이 데모는 외부 postprocessing 패키지 없이 개념을 1D로 보여주는 도식입니다 —
+실제 GPU 블룸은 다운샘플 체인 + 분리형 가우시안으로 구현합니다.)
+
+## 감마 / sRGB와 전체 순서
+
+마지막 한 조각은 **감마/sRGB**입니다. 지금까지의 모든 연산은 빛이 물리적으로 더해지는 **선형 공간**에서
+했습니다. 하지만 디스플레이와 이미지 포맷은 sRGB로 *인코딩된* 값을 기대합니다. 선형 $L$을 화면용으로
+인코딩하는 sRGB 전달함수는 근사적으로 $L^{1/2.2}$, 정확히는 작은 구간의 선형부 + $1.055\,L^{1/2.4}-0.055$의
+조각식입니다. 이 인코딩은 **톤매핑 다음, 출력 직전**에 와야 합니다(자세한 감마/디스플레이 인코딩은
+[디스플레이 파이프라인](./display-pipeline) 챕터에서 다룹니다).
+
+three.js는 기본 `outputColorSpace`가 sRGB라 이 변환을 출력 단계에서 자동으로 해 줍니다. 즉 우리가 할
+일은 톤매핑까지를 선형에서 정확히 하는 것뿐입니다.
+
+전체 후처리 순서를 정리하면:
+
+$$
+\underbrace{\text{선형 HDR}}_{\text{셰이딩 결과}}
+\;\xrightarrow{\;\times E\;}\;
+\text{노출}
+\;\xrightarrow{}\;
+\text{(블룸: bright-pass}\to\text{blur}\to\text{add)}
+\;\xrightarrow{f(\cdot)}\;
+\text{톤매핑}
+\;\xrightarrow{L^{1/2.2}}\;
+\text{sRGB 인코딩}
+$$
+
+색 보정(color grading)은 보통 톤매핑 전후로 LUT를 적용해 화이트밸런스·채도·콘트라스트를 다듬는
+단계로, 같은 파이프라인의 후반에 끼웁니다 — 원리는 "선형에서 빛을 다 더한 뒤, 마지막에 보기 좋게
+디스플레이로 매핑"이라는 같은 틀 안에 있습니다.
+
+## 더 나아가기
+
+- Reinhard를 RGB 채널마다 따로 적용하면 채널별로 다르게 눌려 hue가 틀어집니다. 휘도
+  $L = 0.2126R + 0.7152G + 0.0722B$만 톤매핑하고 RGB는 비례로 보존하면 색이 더 안정적입니다.
+- 더 최근의 톤매퍼로 three에는 `AgXToneMapping`, `NeutralToneMapping`이 있습니다(채도 처리·중립성
+  개선). 이 챕터의 None/Reinhard/ACES 비교에서 출발해 같은 장면으로 비교해 볼 수 있습니다.
+- 블룸의 품질은 다운샘플 체인의 단계 수와 커널에 달려 있고(예: Call of Duty의 dual-filter 블룸),
+  threshold를 hard가 아닌 soft knee로 두면 임계 근처 깜빡임을 줄일 수 있습니다.
+
+이 모든 패스는 셰이딩이 끝난 프레임 버퍼 위에서 도는 풀스크린 패스이며, 그 실행 위치는
+[렌더링 실행 모델](./rendering-execution-model)의 후처리 단계입니다.
+
+## 참고 자료
+
+- Reinhard 외, *Photographic Tone Reproduction for Digital Images* (SIGGRAPH 2002).
+- Krzysztof Narkowicz, *ACES Filmic Tone Mapping Curve* (2016) — 한 줄 유리식 fit.
+- John Hable, *Filmic Tonemapping Operators / Uncharted 2: HDR Lighting* (GDC 2010).
+- *Tone Mapping* (64.github.io/tonemapping) — 공식 정리.
+- three.js docs — Renderer 톤매핑 상수, `toneMappingExposure`, `outputColorSpace`.
+- 출처·검증 메모: `docs/sources/post-processing-sources.md`.

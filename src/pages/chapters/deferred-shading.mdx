@@ -1,0 +1,193 @@
+---
+layout: ../../layouts/ChapterLayout.astro
+title: "디퍼드 셰이딩과 G-버퍼"
+description: 포워드의 light × object 비용을 G-buffer로 끊고, 라이팅을 화면공간으로 미루는 법 — 그리고 그 대가
+---
+
+import GBufferChannels from '../../components/demos/deferred-shading/GBufferChannels.tsx';
+import CostModel from '../../components/demos/deferred-shading/CostModel.tsx';
+import PipelineDiagram from '../../components/demos/deferred-shading/PipelineDiagram.tsx';
+import ManyLights from '../../components/demos/deferred-shading/ManyLights.tsx';
+
+# 디퍼드 셰이딩과 G-버퍼
+
+광원을 100개 켜고 싶다고 해 봅시다. 도시의 밤거리, 네온사인, 창문마다 새어 나오는 빛.
+포워드 렌더링에서 이걸 순진하게 그리면, 화면의 모든 픽셀이 100개 광원을 전부 순회하며
+조명을 계산합니다. 게다가 그 픽셀 중 상당수는 나중에 더 가까운 표면에 덮여 버려지죠 —
+버려질 픽셀에까지 100번씩 조명을 계산한 겁니다.
+
+문제의 뿌리는 포워드가 조명을 **오브젝트를 그리는 순간에, 그 자리에서** 계산한다는 데
+있습니다. 그래서 비용이 대략 (그리는 픽셀 수) × (광원 수)로 곱해집니다. 오브젝트가 겹쳐
+overdraw가 일어나면 그 곱은 더 부풀죠.
+
+디퍼드 셰이딩의 발상은 단순합니다. **조명을 나중으로 미루자(defer).** 지오메트리는 한 번만
+훑어서 "각 화면 픽셀이 어떤 표면인지"를 버퍼에 적어 두고, 조명은 그 버퍼 위에서 화면공간으로
+딱 한 번 푼다. 먼저 그 버퍼가 무엇을 담는지 눈으로 봅시다.
+
+<GBufferChannels client:visible />
+
+화면에 보이는 표면의 색·법선·깊이가 따로따로 저장돼 있죠. 이 버퍼 묶음이 **G-buffer(geometry
+buffer)** 입니다. 이 챕터는 이 버퍼가 어떻게 비용 구조를 바꾸는지, 그리고 무엇을 대가로
+치르는지를 끝까지 따라갑니다. (GPU가 픽셀을 셰이딩하는 실행 단위 자체가 궁금하면
+[렌더링에서의 GPU 실행](./rendering-execution-model)을, 이 버퍼들이 잡아먹는 대역폭이 왜
+문제인지는 [메모리 대역폭과 Roofline](./memory-bandwidth-roofline)을 참고하세요.)
+
+## 1. 포워드의 비용 구조 — 왜 곱인가
+
+포워드 렌더링의 픽셀 셰이더는 한 프래그먼트를 그릴 때 그 자리에서 조명을 끝냅니다. 광원이
+$N$개라면 프래그먼트 하나당 $N$번의 조명 계산이 들어가죠. 화면에 실제로 셰이딩되는
+프래그먼트 수를 $P$라 하면, 포워드의 셰이딩 비용은 대략
+
+$$
+C_\text{forward} \approx O \cdot P_\text{visible} \cdot N
+$$
+
+입니다. 여기서 $O$는 **overdraw 배수** — 한 화면 픽셀 위에 평균 몇 겹의 프래그먼트가
+셰이딩되는가입니다. 정렬되지 않은 불투명 장면에서는 가까운 표면이 먼 표면을 덮으므로, 먼저
+그려진(곧 덮일) 프래그먼트도 이미 조명을 다 계산한 뒤입니다. 그 낭비가 $O$로 곱해집니다.
+
+핵심은 $N$이 곱으로 들어간다는 점입니다. 광원을 두 배로 늘리면 셰이딩 비용도 거의 두 배.
+광원 수가 비용에 직접 곱해지는 구조라, many-light 장면에서 포워드는 빠르게 무너집니다.
+
+## 2. 디퍼드의 발상 — 조명을 화면공간으로 분리
+
+디퍼드는 이 곱을 **합으로** 바꿉니다. 렌더링을 두 패스로 쪼개죠.
+
+<PipelineDiagram client:visible />
+
+**1차 패스(geometry pass):** 모든 오브젝트를 한 번 래스터화하되, 조명은 한 톨도 계산하지
+않습니다. 대신 각 화면 픽셀에 대해 조명에 필요한 **light-independent한 값**만 G-buffer에
+적습니다 — 표면색(albedo), 표면 법선(normal), 깊이(depth), 거칠기·금속성 같은 재질 파라미터
+(material). 이게 가능한 건, 조명 방정식의 입력 중 광원에 무관한 부분을 미리 떼어낼 수 있기
+때문입니다.
+
+**2차 패스(lighting pass):** 화면 전체를 덮는 사각형 하나를 그립니다. 이 패스의 픽셀 셰이더는
+각 화면 픽셀에서 G-buffer를 읽어 표면 정보를 복원하고, 거기에 광원 $N$개를 더합니다. 여기서
+중요한 건 이 패스가 도는 픽셀이 정확히 **화면에 보이는 픽셀**뿐이라는 점입니다 — overdraw가
+없습니다. 가려진 표면은 애초에 G-buffer에 안 적혔으니까요.
+
+그래서 디퍼드의 비용은
+
+$$
+C_\text{deferred} \approx \underbrace{O \cdot P_\text{visible} \cdot c_g}_{\text{1차: G-buffer 기록}} \;+\; \underbrace{P_\text{visible} \cdot N}_{\text{2차: 라이팅}}
+$$
+
+가 됩니다. 1차 패스에도 overdraw $O$가 남지만, 거기서 하는 일은 조명이 아니라 *값 기록*뿐이라
+픽셀당 비용 $c_g$가 작습니다. 그리고 결정적으로 $N$이 더 이상 $O$와 곱해지지 않고, 보이는
+픽셀에 대해 **한 번씩만** 더해집니다. $N$이 커질 때 늘어나는 건 둘째 항뿐이고, 그 둘째 항엔
+overdraw가 없습니다.
+
+두 식을 나란히 두고 광원 수를 움직여 보세요.
+
+<CostModel client:visible />
+
+광원이 적을 땐 디퍼드의 1차 패스 오버헤드 때문에 오히려 포워드가 가벼울 수 있습니다. 하지만
+$N$이 커질수록 포워드의 기울기($O\cdot P$)가 디퍼드의 기울기($P$)보다 $O$배 가팔라서 격차가
+벌어집니다. 디퍼드가 빛나는 지점은 정확히 **광원이 많은** 장면입니다.
+
+> **이 곡선은 순진한 상한입니다.** 실제 포워드 엔진은 가만히 당하지 않습니다. 광원마다 영향
+> 범위(light volume)를 두고 오브젝트별로 닿는 광원만 골라내거나, depth prepass로 overdraw를
+> 없앤 뒤 셰이딩합니다. 그래서 현실의 포워드는 이 상한보다 훨씬 쌉니다. 위 그래프는 "아무
+> 최적화도 안 했을 때 비용이 어떻게 곱으로 터지는가"를 보여주는 교육용 모델로 읽으세요.
+
+## 3. 라이팅을 픽셀 단위로 — 직접 쌓아 보기
+
+디퍼드의 2차 패스에서 각 광원은 자기가 닿는 화면 영역의 픽셀만 셰이딩하면 됩니다. 점광원은
+영향 반경이 유한하니, 화면에서 그 광원의 영향권(빛 볼륨을 화면에 투영한 영역)에 드는 픽셀에만
+기여를 더하면 되죠. 광원을 하나씩 더하며 색이 화면공간에서 누적되는 걸 봅시다.
+
+<ManyLights client:visible />
+
+광원을 24개까지 올려도 오브젝트는 여전히 한 번씩만 그려진다는 점에 주목하세요. 디퍼드의
+세계관에서 "광원을 추가한다"는 것은 "지오메트리를 다시 그린다"가 아니라 "화면공간에서 기여를
+한 겹 더 더한다"입니다. (이 위젯은 시각화를 위해 three.js 표준 포워드 라이팅으로 그립니다 —
+하지만 만들어 내려는 *결과*는 디퍼드가 저렴하게 도달하고 싶어 하는 바로 그 화면입니다.)
+
+### 조명 방정식을 어떻게 쪼갰나
+
+디퍼드가 성립하려면 조명 계산이 "표면에만 의존하는 부분"과 "광원에 의존하는 부분"으로
+분리돼야 합니다. 한 픽셀의 최종 색은 모든 광원의 기여를 더한 것이고, 각 기여는 표면 속성과
+그 광원의 방향·색·세기의 함수입니다.
+
+$$
+L_o(\mathbf{p}) = \sum_{i=1}^{N} f\big(\underbrace{\mathbf{n},\, \text{albedo},\, \text{material}}_{\text{G-buffer에 저장}},\ \underbrace{\mathbf{l}_i,\, c_i}_{\text{광원 }i}\big)
+$$
+
+표면 항($\mathbf{n}$, albedo, 재질)은 위치 $\mathbf{p}$ 하나당 고정이므로, 그걸 G-buffer에
+한 번 적어 두면 2차 패스에서 픽셀마다 읽어 와 광원 $i$의 항만 갈아 끼우며 합을 누적할 수
+있습니다. $\mathbf{p}$는 깊이와 화면 좌표·역투영으로 복원하면 되니 따로 위치를 저장하지
+않아도 됩니다(혹은 position 채널을 두기도 합니다 — 대역폭과 정밀도의 트레이드오프).
+
+물리 기반 조명 모델의 $f$가 구체적으로 어떻게 생겼는지는 [마이크로패싯 BRDF와
+PBR](./microfacet-brdf)에서 다룹니다. 여기서 중요한 건 그 $f$의 입력이 *표면 부분*과 *광원
+부분*으로 깔끔히 갈린다는 사실뿐입니다.
+
+## 4. 대가 — 공짜 점심은 없다
+
+디퍼드가 만능이라면 모두가 썼겠죠. 비용 구조를 바꾼 대신 치르는 대가가 있습니다.
+
+**투명·블렌딩이 깨진다.** G-buffer는 한 화면 픽셀당 표면을 *하나*만 저장합니다. 유리창 너머로
+뒤 물체가 비치는 반투명은 한 픽셀에 여러 표면이 겹쳐 있어야 하는데, G-buffer엔 그럴 자리가
+없습니다. 그래서 거의 모든 디퍼드 엔진은 불투명은 디퍼드로, **반투명만 따로 포워드 패스로**
+나중에 그립니다. 디퍼드는 순수 디퍼드가 아니라 하이브리드인 경우가 대부분입니다.
+
+**MSAA가 어렵다.** 하드웨어 MSAA는 기하 에지에서 픽셀당 여러 coverage 샘플을 둡니다. 디퍼드에
+이걸 적용하려면 G-buffer 전체를 멀티샘플 텍스처로 만들어야 하고(대역폭이 샘플 수만큼 폭증),
+2차 패스에서 에지 픽셀을 per-sample로 라이팅해야 비용이 맞습니다. 구현이 까다롭고 비싸서,
+디퍼드 엔진은 보통 MSAA 대신 **TAA**로 안티에일리어싱을 합니다. 왜 디퍼드와 MSAA가 그렇게
+안 맞는지, TAA는 어떻게 그 자리를 메우는지는 [안티에일리어싱 — MSAA·FXAA·TAA](./antialiasing)에서
+이어집니다.
+
+**대역폭을 먹는다.** G-buffer는 화면 해상도 × 여러 채널(보통 3~5개 render target)입니다.
+1080p HDR에서 채널마다 픽셀당 수 바이트씩, 화면 전체를 매 프레임 기록하고 또 2차 패스에서
+읽어야 합니다. 이 읽기·쓰기 대역폭이 디퍼드의 숨은 비용입니다 — 특히 화면 메모리 대역폭이
+귀한 모바일에서 치명적이라, 모바일 GPU의 [타일 기반 렌더링](./tile-based-rendering)과 디퍼드는
+궁합이 나쁩니다. 대역폭이 왜 현대 GPU의 진짜 병목인지는 [메모리 대역폭과
+Roofline](./memory-bandwidth-roofline)을 보세요.
+
+**머티리얼 다양성이 제한된다.** G-buffer 포맷은 고정된 채널 묶음입니다. 모든 표면이 같은
+"칸"에 자기 속성을 욱여넣어야 하니, 표면마다 전혀 다른 셰이딩 모델(피부의 서브서피스, 머리카락,
+천 등)을 자유롭게 쓰기 어렵습니다. 셰이딩 모델 종류를 material 채널에 ID로 적어 분기하는
+식으로 우회하지만, 포워드만큼 자유롭진 않습니다.
+
+## 5. 그 뒤 — tiled · clustered · forward+
+
+디퍼드의 핵심 통찰은 "라이팅을 화면공간으로 분리"였습니다. 여기서 한 발 더 나가면, 화면을
+타일(예: 16×16)로 나눠 **각 타일에 영향을 주는 광원 목록**을 미리 추려 둘 수 있습니다. 그러면
+2차 패스에서 픽셀은 전체 광원이 아니라 자기 타일의 광원만 순회하면 되죠. 이게 **tiled
+deferred**입니다. 여기에 깊이 방향까지 쪼개 3D 셀(cluster)로 광원을 빈에 담으면 광원-픽셀
+대응이 더 정확해지는 **clustered shading**이 됩니다.
+
+흥미로운 건, 이 light-culling 아이디어는 디퍼드 전용이 아니라는 점입니다. 같은 타일별 광원
+목록을 **포워드에** 붙이면, 디퍼드의 단점(투명·MSAA)을 피하면서 many-light를 감당하는
+**Forward+(tiled forward)** 가 됩니다. 구현·하드웨어에 따라 다르지만, 광원 수가 아주 많지
+않은 구간에서는 Forward+가 tiled deferred보다 빠른 경우도 보고됩니다 — 그래서 현대 엔진은
+"순수 디퍼드 vs 순수 포워드"가 아니라 이 스펙트럼 어딘가의 하이브리드를 택합니다.
+
+## 더 나아가기
+
+디퍼드 셰이딩은 "조명을 오브젝트에서 떼어 화면공간으로 미룬다"는 한 문장으로 요약됩니다.
+그 한 문장이 비용을 곱에서 합으로 바꾸고, many-light를 가능하게 하지만, 투명·MSAA·대역폭·
+머티리얼 다양성이라는 대가를 부릅니다. 그 대가를 어떻게 다루느냐가 현대 렌더러 설계의
+큰 축입니다.
+
+다음으로 읽을 거리:
+
+- [안티에일리어싱 — MSAA·FXAA·TAA](./antialiasing): 디퍼드가 MSAA를 못 써서 TAA로 가는
+  이야기를 본격적으로.
+- [메모리 대역폭과 Roofline](./memory-bandwidth-roofline): G-buffer가 먹는 대역폭이 왜
+  병목인지.
+- [타일 기반 렌더링](./tile-based-rendering): 모바일 GPU에서 디퍼드/대역폭이 왜 더 까다로운지.
+- [렌더링에서의 GPU 실행](./rendering-execution-model): 2차 패스의 fullscreen quad가 픽셀
+  쿼드로 어떻게 셰이딩되는지.
+
+## 참고 자료
+
+- LearnOpenGL — *Deferred Shading* (geometry pass · MRT · lighting pass · many-light).
+- *Deferred shading* — Wikipedia (forward vs deferred 비용, overdraw, 한계).
+- NVIDIA GPU Gems 2, Ch.9 — *Deferred Shading in S.T.A.L.K.E.R.* (실제 G-buffer 레이아웃).
+- E. Persson, *Practical Clustered Shading*; A. Ortiz, *A Primer on Efficient Rendering &
+  Clustered Shading*; *Tiled Deferred Shading* (Leif Node) — tiled/clustered/forward+.
+- MJP, *A Quick Overview of MSAA*; NVIDIA, *Antialiased Deferred Rendering* — 디퍼드+MSAA의 어려움.
+
+(검증된 출처 ↔ 본문 사실 대응은 `docs/sources/deferred-shading-sources.md` 참조.)

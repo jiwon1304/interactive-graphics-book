@@ -1,0 +1,149 @@
+---
+layout: ../../layouts/ChapterLayout.astro
+title: "그림자 매핑"
+description: 광원 시점 depth map·비교 판정·shadow acne와 bias·peter-panning·PCF soft shadow·CSM 개요
+---
+
+import DepthMapView from '../../components/demos/shadow-mapping/DepthMapView.tsx';
+import BiasSlider from '../../components/demos/shadow-mapping/BiasSlider.tsx';
+import AcneGeometry from '../../components/demos/shadow-mapping/AcneGeometry.tsx';
+import PcfToggle from '../../components/demos/shadow-mapping/PcfToggle.tsx';
+import CascadeSplit from '../../components/demos/shadow-mapping/CascadeSplit.tsx';
+
+# 그림자 매핑
+
+[조명 모델](./lighting)에서 우리는 한 가지를 슬쩍 가정했다. $\mathbf{N}\cdot\mathbf{L}>0$인 면은
+모두 빛을 받는다고. 하지만 광원과 표면 사이에 다른 물체가 끼면, 그 면은 빛을 향하고 있어도
+**가려져서** 어두워야 한다. 그것이 그림자다.
+
+그림자를 정확히 구하려면 "이 표면 점에서 광원까지 가는 길에 다른 물체가 있는가?"를 물어야 한다.
+점마다 광원으로 광선을 쏴 가림을 검사할 수도 있지만(ray tracing), 래스터화 파이프라인에서 픽셀마다
+그러기엔 비싸다. **그림자 매핑(shadow mapping)**은 이 질문을, GPU가 잘하는 **깊이 렌더링** 한 번으로
+바꾸는 영리한 트릭이다. 거의 모든 실시간 엔진의 그림자가 여기서 출발한다.
+
+## 핵심 아이디어 — 광원이 본 것은 빛을 받는다
+
+광원의 자리에서 장면을 보면, 광원이 **직접 볼 수 있는** 표면이 곧 빛을 받는 표면이다. 광원에서
+어떤 방향을 봤을 때 가장 먼저 닿는 표면만 밝고, 그 뒤에 숨은 것은 전부 그림자다.
+
+그래서 두 번 렌더한다.
+
+1. **깊이 패스(1패스):** 광원 시점으로 장면을 렌더하되 색은 버리고, 각 방향에서 **가장 가까운 표면까지의
+   거리(깊이)**만 텍스처에 저장한다. 이 텍스처가 **depth map**(shadow map)이다.
+2. **셰이딩 패스(2패스):** 카메라 시점으로 장면을 그릴 때, 각 표면 점을 광원의 좌표계로 변환해
+   "광원에서 나까지 거리"($d_{\text{current}}$)를 구한다. 같은 방향에 대해 depth map에 적힌 최단
+   거리($d_{\text{map}}$)와 비교해서:
+
+$$
+d_{\text{current}} > d_{\text{map}} + \varepsilon \;\Rightarrow\; \text{그림자}
+$$
+
+내가 광원이 본 최단 표면보다 **더 멀리** 있다면, 나와 광원 사이에 그 최단 표면이 끼어 있다는 뜻이다
+→ 가려졌다. 아래 단면도에서 이 비교가 어떻게 판정으로 이어지는지 직접 만져 보라.
+
+<DepthMapView client:visible />
+
+directional light(평행광)는 깊이 패스를 **orthographic** 카메라로 렌더하고, point/spot light는
+perspective 카메라로 렌더한다(point는 사방을 봐야 하므로 보통 큐브맵 6면). 핵심 비교는 동일하다.
+
+## 깊이 비교의 함정 — shadow acne
+
+위 식의 작은 항 $\varepsilon$(bias)을 무시하고 $d_{\text{current}} > d_{\text{map}}$만 쓰면, 가려지지
+않은 평평한 바닥조차 줄무늬 그림자로 뒤덮인다. 이 줄무늬가 **shadow acne**다. 아래 3D 장면에서
+bias를 0 근처로 내리면 바로 드러난다.
+
+<BiasSlider client:visible />
+
+왜 멀쩡한 표면이 자기 자신을 그림자로 판정할까? 원인은 depth map의 **유한 해상도**다. depth map의
+한 texel은 표면의 한 작은 구간 전체를, 그 구간 중앙의 깊이값 **하나**로 양자화해 저장한다. 표면이
+광원에 대해 비스듬하면, 그 구간 안에서 실제 표면은 저장된 값보다 앞에도 뒤에도 걸친다. 저장값보다
+**뒤(더 먼)** 쪽에 있는 부분은 $d_{\text{current}} > d_{\text{map}}$을 만족해 버려, 가린 것이 없는데도
+스스로를 그림자로 판정한다.
+
+<AcneGeometry client:visible />
+
+표면이 비스듬할수록(grazing angle) 한 texel이 덮는 깊이 범위가 넓어져 acne가 심해진다. 그래서 좋은
+bias는 표면 기울기에 따라 달라야 한다. LearnOpenGL이 쓰는 흔한 형태는
+
+$$
+\varepsilon = \max\!\big(\,b_{\max}\,(1 - \mathbf{N}\cdot\mathbf{L}),\; b_{\min}\big)
+$$
+
+광원을 정면으로 받는 면($\mathbf{N}\cdot\mathbf{L}\approx 1$)엔 작은 bias를, 스치는 면엔 큰 bias를
+준다(**slope-scaled bias**). GPU에는 삼각형 기울기로 bias를 자동 조절하는 하드웨어 기능도 있다.
+
+## bias의 대가 — peter-panning
+
+bias는 공짜가 아니다. 비교선을 들어올려 acne를 지우지만, 너무 많이 올리면 **진짜** 가림 물체의
+그림자까지 들떠서 물체가 바닥에서 떨어져 떠 보인다. 이 현상을 **peter-panning**이라 한다 — 위
+`BiasSlider`에서 bias를 크게 올리면 물체 발밑의 접지 그림자가 벌어지는 것을 볼 수 있다.
+
+acne와 peter-panning은 같은 손잡이의 양 끝이다. 절대적인 정답값은 없고, 씬·해상도·near/far에 맞춰
+손으로 둘 사이의 좁은 구간을 찾는다. 보조 기법으로는 깊이 패스에서 **앞면을 컬링**(뒷면만 그려서
+self-shadow 거리를 벌림)하거나, 비교점을 표면 **법선 방향으로 살짝 밀어내는** normal offset bias가
+있다. three.js는 깊이 오프셋 `shadow.bias`와 법선 오프셋 `shadow.normalBias`를 둘 다 노출한다.
+
+## 계단을 지우기 — PCF soft shadow
+
+depth map과의 비교는 픽셀당 "그림자다/아니다"의 이진 결과를 낸다. 그래서 그림자 경계가 depth map
+texel 크기로 **계단(aliasing)** 진다. 경계 한 점만 보지 말고, **경계 주변 여러 texel을 비교해 그림자에
+든 표본의 비율**을 0~1로 평균하면 경계가 부드러워진다. 이것이 **PCF(Percentage-Closer Filtering)**다.
+
+$$
+\text{shadow}(x) = \frac{1}{n}\sum_{i=1}^{n} \big[\, d_{\text{current}} > d_{\text{map}}(x + \Delta_i)\,\big]
+$$
+
+$\Delta_i$는 texel 주변 작은 오프셋들이고, $[\cdot]$는 비교가 참이면 1, 거짓이면 0이다. 표본 $n$을
+늘릴수록 경계가 더 부드러워지지만 비용이 는다. three.js의 `PCFShadowMap`이 이를 내장한다. 아래에서
+hard와 PCF soft를, 그리고 depth map 해상도를 바꿔 비교해 보라.
+
+<PcfToggle client:visible />
+
+해상도(`mapSize`)를 256까지 낮추면 PCF로도 그림자가 거칠고 뭉개진다 — PCF는 계단을 **흐리게** 할 뿐,
+depth map에 애초에 담기지 않은 디테일을 만들어내진 못한다. 해상도를 올리면 선명해지지만 메모리와
+대역폭, 깊이 패스 비용이 모두 커진다. 모바일 GPU에서는 이 비용이 특히 부담이다
+([Tile-Based Rendering](./tile-based-rendering)에서 다루는 이유로).
+
+## 넓은 씬의 문제 — cascaded shadow maps
+
+지금까지의 단일 depth map은 좁은 장면엔 충분하지만, 햇빛이 비추는 넓은 야외처럼 카메라 frustum이
+멀리까지 뻗는 씬에서는 곤란하다. 하나의 map으로 near부터 far까지 다 덮으면, 카메라 **바로 앞**의
+그림자에 배정되는 texel이 너무 적어 계단이 심해진다(perspective aliasing). 그렇다고 해상도를
+무작정 키우면 메모리가 폭발한다.
+
+**Cascaded Shadow Maps(CSM)**의 해법은 카메라 frustum을 **거리에 따라 여러 구간(cascade)으로 쪼개**,
+각 구간에 **같은 해상도의 depth map을 따로** 배정하는 것이다. 가까운 cascade는 좁은 영역을 고밀도로
+덮어 선명한 그림자를, 먼 cascade는 넓은 영역을 저밀도로 덮는다. 셰이딩 때 각 픽셀은 자기 깊이가 속한
+cascade의 map을 골라 샘플한다.
+
+<CascadeSplit client:visible />
+
+구간 분할은 보통 선형(linear)과 로그(logarithmic) 분할을 $\lambda$로 섞는다. 로그 쪽으로 갈수록 가까운
+구간이 더 잘게 쪼개져 근거리 선명도가 오른다. CSM은 한계도 있다 — cascade 경계에서 그림자 품질이
+튀어 전환선이 보일 수 있고(경계에서 두 cascade를 blend해 완화), cascade마다 깊이 패스를 한 번씩 더
+그려야 한다. three.js 생태계에도 CSM 구현이 있다.
+
+## 더 나아가기
+
+그림자 매핑은 강력하지만 근사다. 한계를 정리하면:
+
+- **경계의 부드러움이 거리와 무관하다.** 현실의 그림자는 광원에서 멀어질수록 반음영(penumbra)이
+  넓어진다. PCF의 고정 커널은 이를 흉내 내지 못한다 — 거리에 따라 커널을 키우는
+  PCSS(Percentage-Closer Soft Shadows)나 분산 기반 VSM/ESM이 이를 다룬다.
+- **해상도가 곧 품질이다.** acne·계단·peter-panning은 모두 depth map이 유한 해상도라서 생긴다.
+- **반투명·머리카락·잎처럼 alpha가 복잡한 가림체**는 단일 깊이로 표현이 안 돼 별도 기법이 필요하다.
+
+깊이 패스가 광원 시점으로 장면을 한 번 더 래스터화한다는 점에서, 이 모든 비용은 결국 GPU 파이프라인
+위에서 일어난다 — 깊이 렌더가 어떻게 진행되고 early-Z가 어떻게 끼는지는
+[삼각형의 여정](./graphics-pipeline-journey)과 [렌더링에서의 GPU 실행](./rendering-execution-model)에서,
+픽셀마다 도는 셰이딩 비용의 실행 모델은 후자에서 이어진다. 가림을 깊이 맵이 아니라 광선으로 직접
+검사하는 정반대 접근은 [레이트레이싱 하드웨어](./raytracing-hardware)를 참고하라.
+
+## 참고 자료
+
+- LearnOpenGL — [Shadow Mapping](https://learnopengl.com/Advanced-Lighting/Shadows/Shadow-Mapping)
+- opengl-tutorial.org — [Tutorial 16: Shadow mapping](http://www.opengl-tutorial.org/intermediate-tutorials/tutorial-16-shadow-mapping/)
+- Microsoft Learn — [Common Techniques to Improve Shadow Depth Maps](https://learn.microsoft.com/en-us/windows/win32/dxtecharts/common-techniques-to-improve-shadow-depth-maps),
+  [Cascaded Shadow Maps](https://learn.microsoft.com/en-us/windows/win32/dxtecharts/cascaded-shadow-maps)
+- three.js docs — [LightShadow.bias](https://threejs.org/docs/#api/en/lights/shadows/LightShadow.bias),
+  [LightShadow.normalBias](https://threejs.org/docs/#api/en/lights/shadows/LightShadow.normalBias)

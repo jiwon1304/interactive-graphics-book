@@ -1,0 +1,217 @@
+---
+layout: ../../layouts/ChapterLayout.astro
+title: "조명 모델 — Lambert에서 Blinn-Phong까지"
+description: N·L 디퓨즈·역제곱 감쇠·Phong reflect vs Blinn-Phong half-vector·ambient·다광원 합산
+---
+
+import NdotLField from '../../components/demos/lighting/NdotLField.tsx';
+import AttenuationCurve from '../../components/demos/lighting/AttenuationCurve.tsx';
+import PhongVsBlinn from '../../components/demos/lighting/PhongVsBlinn.tsx';
+import HalfVectorViz from '../../components/demos/lighting/HalfVectorViz.tsx';
+import LightingLab from '../../components/demos/lighting/LightingLab.tsx';
+
+# 조명 모델 — Lambert에서 Blinn-Phong까지
+
+화면 속 구는 사실 그냥 동그란 색칠이다. 그런데도 우리는 그것을 즉시 "공"으로 본다.
+한쪽이 밝고 반대쪽이 어둡고, 어딘가에 작고 날카로운 흰 점 하나가 박혀 있기 때문이다.
+이 세 가지 — 밝은 면, 어두운 면, 흰 점 — 를 픽셀 색으로 바꾸는 규칙이 **조명 모델(lighting model)**이다.
+
+이 챕터의 조명 모델들은 물리 법칙의 정확한 풀이가 아니다. 빛이 표면과 어떻게 상호작용하는지를
+**값싸고 그럴듯하게** 흉내 내는 식들이다. 에너지 보존과 미세면(microfacet) 기반의 물리적 모델은
+[마이크로패싯 BRDF와 PBR](./microfacet-brdf)에서 다룬다. 여기서는 거의 모든 실시간 그래픽스가
+수십 년간 기본값으로 써 온 Lambert · Phong · Blinn-Phong을 **하나씩 유도**하고, 마지막에 여러
+광원으로 합쳐 본다.
+
+세 개의 양만 있으면 된다. 표면의 **법선** $\mathbf{N}$(그 점에서 표면이 향하는 방향), 그 점에서
+**광원으로 가는 방향** $\mathbf{L}$, 그리고 그 점에서 **눈(카메라)으로 가는 방향** $\mathbf{V}$.
+모두 단위벡터다. 조명 모델은 결국 이 세 벡터의 내적 몇 개를 조합하는 일이다.
+
+## diffuse — 표면이 얼마나 정면으로 빛을 받는가
+
+매끈하지 않고 거칠게 흩뿌리는(diffuse) 표면을 보자. 이런 면은 받은 빛을 모든 방향으로 고르게
+되쏘아서, **어느 각도에서 보든 같은 밝기**로 보인다. 그렇다면 밝기를 정하는 건 보는 방향이 아니라,
+그 점이 **광원을 얼마나 정면으로 마주하고 있는가** 하나뿐이다.
+
+면이 광원을 정면으로 받으면($\mathbf{N}$과 $\mathbf{L}$이 나란하면) 단위면적에 가장 많은 빛이
+꽂힌다. 면이 비스듬해지면 같은 빛다발이 더 넓은 면적에 퍼져 단위면적당 도달량이 줄어든다.
+폭 $w$의 빛다발이 입사각 $\theta$(법선과 광선 사이 각)로 들어오면 면에 닿는 폭은 $w/\cos\theta$로
+늘어나므로, 단위면적당 세기는 $\cos\theta$에 비례한다. 이것이 **Lambert의 코사인 법칙**이다.
+
+$$
+\theta = \angle(\mathbf{N}, \mathbf{L}), \qquad \cos\theta = \mathbf{N}\cdot\mathbf{L}
+$$
+
+두 단위벡터의 내적이 그 사이 각의 코사인이므로, 코사인을 따로 계산할 필요 없이 내적 하나면 된다.
+광원을 등진 면($\theta > 90°$)은 빛을 못 받으므로 음수를 0으로 자른다:
+
+$$
+I_{\text{diffuse}} = k_d \, \max(\mathbf{N}\cdot\mathbf{L},\; 0)
+$$
+
+여기서 $k_d$는 표면의 색(albedo)이다. 아래는 정면에서 본 구를, 픽셀마다 $\mathbf{N}\cdot\mathbf{L}$로
+칠한 것이다. 광원을 돌려 보면 가장 밝은 점이 따라 움직이고, 거기서 멀어질수록 코사인으로 부드럽게
+어두워진다 — 이 매끄러운 명암 변화가 곧 우리가 "둥글다"고 읽는 단서다.
+
+<NdotLField client:visible />
+
+등고선은 같은 $\mathbf{N}\cdot\mathbf{L}$ 값을 잇는 선이다. 띠 간격이 가장자리로 갈수록 촘촘해지는
+것에 주목하라 — 구가 옆으로 휘면서 법선 각도가 빠르게 변하기 때문이다. diffuse는 시점에 무관하므로
+카메라를 어디에 두든 이 그림은 똑같다.
+
+## 거리 감쇠 — 멀어지면 어두워진다
+
+방향이 있는 무한히 먼 광원(directional light, 예: 태양)은 어디서나 같은 세기로 친다. 하지만 한 점에서
+사방으로 빛을 내는 **점광원(point light)**은 멀어질수록 어두워진다. 왜 그런지는 기하로 곧장 나온다.
+
+점광원이 매초 내보내는 총 에너지 $\Phi$는 보존된다. 이 에너지가 반지름 $d$인 구면 전체에 퍼지는데,
+구면의 넓이는 $4\pi d^2$이다. 따라서 그 거리에서 단위면적이 받는 세기는
+
+$$
+I(d) = \frac{\Phi}{4\pi d^2} \;\propto\; \frac{1}{d^2}
+$$
+
+거리의 **제곱에 반비례**한다. 이것이 **역제곱 법칙(inverse-square law)**이다. 거리가 2배면 밝기는 1/4,
+3배면 1/9이 된다.
+
+실시간 렌더링은 이 순수한 $1/d^2$를 그대로 쓰면 두 가지가 곤란하다. 광원에 아주 가까워지면($d\to 0$)
+값이 폭발해 화면이 하얗게 타고, 멀어지면 영원히 0이 안 돼 잘라낼 지점이 애매하다. 그래서 분모에
+상수·선형·이차 항을 섞은 형태를 흔히 쓴다:
+
+$$
+\text{att}(d) = \frac{1}{K_c + K_l\, d + K_q\, d^2}
+$$
+
+$K_c$(상수항)는 근거리 폭발을 막고, $K_q$(이차항)가 멀리서 역제곱처럼 떨어지게 하며, $K_l$(선형항)이
+그 사이를 메운다. $K_c=0,\;K_l=0,\;K_q=1$로 두면 순수 역제곱과 같아진다.
+
+<AttenuationCurve client:visible />
+
+이 감쇠는 광원의 기여 전체에 곱해진다 — diffuse든 specular든. directional light에는 거리 개념이
+없으므로 감쇠가 없다(그래서 태양빛은 가까운 물체나 먼 물체나 같은 세기로 친다).
+
+## specular — 거울 같은 하이라이트
+
+diffuse만으로는 그 작고 날카로운 흰 점, 즉 **하이라이트(specular highlight)**가 안 나온다.
+하이라이트는 표면이 거울처럼 광원을 **시점 쪽으로 곧장 반사**할 때 생기는, 시점에 의존하는 밝기다.
+diffuse와 달리 카메라를 움직이면 하이라이트도 표면 위를 미끄러진다.
+
+### Phong — 반사벡터와 시선의 정렬
+
+완벽한 거울이라면 광원이 정확히 반사 방향으로만 보일 것이다. 입사광 $-\mathbf{L}$을 법선 $\mathbf{N}$에
+대해 반사한 벡터는
+
+$$
+\mathbf{R} = 2(\mathbf{N}\cdot\mathbf{L})\,\mathbf{N} - \mathbf{L}
+$$
+
+이다($\mathbf{L}$의 법선 성분은 그대로, 접선 성분은 뒤집은 것). 현실의 표면은 완벽한 거울이 아니라
+반사 방향 **근처**로 빛을 퍼뜨린다. Phong은 이 번짐을, 반사벡터 $\mathbf{R}$과 시선 $\mathbf{V}$가
+얼마나 정렬됐는지($\mathbf{R}\cdot\mathbf{V}$)를 큰 지수로 거듭제곱해 표현한다:
+
+$$
+I_{\text{spec}}^{\text{Phong}} = k_s \, \max(\mathbf{R}\cdot\mathbf{V},\; 0)^{\,s}
+$$
+
+지수 $s$(shininess)가 클수록 하이라이트가 작고 날카로워진다 — $\cos^s$가 1 근처에서만 살아남기
+때문이다.
+
+### Blinn-Phong — 하프벡터와 법선의 정렬
+
+Phong에는 약점이 있다. $\mathbf{R}\cdot\mathbf{V}$의 각이 $90°$를 넘으면 값이 음수가 되어 specular가
+**갑자기 0으로 끊긴다**. 광원이 표면을 스치듯 비추고 시점이 낮을 때 이 끊김이 눈에 띈다.
+
+Blinn은 $\mathbf{R}$ 대신 **하프벡터(half-vector)** $\mathbf{H}$를 쓴다. $\mathbf{H}$는 $\mathbf{L}$과
+$\mathbf{V}$의 정확히 가운데를 가리키는 단위벡터다:
+
+$$
+\mathbf{H} = \frac{\mathbf{L} + \mathbf{V}}{\lVert \mathbf{L} + \mathbf{V} \rVert}
+$$
+
+표면이 광원을 시점으로 정확히 반사하려면, 그 점의 미세 거울면이 $\mathbf{L}$과 $\mathbf{V}$의 정중앙을
+향해야 한다 — 즉 $\mathbf{N}$이 $\mathbf{H}$와 나란할수록 하이라이트가 강하다. 그래서
+
+$$
+I_{\text{spec}}^{\text{Blinn}} = k_s \, \max(\mathbf{N}\cdot\mathbf{H},\; 0)^{\,s}
+$$
+
+$\mathbf{N}$과 $\mathbf{H}$가 둘 다 표면 위쪽 반구에 있으면 $\mathbf{N}\cdot\mathbf{H}$는 음수가 될 일이
+없어 Phong의 cutoff가 사라진다. 아래에서 $\mathbf{L}$과 $\mathbf{V}$를 움직이며 $\mathbf{H}$가 둘 사이를
+따라가는 것, 그리고 $\mathbf{R}$이 $\mathbf{V}$와 겹칠 때와 $\mathbf{H}$가 $\mathbf{N}$과 겹칠 때가
+같은 순간임을 확인해 보라.
+
+<HalfVectorViz client:visible />
+
+기하적으로 $\mathbf{N}\cdot\mathbf{H}$가 재는 각은 $\mathbf{R}\cdot\mathbf{V}$가 재는 각의 약 절반이다.
+그래서 **같은 모양의 하이라이트를 내려면 Blinn-Phong의 $s$를 Phong보다 크게**(대략 2~4배) 잡아야
+한다. 이제 실제 셰이드된 3D 물체에서 세 모델을 비교하자. shininess를 낮추고 Phong을 고른 뒤
+"cutoff 영역 표시"를 켜면, 빛은 닿지만 하이라이트가 끊겨 버린 띠가 빨갛게 드러난다 — Blinn-Phong으로
+바꾸면 그 띠가 사라진다.
+
+<PhongVsBlinn client:visible />
+
+이것이 Blinn-Phong이 OpenGL·Direct3D 고정 기능 파이프라인의 기본 셰이딩 모델로 자리 잡은 이유다.
+
+## ambient — 검게 죽지 않게
+
+지금까지의 식에서 광원을 등진 면은 정확히 0, 즉 완전한 검정이 된다. 하지만 현실에서는 벽·바닥·다른
+물체에 한 번 튕긴 간접광이 그늘진 면도 희미하게 채운다. 이 간접광을 제대로 계산하는 건 비싸므로,
+가장 거친 근사로 **전역 상수 한 항**을 더한다:
+
+$$
+I_{\text{ambient}} = k_a \, I_a
+$$
+
+물리적 근거는 없다. 그저 모든 면에 같은 양을 깔아 그림자 영역이 새카맣게 죽지 않게 하는 바닥값이다.
+ambient를 너무 키우면 물체가 평평하고 김빠져 보인다.
+
+## 조립 — 한 광원, 그리고 여러 광원
+
+한 광원에 대한 최종 색은 세 항의 합이다:
+
+$$
+I = \underbrace{k_a I_a}_{\text{ambient}}
+  + \text{att}(d)\Big(\underbrace{k_d \max(\mathbf{N}\cdot\mathbf{L}, 0)}_{\text{diffuse}}
+  + \underbrace{k_s \max(\mathbf{N}\cdot\mathbf{H}, 0)^{s}}_{\text{specular}}\Big)
+$$
+
+빛은 **가산적(additive)**이다. 광원이 여러 개면, 각 광원이 만드는 diffuse+specular를 따로 계산해
+**그냥 더하면** 된다. ambient는 장면 전체에 한 번만 더한다:
+
+$$
+I = k_a I_a + \sum_{i} \text{att}_i(d_i)\Big(k_d \max(\mathbf{N}\cdot\mathbf{L}_i, 0)
+  + k_s \max(\mathbf{N}\cdot\mathbf{H}_i, 0)^{s}\Big)
+$$
+
+아래 실험실에서 directional 광원 하나와, 물체 둘레를 도는 컬러 point 광원 하나를 합쳐 본다.
+각 항(ambient/diffuse/specular)을 따로 끄고 켜서 기여를 분리해 보고, 광원을 하나씩 꺼서 합이
+정말 각 광원 기여의 단순 합임을 확인해 보라. point 광원의 감쇠 $K_q$를 키우면 멀어질 때 훨씬 빨리
+어두워진다.
+
+<LightingLab client:visible />
+
+## 더 나아가기
+
+이 모델들은 **현상을 흉내 내는 식**이지 빛의 물리를 푼 게 아니다. 한계가 분명하다. specular의
+$k_s$와 $s$는 임의 손잡이라 에너지 보존이 깨질 수 있고(반사가 입사보다 밝아질 수 있다), 금속과
+비금속의 반사 차이, 거칠기에 따른 하이라이트 모양 변화, 비스듬한 각도에서 반사가 강해지는 프레넬
+효과를 담지 못한다. 이 모든 것을 미세면 통계와 에너지 보존 위에서 다시 세우는 것이
+[마이크로패싯 BRDF와 PBR](./microfacet-brdf)이다 — 거기서 하프벡터 $\mathbf{H}$는 여기서처럼 임시
+손잡이가 아니라, "어떤 미세면이 이 방향으로 반사하는가"를 정의하는 핵심량으로 다시 등장한다.
+
+또한 여기서는 광원이 물체 자신이나 다른 물체에 가려지는 경우를 전혀 따지지 않았다 — 어떤 면이든
+$\mathbf{N}\cdot\mathbf{L}>0$이면 빛을 받는다고 가정했다. 광원과 표면 사이에 다른 물체가 있으면
+**그림자**가 져야 한다. 그 가림 판정을 어떻게 하는지는 [그림자 매핑](./shadow-mapping)에서 이어진다.
+
+이 조명 계산이 GPU 파이프라인의 어느 단계에서, 어떤 실행 모델로 픽셀마다 돌아가는지는
+[삼각형의 여정](./graphics-pipeline-journey)과 [렌더링에서의 GPU 실행](./rendering-execution-model)을
+참고하라.
+
+## 참고 자료
+
+- LearnOpenGL — [Basic Lighting](https://learnopengl.com/Lighting/Basic-Lighting),
+  [Light casters](https://learnopengl.com/Lighting/Light-casters),
+  [Advanced Lighting (Blinn-Phong)](https://learnopengl.com/Advanced-Lighting/Advanced-Lighting),
+  [Multiple lights](https://learnopengl.com/Lighting/Multiple-lights)
+- Wikipedia — [Blinn–Phong reflection model](https://en.wikipedia.org/wiki/Blinn%E2%80%93Phong_reflection_model),
+  [Lambert's cosine law](https://en.wikipedia.org/wiki/Lambert%27s_cosine_law)
+- Valve Developer Community — [Constant-Linear-Quadratic Falloff](https://developer.valvesoftware.com/wiki/Constant-Linear-Quadratic_Falloff)

@@ -1,0 +1,224 @@
+---
+layout: ../../layouts/ChapterLayout.astro
+title: "페이지 폴트와 디맨드 페이징"
+description: 처음 접근할 때 적재하기 — minor/major/invalid fault, copy-on-write, mmap, clock 교체, working set
+---
+
+import FaultFlow from '../../components/demos/demand-paging/FaultFlow.tsx';
+import CowDiagram from '../../components/demos/demand-paging/CowDiagram.tsx';
+import ClockReplace from '../../components/demos/demand-paging/ClockReplace.tsx';
+
+# 페이지 폴트와 디맨드 페이징
+
+프로세스가 `malloc`으로 1 GB를 잡아도, 그 순간 RAM 1 GB가 빠지지 않습니다. `fork`로 8 GB 프로세스를
+복제해도 메모리가 8 GB 더 쓰이지 않습니다. 실행 파일이 200 MB여도, 프로그램이 시작하자마자 200 MB를
+디스크에서 읽지 않습니다. 이 세 가지가 다 가능한 이유는 하나입니다 — 운영체제가 **물리 메모리를 약속만
+해두고, 실제로 그 페이지를 건드리는 순간까지 적재를 미루기** 때문입니다. 그 "건드리는 순간"을 만드는
+하드웨어 신호가 **page fault**입니다.
+
+이 챕터는 OS 입장에서 page fault를 받아 처리하는 과정과, 메모리가 부족할 때 어떤 페이지를 내보낼지
+고르는 정책에 집중합니다. 가상 주소가 물리 주소로 *어떻게* 변환되는지, TLB가 그 변환을 어떻게
+캐시하는지는 [`./virtual-memory-tlb`](./virtual-memory-tlb)에서 다뤘으니 여기선 반복하지 않고, 변환이
+실패했을 때 — 즉 PTE에 present 비트가 없을 때 — 부터 시작합니다.
+
+## page fault는 예외이지 에러가 아니다
+
+"fault"라는 말 때문에 오해하기 쉽지만, page fault 대부분은 정상 동작입니다. CPU가 가상 주소에 접근하면
+MMU가 page table에서 해당 PTE(page table entry)를 찾습니다. PTE의 **present 비트**가 1이면 물리 프레임
+번호를 얻어 곧장 진행합니다. 0이면 — 그 페이지가 아직 메모리에 없다는 뜻이므로 — CPU가 **page fault
+예외**를 발생시키고, 제어가 커널의 fault handler로 넘어갑니다.
+
+핵심은 그다음입니다. 커널은 폴트를 일으킨 주소가 **어떤 VMA(virtual memory area, 매핑된 주소 구간)에
+속하는지** 먼저 확인합니다. VMA는 "이 주소 범위는 이 파일의 이 영역에 매핑됐다" 또는 "이 범위는 익명
+메모리(스택·힙)다" 같은 정보를 담은 커널 자료구조입니다. 폴트 주소가 어느 VMA에도 속하지 않으면 그건
+잘못된 접근이고, 속하면 단지 아직 안 채워진 페이지일 뿐입니다. 이 갈림길에서 세 종류의 결과가 나옵니다.
+
+<FaultFlow client:visible />
+
+세 갈래를 정리하면 — 분류 기준은 **디스크 I/O가 필요한가**입니다.
+
+- **minor (soft) fault**: 매핑은 유효하고, 디스크를 건드리지 않고 해결됩니다. 익명 페이지의 첫 접근,
+  이미 page cache에 있는 파일 페이지를 PTE에 연결하는 경우, copy-on-write 복제가 여기에 듭니다. 빠릅니다.
+- **major (hard) fault**: 유효하지만, 내용을 디스크나 스왑에서 실제로 읽어와야 합니다. I/O가 끼므로
+  minor보다 수천~수만 배 느립니다. 프로그램이 처음 실행될 때 실행 파일의 코드 페이지를 디스크에서
+  읽어오는 것, 스왑아웃됐던 페이지를 다시 읽는 것이 major fault입니다.
+- **invalid**: 폴트 주소가 어떤 VMA에도 속하지 않습니다(또는 권한 위반 — read-only 페이지에 쓰기 등으로
+  COW가 아닌 경우). 커널은 이를 프로그램 버그로 보고 **SIGSEGV** 시그널을 보냅니다. 이게 우리가 흔히
+  보는 segmentation fault입니다. Intel 매뉴얼은 이 부류를 "invalid page fault"라 부르고, 그게 userspace엔
+  SIGSEGV로 전달됩니다.
+
+minor·major fault는 프레임을 확보해 PTE를 채운 뒤, **폴트를 일으킨 바로 그 명령을 재시작(restart)**합니다.
+재시작이라는 점이 중요합니다 — 명령이 중단됐다가 처음부터 다시 실행되므로, 프로그램 입장에선 메모리
+접근이 그냥 (조금 느리게) 성공한 것처럼 보입니다. fault가 일어났다는 사실 자체를 프로그램은 알 수 없습니다.
+
+## 디맨드 페이징 — 왜 미루는가
+
+이 메커니즘을 정책으로 끌어올린 것이 **demand paging**입니다. 페이지를 *미리* 적재하지 않고, *수요(demand)*가
+생길 때 — 즉 그 페이지에 처음 접근해 fault가 날 때 — 적재합니다. 이득은 두 가지로 정리됩니다.
+
+첫째, **쓰지 않는 것엔 비용을 안 냅니다.** 200 MB 실행 파일이라도 실제로 실행되는 코드 경로는 일부뿐이고,
+프로그램은 자기가 밟는 페이지만 fault로 끌어옵니다. 둘째, **물리 메모리를 over-commit할 수 있습니다.**
+모든 프로세스가 약속받은 메모리를 동시에 다 쓰지는 않으므로, OS는 물리 RAM보다 많은 가상 메모리를 약속해도
+대개 문제가 없습니다.
+
+over-commit을 수식으로 보면, 프로세스 $i$의 가상 할당량을 $V_i$, 실제 활성 사용량(resident)을 $R_i \le V_i$라
+할 때, 시스템은
+
+$$
+\sum_i V_i \;>\; M \quad(\text{물리 RAM } M)
+$$
+
+이어도, 실제로는
+
+$$
+\sum_i R_i \;\le\; M
+$$
+
+만 유지되면 멈추지 않고 돕니다. 문제는 $\sum_i R_i$가 $M$을 넘기려 할 때 생기는데, 그게 뒤에서 다룰
+thrashing입니다.
+
+### Linux의 zero page — 첫 읽기와 첫 쓰기를 나누다
+
+익명 메모리(파일 백킹이 없는 힙·스택)에서 디맨드 페이징이 한 단계 더 영리하게 동작합니다. 갓 할당한
+익명 페이지를 처음 **읽으면**, 커널은 새 프레임을 주지 않고 시스템 전체가 공유하는 단 하나의 **zero
+page**(전부 0으로 채워진 read-only 프레임)에 매핑합니다. 어차피 내용이 0이니 모두가 같은 0 프레임을
+봐도 무방하고, 메모리도 안 듭니다. 그 페이지에 처음 **쓸 때**가 되어서야 실제 프레임을 할당해 복사합니다.
+이 "공유된 read-only를 쓸 때 복제" 패턴이 바로 다음 절의 copy-on-write입니다.
+
+## copy-on-write — fork가 싼 이유
+
+`fork`는 자식 프로세스에게 부모의 주소 공간 **사본**을 줍니다. 정의대로라면 부모의 모든 페이지를
+복사해야 하는데, 그러면 8 GB 프로세스의 fork에 8 GB 복사가 따라붙습니다. 게다가 흔한 패턴 — `fork` 직후
+곧바로 `exec`로 다른 프로그램을 덮어쓰는 경우 — 에선 그 복사가 통째로 버려집니다.
+
+**copy-on-write(COW)**는 이 복사를 *쓰기가 실제로 일어날 때까지* 미룹니다. `fork` 시점엔 페이지를 복사하지
+않고, 부모와 자식의 PTE가 같은 물리 프레임을 가리키게 한 뒤 양쪽을 모두 **read-only**로 표시합니다.
+
+<CowDiagram client:visible />
+
+이제 둘 중 누가 그 페이지에 쓰려 하면, read-only 위반으로 page fault가 납니다(이 fault는 디스크를 안
+건드리니 minor입니다). 커널은 폴트 주소가 COW 매핑임을 알아채고 — 단순 권한 에러로 SIGSEGV를 보내는
+대신 — 그 페이지 **하나만** 복제해 쓰는 쪽 PTE를 새 프레임으로 돌리고, 양쪽을 다시 writable로 복원한 뒤
+명령을 재시작합니다.
+
+결과적으로 `fork`의 비용은 페이지 수가 아니라 **이후 실제로 쓰이는(divergent) 페이지 수**에 비례합니다.
+대부분의 페이지(코드, 안 건드린 데이터)는 영영 공유된 채 남습니다. `fork`+`exec` 패턴에선 자식이 거의
+아무것도 안 쓰고 바로 새 이미지로 덮이므로 복사가 거의 0입니다.
+
+## mmap — 파일과 익명 메모리를 주소로 다루다
+
+지금까지의 페이지들이 어디서 오는지를 한 군데로 모으는 시스템 콜이 `mmap`입니다. `mmap`은 파일이나 빈
+영역을 프로세스 주소 공간에 **매핑**만 하고 — 디맨드 페이징 원칙대로 — 아무 페이지도 즉시 적재하지
+않습니다. 두 축으로 종류가 갈립니다.
+
+**백킹(backing) 축** — 매핑이 어디서 채워지는가:
+
+- **file-backed**: 파일의 내용으로 채워집니다. 페이지는 커널의 **page cache**를 통해 들어오므로, 같은
+  파일을 여러 프로세스가 매핑하면 page cache의 같은 페이지를 공유합니다. 처음 닿는 페이지가 page cache에
+  없으면 디스크에서 읽어와야 하니 major fault, 이미 캐시에 있으면 minor fault입니다.
+- **anonymous**: 대응하는 파일이 없습니다(힙·스택, `MAP_ANONYMOUS`). 0으로 시작하고, 메모리가 부족하면
+  **swap**이 백킹 역할을 합니다.
+
+**공유(sharing) 축** — 쓰기가 어떻게 보이는가:
+
+- **`MAP_SHARED`**: 쓰기가 매핑을 공유하는 모두에게 보이고, file-backed면 결국 파일로 write-back됩니다.
+- **`MAP_PRIVATE`**: 쓰기가 자기에게만 보입니다. 구현은 정확히 COW입니다 — 처음엔 page cache 페이지를
+  read-only로 공유하다가, 쓰는 순간 사적 사본을 떠서 그 페이지만 분리합니다(파일은 안 바뀝니다).
+
+이렇게 보면 디맨드 페이징·COW·page cache가 따로 노는 기능이 아니라, `mmap`이라는 하나의 인터페이스가
+같은 page fault 메커니즘 위에서 조합해 쓰는 도구임이 드러납니다. 프로그램이 디스크에서 읽는 `read`/`write`
+대신 `mmap`을 쓰면, 파일 접근이 그냥 메모리 접근이 되고 나머지는 fault handler가 알아서 채웁니다.
+
+## 페이지 교체 — 누구를 내보낼 것인가
+
+over-commit이 굴러가려면, $\sum_i R_i$가 $M$에 가까워질 때 OS가 **어떤 페이지를 내보내(evict)** 자리를
+비워야 합니다. file-backed이고 안 더럽혀진(clean) 페이지는 그냥 버리면 됩니다(다음에 필요하면 파일에서
+다시 읽으면 되니까). 더럽혀진(dirty) 페이지나 익명 페이지는 swap에 써둔 뒤 버려야 합니다 — 이게 나중에
+major fault로 돌아올 비용입니다.
+
+이상적인 정책은 **앞으로 가장 오래 안 쓰일 페이지**를 내보내는 것(Belady's optimal)이지만, 미래를 모르니
+구현할 수 없습니다. 차선은 과거로 미래를 추정하는 **LRU(least recently used)**입니다. 그러나 진짜 LRU는
+모든 메모리 접근마다 그 페이지를 "가장 최근" 위치로 옮겨야 해서 — 접근 한 번에 자료구조 갱신 한 번 —
+비용이 감당이 안 됩니다.
+
+### clock (second-chance) — LRU의 값싼 근사
+
+그래서 실제 커널은 LRU를 **근사**합니다. 하드웨어가 페이지를 접근할 때마다 PTE의 **reference(use) 비트**를
+1로 세워주는 것만 활용합니다(접근 순서 정보는 버리고, "최근에 접근됐나/아닌가" 한 비트만 봅니다). 프레임들을
+원형 리스트로 두고 바늘(hand)을 돌리는 게 **clock** 알고리즘입니다.
+
+<ClockReplace client:visible />
+
+바늘이 한 프레임을 만났을 때:
+
+$$
+\text{use} = 1 \;\Rightarrow\; \text{use} \leftarrow 0,\ \text{넘어감(second chance)}
+$$
+$$
+\text{use} = 0 \;\Rightarrow\; \text{이 페이지를 victim으로 선정}
+$$
+
+즉 최근에 접근된 페이지(use=1)는 한 바퀴의 유예를 받습니다 — 바늘이 그 비트를 0으로 내리고 지나가므로,
+다음 한 바퀴 안에 다시 접근되지 않으면 그때 쫓겨납니다. 자주 접근되는 페이지는 매번 use가 1로 다시 세워져
+계속 살아남고, 안 쓰이는 페이지는 0인 채로 바늘에 걸립니다. 비트 하나와 한 바퀴 스캔으로 "오래 안 쓰인
+것"을 대략 골라내는 — LRU의 값싼 근사입니다.
+
+여기에 dirty 비트를 더해 "clean이면서 안 쓰인" 페이지를 우선 내보내는 변형(쓰기 비용 회피), 바늘을 둘
+두는 2-handed clock 등 변종이 많습니다. Linux는 한 발 더 나아가 페이지를 active/inactive 두 LRU 리스트로
+나눠 관리합니다 — 근사의 갈래는 다양하지만, "use 비트로 최근성을 싸게 추정한다"는 뼈대는 공통입니다.
+
+## working set과 thrashing
+
+교체 정책이 아무리 똑똑해도, **활성 페이지의 총합 자체가 물리 메모리를 넘으면** 손쓸 수 없습니다. 이
+상태를 보는 틀이 **working set**입니다. 시각 $t$, 윈도우 $\Delta$에서 프로세스의 working set은
+
+$$
+W(t, \Delta) = \{\,\text{직전 } \Delta \text{ 시간 동안 참조된 페이지들}\,\}
+$$
+
+이고, 그 크기 $|W(t,\Delta)|$가 그 프로세스가 *지금* 실제로 필요로 하는 프레임 수의 추정입니다. 시스템
+전체로 보면 thrashing의 조건은 간단합니다.
+
+$$
+\sum_i |W_i(t,\Delta)| \;>\; M
+$$
+
+모든 프로세스의 working set 합이 물리 프레임 수를 넘으면, 어떤 페이지를 내보내도 그건 곧 다시 필요해집니다.
+그러면 fault → 디스크 읽기 → 다른 페이지 evict(swap 쓰기) → 그 페이지가 또 fault … 가 끝없이 돌면서, CPU는
+거의 노는데 디스크만 미친 듯이 도는 **thrashing** 상태가 됩니다. multiprogramming 정도를 올릴수록 throughput이
+오르다가, 이 지점을 넘는 순간 절벽처럼 무너집니다.
+
+근본 해법은 교체 정책을 바꾸는 게 아니라 **부하를 줄이는 것**입니다 — 프로세스 일부를 suspend하거나
+종료해 $\sum_i |W_i|$를 $M$ 아래로 되돌립니다(Linux의 OOM killer가 극단적 형태입니다). working set을
+추적하면 어느 프로세스가 얼마나 필요로 하는지 보이므로, "누구를 멈출까"를 근거 있게 정할 수 있습니다.
+
+## 종합
+
+한 메커니즘이 챕터 전체를 관통했습니다. present 비트가 없을 때 CPU가 던지는 **page fault**입니다. 그
+하나의 신호 위에서:
+
+- **디맨드 페이징**은 접근 전까지 적재를 미뤄 over-commit을 가능하게 하고,
+- **zero page / COW**는 read-only 공유를 쓰기 직전까지 끌어 복사를 미루며(`fork`가 싼 이유),
+- **`mmap`**은 file/anonymous × shared/private 조합을 같은 fault 경로 위에 얹고,
+- **clock 교체**는 use 비트로 LRU를 싸게 근사해 victim을 고르며,
+- **working set**은 $\sum_i |W_i| > M$이 되는 순간(thrashing)을 진단합니다.
+
+minor/major/invalid라는 fault의 세 갈래가, 결국 이 모든 정책이 갈라지는 첫 분기점이었습니다.
+
+## 더 나아가기
+
+- 변환 자체(page table walk)와 그 캐시(TLB), huge page는 [`./virtual-memory-tlb`](./virtual-memory-tlb)에서.
+  이 챕터는 변환이 실패한 *뒤*의 OS 동작만 다뤘습니다.
+- evict/적재가 결국 부딪히는 메모리 계층(캐시·대역폭)은 [`./cpu-memory-hierarchy`](./cpu-memory-hierarchy).
+  working set이 캐시를 thrash하는 것과 페이지를 thrash하는 것은 같은 그림의 다른 층입니다.
+- 더 깊이: 디스크/스왑으로의 실제 I/O를 누가 어떻게 옮기는지(DMA), userfaultfd로 fault를 userspace에서
+  처리하는 기법, NUMA에서의 페이지 배치, transparent huge page의 trade-off.
+
+## 참고 자료
+
+- [Cornell CS4410 — Page replacement](https://www.cs.cornell.edu/courses/cs4410/2017su/lectures/lec14-replacement.html) · [Thrashing & working set](https://www.cs.cornell.edu/courses/cs4410/2018su/lectures/lec15-thrashing.html) — clock/LRU 근사와 working set 모델
+- [Wisconsin CS537 — Clock algorithm, thrashing](https://pages.cs.wisc.edu/~bart/537/lecturenotes/s20.html) — second-chance/clock과 thrashing 정리
+- [Linux zeroed pages: read vs write fault](https://linuxvox.com/blog/linux-will-zeroed-page-pagefault-on-first-read-or-on-first-write/) — 익명 페이지 zero page COW(첫 읽기/첫 쓰기)
+- [Viacheslav Biriukov — mmap & page cache](https://biriukov.dev/docs/page-cache/5-more-about-mmap-file-access/) — file-backed/anonymous, MAP_SHARED/PRIVATE와 COW
+- [Cause analysis of segmentation faults on Linux](https://medium.com/@xinyijun/cause-analysis-of-segmentation-fault-on-linux-1d69e59bb0e3) — page fault 3단계와 SIGSEGV 경로
+- [Why is there a "V" in SIGSEGV (Cloudflare)](https://blog.cloudflare.com/why-is-there-a-v-in-sigsegv-segmentation-fault/) — invalid page fault ↔ SIGSEGV
