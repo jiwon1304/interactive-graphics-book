@@ -142,8 +142,8 @@ $\mathbf{N}$과 $\mathbf{H}$가 둘 다 표면 위쪽 반구에 있으면 $\math
 <HalfVectorViz client:visible />
 
 기하적으로 $\mathbf{N}\cdot\mathbf{H}$가 재는 각은 $\mathbf{R}\cdot\mathbf{V}$가 재는 각의 약 절반이다.
-그래서 **같은 모양의 하이라이트를 내려면 Blinn-Phong의 $s$를 Phong보다 크게**(대략 2~4배) 잡아야
-한다. 이제 실제 셰이드된 3D 물체에서 세 모델을 비교하자. shininess를 낮추고 Phong을 고른 뒤
+그래서 **같은 모양의 하이라이트를 내려면 Blinn-Phong의 $s$를 Phong보다 크게**(정준적으로 약 4배,
+작은 각에서 $\mathbf{N}\cdot\mathbf{H}$ 각이 절반이므로) 잡아야 한다. 이제 실제 셰이드된 3D 물체에서 세 모델을 비교하자. shininess를 낮추고 Phong을 고른 뒤
 "cutoff 영역 표시"를 켜면, 빛은 닿지만 하이라이트가 끊겨 버린 띠가 빨갛게 드러난다 — Blinn-Phong으로
 바꾸면 그 띠가 사라진다.
 
