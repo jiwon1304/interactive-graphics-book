@@ -40,10 +40,9 @@ export const chapters: Chapter[] = [
   // ── 셰이딩 ──
   {
     slug: 'lighting',
-    title: '조명',
-    description: '광원 모델과 반사',
+    title: '조명 모델 — Lambert에서 Blinn-Phong까지',
+    description: '광원 종류·N·L 디퓨즈·거리 감쇠·Phong/Blinn-Phong 스페큘러·ambient·다광원 합산',
     section: '셰이딩',
-    draft: true,
   },
   {
     slug: 'microfacet-brdf',
@@ -355,6 +354,62 @@ export const chapters: Chapter[] = [
     description: 'CAS·LL/SC·spinlock vs mutex·lock-free·cache-line 경합',
     section: 'CPU 아키텍처',
   },
+  // ── 실시간 렌더링 기법 ──
+  {
+    slug: 'shadow-mapping',
+    title: '그림자 매핑',
+    description: '광원 시점 depth map·shadow acne와 bias·peter-panning·PCF 소프트 섀도·CSM',
+    section: '실시간 렌더링 기법',
+  },
+  {
+    slug: 'deferred-shading',
+    title: '디퍼드 셰이딩과 G-버퍼',
+    description: 'G-buffer에 지오메트리 1회 기록 후 화면공간 라이팅 — 다광원·단점(투명/MSAA/대역폭)·tiled/clustered',
+    section: '실시간 렌더링 기법',
+  },
+  {
+    slug: 'antialiasing',
+    title: '안티에일리어싱 — MSAA·FXAA·TAA',
+    description: '에일리어싱의 원인(Nyquist)·SSAA·MSAA(커버리지)·FXAA/SMAA·TAA(지터+히스토리+모션벡터)',
+    section: '실시간 렌더링 기법',
+  },
+  {
+    slug: 'ambient-occlusion',
+    title: '앰비언트 오클루전 — SSAO/HBAO',
+    description: '접촉·틈의 차폐 근사·반구 샘플링 커널·depth/normal 기반 SSAO·노이즈+블러·HBAO/GTAO',
+    section: '실시간 렌더링 기법',
+  },
+  {
+    slug: 'post-processing',
+    title: '포스트 프로세싱 — 톤매핑·블룸·노출',
+    description: 'HDR→LDR 톤매핑(Reinhard·ACES)·노출·블룸·감마/sRGB·색 보정·적용 순서',
+    section: '실시간 렌더링 기법',
+  },
+  // ── 운영체제 · 시스템 ──
+  {
+    slug: 'interrupts-exceptions',
+    title: '인터럽트와 예외',
+    description: '폴링 vs 인터럽트·IRQ/MSI·APIC·예외(fault/trap/abort)·IDT/ISR·마스킹·top/bottom half',
+    section: '운영체제 · 시스템',
+  },
+  {
+    slug: 'system-calls',
+    title: '시스템 콜과 user/kernel 경계',
+    description: '보호 링·모드 전환·트랩 명령(syscall)·ABI·진입/복귀 비용·vDSO·libc 래퍼',
+    section: '운영체제 · 시스템',
+  },
+  {
+    slug: 'demand-paging',
+    title: '페이지 폴트와 디맨드 페이징',
+    description: '페이지 폴트 3종·디맨드 페이징·copy-on-write·mmap·페이지 교체(clock)·working set·thrashing',
+    section: '운영체제 · 시스템',
+  },
+  {
+    slug: 'io-mmio-dma',
+    title: '장치 I/O — MMIO·포트 I/O·DMA',
+    description: '장치 레지스터·MMIO vs 포트 I/O·programmed I/O(폴링)→인터럽트→DMA·캐시 일관성·IOMMU',
+    section: '운영체제 · 시스템',
+  },
 ];
 
 /**
@@ -412,11 +467,12 @@ export interface Series {
 }
 export const SERIES: Series[] = [
   { title: '수학 · 기초', sections: ['기초', '지오메트리'] },
-  { title: '셰이딩과 빛', sections: ['셰이딩', '렌더링', '레이트레이싱', '절차적 생성'] },
+  { title: '셰이딩과 빛', sections: ['셰이딩', '실시간 렌더링 기법', '렌더링', '레이트레이싱', '절차적 생성'] },
   { title: 'NPR · 카툰', sections: ['카툰 · NPR 렌더링'] },
   { title: 'GPU 아키텍처 · 실행', sections: ['GPU 실행 모델', 'GPU ↔ 렌더링', 'GPU 하드웨어', '레이트레이싱 HW'] },
-  { title: '드라이버 · 시스템', sections: ['그래픽스 드라이버', 'GPU 명령 제출', '디스플레이 출력', 'Unreal RHI'] },
+  { title: '드라이버 · GPU 시스템', sections: ['그래픽스 드라이버', 'GPU 명령 제출', '디스플레이 출력', 'Unreal RHI'] },
   { title: 'CPU 아키텍처', sections: ['CPU 아키텍처'] },
+  { title: '운영체제 · 시스템', sections: ['운영체제 · 시스템'] },
 ];
 
 type SectionGroup = { section: string; items: Chapter[] };
@@ -519,6 +575,18 @@ const RELATED: Record<string, string[]> = {
   'simd-vectorization': ['gpu-execution-model', 'superscalar-ooo'],
   'os-scheduling-context-switch': ['gpu-scheduling-preemption', 'atomics-locks'],
   'atomics-locks': ['memory-consistency-mesi', 'os-scheduling-context-switch'],
+  // 실시간 렌더링 기법
+  'lighting': ['microfacet-brdf', 'shadow-mapping', 'cel-shading-ramp'],
+  'shadow-mapping': ['lighting', 'graphics-pipeline-journey', 'rendering-execution-model'],
+  'deferred-shading': ['lighting', 'rendering-execution-model', 'memory-bandwidth-roofline', 'antialiasing'],
+  'antialiasing': ['rendering-execution-model', 'texture-filtering-mipmapping', 'deferred-shading', 'display-pipeline'],
+  'ambient-occlusion': ['lighting', 'microfacet-brdf', 'deferred-shading'],
+  'post-processing': ['microfacet-brdf', 'display-pipeline', 'antialiasing'],
+  // 운영체제 · 시스템
+  'interrupts-exceptions': ['system-calls', 'os-scheduling-context-switch', 'io-mmio-dma'],
+  'system-calls': ['interrupts-exceptions', 'virtual-memory-tlb', 'os-scheduling-context-switch'],
+  'demand-paging': ['virtual-memory-tlb', 'cpu-memory-hierarchy', 'io-mmio-dma'],
+  'io-mmio-dma': ['cpu-gpu-transfer', 'interrupts-exceptions', 'demand-paging'],
 };
 
 /** slug → Chapter 빠른 조회(라이브 챕터만). */
