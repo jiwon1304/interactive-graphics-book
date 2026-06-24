@@ -43,7 +43,6 @@ export default function TAAJitter() {
   const frameRef = useRef(1);
   // 각 큰 픽셀의 누적(history) 값
   const histRef = useRef<Float32Array | null>(null);
-  const rafRef = useRef<number>(0);
 
   const GRID = 7;
 
@@ -115,19 +114,18 @@ export default function TAAJitter() {
   };
 
   useEffect(() => {
-    const tick = () => {
-      drawOnce();
-      if (running) {
-        frameRef.current += 1;
-        rafRef.current = requestAnimationFrame(() => setTimeout(tick, 180));
-      }
-    };
     drawOnce();
-    if (running) rafRef.current = requestAnimationFrame(() => setTimeout(tick, 180));
+    let timer: ReturnType<typeof setInterval> | undefined;
+    if (running) {
+      timer = setInterval(() => {
+        frameRef.current += 1;
+        drawOnce();
+      }, 180);
+    }
     const mo = new MutationObserver(drawOnce);
     mo.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
     return () => {
-      cancelAnimationFrame(rafRef.current);
+      if (timer) clearInterval(timer);
       mo.disconnect();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
